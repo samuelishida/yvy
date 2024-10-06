@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa de Desmatamento - TerraBrasilis</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <style>
+        #map {
+            height: 500px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Mapa de Desmatamento - TerraBrasilis</h1>
+    <div id="map"></div>
+
+    <script>
+        // Inicializa o mapa centrado no Brasil
+        var map = L.map('map').setView([-15.7801, -47.9292], 4);
+
+        // Adiciona a camada de mapa do OpenStreetMap
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        // Dados recebidos do servidor para adicionar ao mapa
+        var data = {{ data | tojson }};
+
+        // Definir bounds para ajustar a visualização do mapa
+        var bounds = L.latLngBounds();
+
+        // Itera sobre os dados para adicionar marcadores ao mapa
+        data.forEach(function(item) {
+            if (item.lat && item.lon) {
+                var marker = L.circleMarker([item.lat, item.lon], {
+                    color: item.color,
+                    radius: 6
+                }).addTo(map);
+                marker.bindPopup("<b>" + item.name + "</b><br>" + item.source + "<br>" + item.timestamp);
+                
+                // Adiciona as coordenadas aos bounds
+                bounds.extend([item.lat, item.lon]);
+            }
+        });
+
+        // Ajusta o mapa para visualizar todos os marcadores
+        if (!bounds.isValid()) {
+            // Caso nenhum dado válido esteja disponível, centralizar em uma posição padrão
+            map.setView([-15.7801, -47.9292], 4);
+        } else {
+            map.fitBounds(bounds);
+        }
+    </script>
+</body>
+</html>

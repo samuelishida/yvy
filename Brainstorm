@@ -1,0 +1,87 @@
+1. INPE (Dados de Desmatamento e Queimadas)
+   - https://queimadas.dgi.inpe.br/
+
+2. IBAMA (Biodiversidade e Áreas Protegidas)
+   - https://www.ibama.gov.br/
+
+3. ANA (Monitoramento Hidrológico)
+   - https://www.snirh.gov.br/hidroweb/
+
+4. CPTEC/INPE (Previsão Meteorológica)
+   - http://www.cptec.inpe.br/
+
+5. CEMADEN (Alertas de Desastres Naturais)
+   - http://www.cemaden.gov.br/
+
+6. World Air Quality Index (Qualidade do Ar)
+   - https://waqi.info/
+
+7. NASA Earth Data (Imagens de Satélite e Dados Climáticos)
+   - https://earthdata.nasa.gov/
+
+8. WRI Global Forest Watch (Desmatamento Global)
+   - https://www.globalforestwatch.org/
+
+9. OpenWeatherMap (Dados Climáticos e Poluição do Ar)
+   - https://openweathermap.org/
+
+10. FAO FAOSTAT (Dados Ambientais Globais)
+    - http://www.fao.org/faostat/en/#data
+
+11. Amazônia Protege (Dados sobre Crimes Ambientais)
+    - https://amazoniaprotege.mpf.mp.br/
+
+12. SOS Mata Atlântica (Monitoramento da Mata Atlântica)
+    - https://www.sosma.org.br/
+
+13. EMBRAPA Agrometeorologia (Dados Climáticos Agrícolas)
+    - https://www.embrapa.br/agrometeorologia
+    
+14. NASA Earth Data
+    - https://www.earthdata.nasa.gov/
+
+
+
+1. Painel de Controle Interativo
+   - Widgets personalizáveis (qualidade do ar, temperatura, etc.)
+   - Mapa interativo com visualização regional
+   - Gráficos de tendências (linha ou barra)
+   - Notificações sobre mudanças bruscas nos índices ambientais
+
+2. Visualização de Mapa Dinâmico
+   - Mapa de tela cheia com camadas de dados (poluição, incêndios, desmatamento)
+   - Zoom e detalhes ao clicar
+   - Seleção de períodos de tempo para dados históricos
+   - Atualização em tempo real de eventos
+
+3. Feed de Notícias Ambientais
+   - Interface estilo feed com atualizações sobre desastres e alertas
+   - Integração com redes sociais
+   - Comentários e interações dos usuários
+   - Alertas de emergência com notificações push
+
+4. Dashboard Personalizável por Usuário
+   - Login e configuração personalizada do painel
+   - Preferências de visualização (gráficos, mapas, relatórios)
+   - Histórico de dados acessados
+   - Sugestões personalizadas baseadas em localização e preferências
+
+5. Relatórios Diários e Semanais
+   - Geração de relatórios em PDF ou envio por e-mail
+   - Seleção de dados para relatório (qualidade do ar, temperatura, etc.)
+   - Relatórios automáticos com gráficos e análises
+   - Customização de período de tempo
+
+6. Integração com APIs de Sensores e Dispositivos IoT
+   - Conexão com dispositivos IoT (sensores de ar, água)
+   - Visualização de dados de sensores pessoais e públicos
+   - Alertas personalizados com base em dados locais
+
+7. Modo Offline e Cache de Dados
+   - Acesso a dados recentes offline
+   - Atualização automática ao recuperar conexão
+   - Armazenamento temporário de mapas, gráficos e notificações importantes
+   
+   
+   
+
