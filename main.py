@@ -1,6 +1,7 @@
 import xml.etree.ElementTree as ET
 import pymongo
 import datetime
+import rasterio
 from flask import Flask, render_template
 from flask_pymongo import PyMongo
 
@@ -20,31 +21,51 @@ def parse_qml(file_path):
         color = entry.get('color')
         label = entry.get('label')
         if value and color and label:
-            # Adicionando coordenadas fictícias para visualização (para demonstrar)
             color_legend[int(value)] = {
                 'color': color,
                 'label': label,
-                'lat': -15.7801 + (int(value) % 5) * 0.5,  # Latitude fictícia
-                'lon': -47.9292 + (int(value) % 5) * 0.5   # Longitude fictícia
             }
     
     return color_legend
 
-# Inserir dados da base QML no MongoDB
-def insert_qml_data_to_mongo(color_legend):
-    for value, info in color_legend.items():
-        data = {
-            "name": info['label'],
-            "clazz": "Desmatamento",
-            "periods": "N/A",
-            "source": "TerraBrasilis",
-            "color": info['color'],
-            "lat": info['lat'],
-            "lon": info['lon'],
-            "timestamp": datetime.datetime.now()
-        }
-        mongo.db.deforestation_data.insert_one(data)
-    print("Data from QML inserted into MongoDB.")
+# Função para ler o arquivo TIF e extrair coordenadas
+def parse_tif(file_path):
+    coordinates = []
+    with rasterio.open(file_path) as dataset:
+        band1 = dataset.read(1)  # Lê o primeiro canal
+        rows, cols = band1.shape
+
+        for row in range(0, rows, 100):  # Pule algumas linhas para evitar sobrecarga
+            for col in range(0, cols, 100):  # Pule algumas colunas para evitar sobrecarga
+                value = band1[row, col]
+                if value != dataset.nodata:  # Verifica se o valor não é um valor nulo
+                    # Converter a posição do pixel para coordenadas geográficas
+                    lon, lat = dataset.xy(row, col)
+                    coordinates.append({
+                        "value": value,
+                        "lat": lat,
+                        "lon": lon
+                    })
+
+    return coordinates
+
+# Inserir dados do QML e TIF no MongoDB
+def insert_data_to_mongo(color_legend, coordinates):
+    for coord in coordinates:
+        value = coord['value']
+        if value in color_legend:
+            data = {
+                "name": color_legend[value]['label'],
+                "clazz": "Desmatamento",
+                "periods": "N/A",
+                "source": "TerraBrasilis",
+                "color": color_legend[value]['color'],
+                "lat": coord['lat'],
+                "lon": coord['lon'],
+                "timestamp": datetime.datetime.now()
+            }
+            mongo.db.deforestation_data.insert_one(data)
+    print("Data from QML and TIF inserted into MongoDB.")
 
 # Rotas simples
 @app.route('/')
@@ -74,8 +95,11 @@ if __name__ == "__main__":
     # Ler legenda do arquivo QML
     color_legend = parse_qml("prodes_brasil_2023.qml")
 
-    # Inserir dados da base QML no MongoDB
-    insert_qml_data_to_mongo(color_legend)
+    # Ler coordenadas do arquivo TIF
+    coordinates = parse_tif("prodes_brasil_2023.tif")
+
+    # Inserir dados da base QML e TIF no MongoDB
+    insert_data_to_mongo(color_legend, coordinates)
     
     # Rodar o aplicativo Flask
     app.run(host='0.0.0.0', port=5000)

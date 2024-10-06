@@ -11,6 +11,12 @@ services:
       - "27017:27017"
     volumes:
       - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+      - mongo_data:/data/db
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 4G
 
   flask-app:
     build: .
@@ -22,3 +28,11 @@ services:
       - "5000:5000"
     volumes:
       - .:/usr/src/app
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 12G
+
+volumes:
+  mongo_data:
