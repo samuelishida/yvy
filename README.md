@@ -17,15 +17,14 @@ Este repositório é o projeto Yvy, um aplicativo de observabilidade ambiental p
    git clone https://gitlab.com/samuelishida/yvy.git
    cd yvy
    ```
+2. Baixe e extraia a base de dados do TerraBrasilis:
+   - Acesse o link [TerraBrasilis PRODES Brasil](https://terrabrasilis.dpi.inpe.br/download/dataset/brasil-prodes/raster/prodes_brasil_2023.zip) para baixar a base de dados.
+   - Extraia o arquivo ZIP na pasta do projeto.
 
-2. Configure o Docker e inicialize os containers:
+3. Configure o Docker e inicialize os containers:
    ```bash
    sudo docker-compose up --build
    ```
-
-3. Baixe e extraia a base de dados do TerraBrasilis:
-   - Acesse o link [TerraBrasilis PRODES Brasil](https://terrabrasilis.dpi.inpe.br/download/dataset/brasil-prodes/raster/prodes_brasil_2023.zip) para baixar a base de dados.
-   - Extraia o arquivo ZIP na pasta do projeto.
 
 ### Uso
 
