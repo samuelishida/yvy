@@ -38,9 +38,14 @@ Após inicializar o Docker, o aplicativo estará disponível em `http://localhos
 
 Para verificar os dados no MongoDB, execute:
 ```bash
-sudo docker run -it --rm --network host mongo:4.4-bionic mongo --host localhost --port 27017 -u root -p example
+make mongo-access
+
+show dbs
+
+use terrabrasilis_data
+
+db.deforestation_data.countDocuments({})
 ```
-No shell MongoDB, use comandos como `show dbs`, `use terrabrasilis_data`, e `db.deforestation_data.countDocuments({})` para explorar o banco de dados.
 
 ### Estrutura do Projeto
 
@@ -73,6 +78,9 @@ O projeto inclui um Makefile para facilitar o gerenciamento dos serviços. Aqui 
 
 - Limpar volumes e reconstruir:
   - `make clean-volumes` - Remove todos os volumes persistentes e reconstrói os serviços.
+
+- Executar todos os serviços:
+  - `make run` - Inicializa todos os serviços em segundo plano.
 
 ### Contribuindo
 

@@ -1,5 +1,5 @@
 # Define os alvos (targets)
-.PHONY: build-frontend build-backend build-both rebuild-frontend rebuild-backend rebuild-all clean-volumes stop-frontend stop-backend stop-all
+.PHONY: build-frontend build-backend build-both rebuild-frontend rebuild-backend rebuild-all clean-volumes stop-frontend stop-backend stop-all run mongo-access
 
 # Parar o frontend
 stop-frontend:
@@ -45,3 +45,11 @@ clean-volumes:
 	docker-compose down -v
 	docker-compose build
 	docker-compose up -d
+
+# Executar todos os serviços
+run:
+	docker-compose up -d
+
+# Acessar o MongoDB
+mongo-access:
+	docker run -it --rm --network host mongo:4.4-bionic mongo --host localhost --port 27017 -u root -p example
