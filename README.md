@@ -64,23 +64,26 @@ O projeto inclui um Makefile para facilitar o gerenciamento dos serviços. Aqui 
 - Construir serviços:
   - `make build-frontend` - Parar e construir somente o frontend.
   - `make build-backend` - Parar e construir somente o backend.
-  - `make build-both` - Parar e construir tanto o frontend quanto o backend.
+  - `make build` - Parar e construir tanto o frontend quanto o backend.
 
 - Parar serviços:
   - `make stop-frontend` - Parar o serviço do frontend.
   - `make stop-backend` - Parar o serviço do backend.
-  - `make stop-all` - Parar todos os serviços.
+  - `make stop` - Parar todos os serviços.
 
 - Reconstruir serviços:
   - `make rebuild-frontend` - Derruba, remove e reconstrói o frontend.
   - `make rebuild-backend` - Derruba, remove e reconstrói o backend.
-  - `make rebuild-all` - Derruba, remove, reconstrói e reinicia todos os serviços.
+  - `make rebuild` - Derruba, remove, reconstrói e reinicia todos os serviços.
 
 - Limpar volumes e reconstruir:
-  - `make clean-volumes` - Remove todos os volumes persistentes e reconstrói os serviços.
+  - `make clean` - Remove todos os volumes persistentes e reconstrói os serviços.
 
-- Executar todos os serviços:
-  - `make run` - Inicializa todos os serviços em segundo plano.
+- Executar os serviços:
+  - `make run` - Inicializa todos os serviços.
+  - `make run-frontend` - Inicializa o frontend em segundo plano.
+  - `make run-backend` - Inicializa o backend em segundo plano.
+  
 
 ### Contribuindo
 

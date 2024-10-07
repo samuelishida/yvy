@@ -1,22 +1,21 @@
-# Dockerfile for backend service
+# Usando a imagem Python base
+FROM python:3.9-slim
 
-# Use a base image that includes Python
-FROM python:3.9
+# Instalar net-tools para o comando netstat
+RUN apt-get update && apt-get install -y net-tools wget unzip
 
-# Install net-tools for netstat command
-RUN apt-get update && apt-get install -y net-tools
-
-# Set the working directory
+# Definir o diretório de trabalho no container
 WORKDIR /app
 
-# Copy the backend files to the container
-COPY . /app
+# Copiar os arquivos necessários para o container
+COPY requirements.txt ./
+COPY backend.py ./
 
-# Install Python dependencies
-RUN pip install -r requirements.txt
+# Instalar as dependências do backend
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose the port the application will run on
+# Expor a porta em que o aplicativo será executado
 EXPOSE 5000
 
-# Run the backend server
+# Comando para rodar o backend
 CMD ["python", "backend.py"]

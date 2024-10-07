@@ -10,19 +10,21 @@ stop-backend:
 	docker-compose stop backend
 
 # Parar todos os serviços
-stop-all:
+stop:
 	docker-compose down
 
 # Construir apenas o frontend
 build-frontend: stop-frontend
 	docker-compose build frontend
+	docker-compose up -d frontend
 
 # Construir apenas o backend
 build-backend: stop-backend
 	docker-compose build backend
+	docker-compose up -d backend
 
 # Construir ambos (frontend e backend)
-build-both: stop-frontend stop-backend
+build: stop-frontend stop-backend
 	docker-compose build frontend backend
 
 # Reconstruir apenas o frontend (derruba e reconstrói)
@@ -36,19 +38,22 @@ rebuild-backend: stop-backend
 	docker-compose build backend
 
 # Reconstruir todos os serviços (frontend, backend, etc.)
-rebuild-all: stop-all
+rebuild: stop-all
 	docker-compose build
-	docker-compose up -d
+	docker-compose up
 
 # Remover todos os volumes e reconstruir tudo
-clean-volumes:
+clean:
 	docker-compose down -v
 	docker-compose build
-	docker-compose up -d
 
 # Executar todos os serviços
 run:
-	docker-compose up -d
+	docker-compose up
+run-frontend:
+	docker-compose up -d frontend
+run-backend:
+	docker-compose up -d backend
 
 # Acessar o MongoDB
 mongo-access:

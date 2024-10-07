@@ -1,22 +1,22 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mapa de Desmatamento - TerraBrasilis</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css"/>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script> <!-- Biblioteca do Leaflet para heatmap -->
+    <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+    <title>Mapa de Desmatamento</title>
     <style>
+        /* Faz o mapa preencher toda a tela */
         html, body {
             height: 100%;
             margin: 0;
-            padding: 0;
-            overflow: hidden;
         }
-
         #map {
-            height: 100vh;
+            height: 100%;
             width: 100%;
         }
     </style>
@@ -24,60 +24,92 @@
 <body>
     <div id="map"></div>
 
-    <script>
-        // Inicializa o mapa centrado no Brasil
-        var map = L.map('map').setView([-15.7801, -47.9292], 4);
+<script>
+    // Inicializa o mapa com visualização centrada no Brasil
+    var map = L.map('map', {
+        zoomControl: true  // Inclui o controle de zoom no mapa
+    }).setView([-15.7801, -47.9292], 4);
 
-        // Adiciona a camada de mapa do OpenStreetMap
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }).addTo(map);
+    // Adiciona camada de mapa do OpenStreetMap
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
 
-        // Dados recebidos do servidor para adicionar ao mapa
-        var data = {{ data | tojson }};
+    // Grupo de marcadores para clusterização
+    var markers = L.markerClusterGroup();
 
-        // Preparar dados para o mapa de calor
-        var heatData = [];
-        var currentYear = new Date().getFullYear();
+    // Função para carregar dados dinamicamente conforme a área do mapa
+    function loadMapData(bounds) {
+        const ne = bounds.getNorthEast();
+        const sw = bounds.getSouthWest();
 
-        data.forEach(function(item) {
-            if (item.lat && item.lon) {
-                var weight = 0.1;  // Valor padrão para peso
+        // Chama a API passando as coordenadas do bounding box para filtrar os dados
+        fetch(`http://127.0.0.1:5000/data?ne_lat=${ne.lat}&ne_lng=${ne.lng}&sw_lat=${sw.lat}&sw_lng=${sw.lng}`)
+            .then(response => response.json())
+            .then(data => {
+                console.log('Dados recebidos:', data); // Log dos dados recebidos
 
-                if (item.timestamp) {
-                    var year = new Date(item.timestamp).getFullYear();
-                    var age = currentYear - year;
+                let heatData = [];
+                data.forEach(item => {
+                    heatData.push([item.lat, item.lon, 0.5]); // O terceiro valor é a intensidade
 
-                    // Ajustar peso de acordo com a "idade" do desmatamento
-                    if (age <= 5) {
-                        weight = 1.0;  // Laranja - Desmatamento muito recente (últimos 5 anos)
-                    } else if (age <= 15) {
-                        weight = 0.7;  // Laranja claro - Desmatamento intermediário (5-15 anos)
-                    } else if (age <= 25) {
-                        weight = 0.4;  // Amarelo - Desmatamento antigo (15-25 anos)
-                    } else {
-                        weight = 0.2;  // Verde - Área preservada (mais de 25 anos)
-                    }
-                }
+                    // Cria um círculo no mapa para cada ponto de desmatamento
+                    let marker = L.circleMarker([item.lat, item.lon], {
+                        radius: 6,
+                        color: item.color,
+                        fillColor: item.color,
+                        fillOpacity: 0.6
+                    }).bindPopup(`<b>${item.name}</b><br>Coordenadas: ${item.lat}, ${item.lon}`);
 
-                // Adicionar ponto de calor com peso ajustado
-                heatData.push([item.lat, item.lon, weight]);
-            }
+                    markers.addLayer(marker);
+                });
+
+                // Limpa marcadores antigos antes de adicionar novos
+                markers.clearLayers();
+
+                // Adiciona o grupo de marcadores ao mapa
+                map.addLayer(markers);
+
+                // Adiciona o heatmap ao mapa
+                L.heatLayer(heatData, { radius: 20, blur: 15, maxZoom: 10 }).addTo(map);
+            })
+            .catch(error => console.error('Erro ao buscar os dados:', error));
+    }
+
+    // Carrega dados ao mover ou aplicar zoom no mapa
+    map.on('moveend', function () {
+        const bounds = map.getBounds();
+        loadMapData(bounds);
+    });
+
+    // Carrega dados iniciais
+    loadMapData(map.getBounds());
+
+    // Ajusta o tamanho do mapa ao redimensionar a janela do navegador
+    window.addEventListener('resize', function () {
+        map.invalidateSize();
+    });
+
+    // Adiciona a legenda ao mapa
+    var legend = L.control({position: 'bottomright'});
+
+    legend.onAdd = function (map) {
+        var div = L.DomUtil.create('div', 'info legend');
+        var labels = [
+            {color: '#308703', label: 'Vegetação Nativa'},
+            {color: '#ffff00', label: 'Desmatamento até 2000'},
+            {color: '#ff9600', label: 'Desmatamento Recente'}
+        ];
+
+        labels.forEach(item => {
+            div.innerHTML += `<i style="background:${item.color}; width: 18px; height: 18px; display: inline-block; margin-right: 5px;"></i>${item.label}<br>`;
         });
 
-        // Adicionar camada de mapa de calor com parâmetros ajustados
-        L.heatLayer(heatData, {
-            radius: 20,   // Ajuste do raio para reduzir sobreposição em escala maior
-            blur: 25,     // Ajustar desfoque para suavizar transições e melhorar desempenho
-            maxZoom: 6,   // Ajuste para melhorar a visualização de longe
-            max: 1.0,     // Definir o máximo para normalizar os valores e evitar saturação
-            gradient: {
-                0.2: 'green',  // Áreas preservadas
-                0.4: 'yellow', // Desmatamento antigo
-                0.7: 'orange', // Desmatamento intermediário
-                1.0: 'red'     // Desmatamento recente
-            }
-        }).addTo(map);
-    </script>
+        return div;
+    };
+
+    legend.addTo(map);
+</script>
+
 </body>
 </html>
