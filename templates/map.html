@@ -5,22 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mapa de Desmatamento - TerraBrasilis</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css"/>
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     <style>
-        /* Certifique-se de que o html e body ocupem toda a altura */
         html, body {
             height: 100%;
             margin: 0;
             padding: 0;
-            overflow: hidden; /* Evita a barra de rolagem se o mapa estiver em tela cheia */
+            overflow: hidden;
         }
 
-        /* Ajuste do mapa para ocupar 100% da tela */
         #map {
-            height: 100vh; /* 100% da altura da viewport */
-            width: 100%; /* 100% da largura da viewport */
+            height: 100vh;
+            width: 100%;
         }
     </style>
 </head>
@@ -36,41 +33,51 @@
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(map);
 
-        // Cria um grupo de clusters
-        var markers = L.markerClusterGroup();
-
         // Dados recebidos do servidor para adicionar ao mapa
         var data = {{ data | tojson }};
 
-        // Definir bounds para ajustar a visualização do mapa
-        var bounds = L.latLngBounds();
+        // Preparar dados para o mapa de calor
+        var heatData = [];
+        var currentYear = new Date().getFullYear();
 
-        // Itera sobre os dados para adicionar marcadores ao mapa
         data.forEach(function(item) {
             if (item.lat && item.lon) {
-                var marker = L.circleMarker([item.lat, item.lon], {
-                    color: item.color,
-                    radius: 6,
-                    fillOpacity: 0.8
-                }).bindPopup("<b>" + item.name + "</b><br>Fonte: " + item.source + "<br>" + new Date(item.timestamp).toUTCString());
+                var weight = 0.1;  // Valor padrão para peso
 
-                // Adiciona o marcador ao cluster
-                markers.addLayer(marker);
+                if (item.timestamp) {
+                    var year = new Date(item.timestamp).getFullYear();
+                    var age = currentYear - year;
 
-                // Adiciona as coordenadas aos bounds
-                bounds.extend([item.lat, item.lon]);
+                    // Ajustar peso de acordo com a "idade" do desmatamento
+                    if (age <= 5) {
+                        weight = 1.0;  // Vermelho - Desmatamento muito recente (últimos 5 anos)
+                    } else if (age <= 15) {
+                        weight = 0.7;  // Laranja - Desmatamento intermediário (5-15 anos)
+                    } else if (age <= 25) {
+                        weight = 0.4;  // Amarelo - Desmatamento antigo (15-25 anos)
+                    } else {
+                        weight = 0.2;  // Verde - Desmatamento mais antigo (mais de 25 anos)
+                    }
+                }
+
+                // Adicionar ponto de calor com peso ajustado
+                heatData.push([item.lat, item.lon, weight]);
             }
         });
 
-        // Adiciona o grupo de clusters ao mapa
-        map.addLayer(markers);
-
-        // Ajusta o mapa para visualizar todos os marcadores
-        if (!bounds.isValid()) {
-            map.setView([-15.7801, -47.9292], 4); // Centralizar se nenhum marcador for válido
-        } else {
-            map.fitBounds(bounds);
-        }
+        // Adicionar camada de mapa de calor com parâmetros ajustados
+        L.heatLayer(heatData, {
+            radius: 20,  // Reduzir ou aumentar para visualizar melhor os pontos
+            blur: 15,    // Ajustar desfoque para melhor definição dos limites
+            maxZoom: 10, // Ajustar zoom máximo
+            max: 1.0,    // Definir o máximo para normalizar os valores e evitar saturação
+            gradient: {
+                0.2: 'green',
+                0.4: 'yellow',
+                0.7: 'orange',
+                1.0: 'red'
+            }
+        }).addTo(map);
     </script>
 </body>
 </html>

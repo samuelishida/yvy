@@ -5,6 +5,8 @@ import rasterio
 from flask import Flask, render_template
 from flask_pymongo import PyMongo
 from multiprocessing import Process, cpu_count
+import folium
+from folium.plugins import HeatMap
 
 # Configuração do Flask
 app = Flask(__name__)
@@ -111,13 +113,33 @@ def dashboard():
 
 @app.route('/map')
 def map_view():
-    # Converter ObjectId para string para evitar problemas de serialização
+    # Criar um mapa centrado no Brasil
+    folium_map = folium.Map(location=[-15.7801, -47.9292], zoom_start=4)
+
+    # Obter dados do MongoDB
     data = mongo.db.deforestation_data.find()
-    data_list = []
+    heat_data = []
+
     for item in data:
-        item['_id'] = str(item['_id'])
-        data_list.append(item)
-    return render_template('map.html', data=data_list)
+        if 'lat' in item and 'lon' in item and 'timestamp' in item:
+            year = item['timestamp'].year
+            color_weight = 0
+            if year >= 2020:
+                color_weight = 1.0  # Vermelho - Desmatamento recente
+            elif 2010 <= year < 2020:
+                color_weight = 0.8  # Laranja - Desmatamento intermediário
+            elif 2000 <= year < 2010:
+                color_weight = 0.5  # Amarelo - Desmatamento antigo
+            else:
+                color_weight = 0.2  # Verde - Área não desmatada
+
+            heat_data.append([item['lat'], item['lon'], color_weight])
+
+    # Adicionar camada de mapa de calor
+    HeatMap(heat_data, min_opacity=0.2, max_zoom=18, radius=15, blur=10, max_intensity=1.0).add_to(folium_map)
+
+    # Renderizar o mapa como HTML
+    return folium_map._repr_html_()
 
 if __name__ == "__main__":
     # Ler legenda do arquivo QML
