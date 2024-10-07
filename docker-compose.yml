@@ -15,8 +15,9 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: '2.0'
           memory: 4G
+    cpuset: "0-1"  # Atribui o uso dos núcleos 0 e 1
 
   flask-app:
     build: .
@@ -33,6 +34,7 @@ services:
         limits:
           cpus: '2.0'
           memory: 12G
+    cpuset: "2-3"  # Atribui o uso dos núcleos 2 a 3
 
 volumes:
   mongo_data:

@@ -34,6 +34,14 @@ Após inicializar o Docker, o aplicativo estará disponível em `http://localhos
 - Navegue até `/dashboard` para visualizar os dados de desmatamento.
 - Acesse `/map` para visualizar o mapa interativo com sobreposição de dados.
 
+#### Acessando o MongoDB
+
+Para verificar os dados no MongoDB, execute:
+```bash
+docker run -it --rm --network host mongo:4.4-bionic mongo --host localhost --port 27017 -u root -p example
+```
+No shell MongoDB, use comandos como `show dbs`, `use terrabrasilis_data`, e `db.deforestation_data.countDocuments({})` para explorar o banco de dados.
+
 ### Estrutura do Projeto
 
 - `main.py`: Script principal do Flask.
@@ -59,3 +67,4 @@ Este projeto está licenciado sob a licença MIT - veja o arquivo [LICENSE](LICE
 Samuel Ishida - [GitLab](https://gitlab.com/samuelishida)
 
 Sinta-se à vontade para abrir uma issue se encontrar algum problema ou tiver sugestões de melhorias.
+

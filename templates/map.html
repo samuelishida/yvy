@@ -9,13 +9,22 @@
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
     <style>
+        /* Certifique-se de que o html e body ocupem toda a altura */
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Evita a barra de rolagem se o mapa estiver em tela cheia */
+        }
+
+        /* Ajuste do mapa para ocupar 100% da tela */
         #map {
-            height: 500px;
+            height: 100vh; /* 100% da altura da viewport */
+            width: 100%; /* 100% da largura da viewport */
         }
     </style>
 </head>
 <body>
-    <h1>Mapa de Desmatamento - TerraBrasilis</h1>
     <div id="map"></div>
 
     <script>
