@@ -67,8 +67,8 @@
 
         // Adicionar camada de mapa de calor com parâmetros ajustados
         L.heatLayer(heatData, {
-            radius: 20,  // Reduzir ou aumentar para visualizar melhor os pontos
-            blur: 15,    // Ajustar desfoque para melhor definição dos limites
+            radius: 30,  // Ajustar para aumentar a área de influência dos pontos
+            blur: 40,    // Ajustar desfoque para suavizar a transição entre cores
             maxZoom: 10, // Ajustar zoom máximo
             max: 1.0,    // Definir o máximo para normalizar os valores e evitar saturação
             gradient: {

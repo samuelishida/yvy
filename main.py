@@ -38,8 +38,8 @@ def parse_tif(file_path):
         band1 = dataset.read(1)  # Lê o primeiro canal
         rows, cols = band1.shape
 
-        for row in range(0, rows, 100):  # Pule algumas linhas para evitar sobrecarga
-            for col in range(0, cols, 100):  # Pule algumas colunas para evitar sobrecarga
+        for row in range(0, rows, 50):  # Reduzir o salto para aumentar o nível de detalhe
+            for col in range(0, cols, 50):  # Reduzir o salto para aumentar o nível de detalhe
                 value = band1[row, col]
                 if value != dataset.nodata:  # Verifica se o valor não é um valor nulo
                     # Converter a posição do pixel para coordenadas geográficas
@@ -63,7 +63,7 @@ def process_coordinate_batch(coordinates_batch, color_legend):
                 "lat": coord['lat'],
                 "lon": coord['lon']
             }
-            if mongo.db.deforestation_data.count_documents(query) == 0:
+            if mongo.db.deforestation_data.find_one(query) is None:
                 data = {
                     "name": color_legend[value]['label'],
                     "clazz": "Desmatamento",
@@ -136,7 +136,7 @@ def map_view():
             heat_data.append([item['lat'], item['lon'], color_weight])
 
     # Adicionar camada de mapa de calor
-    HeatMap(heat_data, min_opacity=0.2, max_zoom=18, radius=15, blur=10, max_intensity=1.0).add_to(folium_map)
+    HeatMap(heat_data, min_opacity=0.2, max_zoom=18, radius=20, blur=25, max_intensity=1.0).add_to(folium_map)
 
     # Renderizar o mapa como HTML
     return folium_map._repr_html_()
