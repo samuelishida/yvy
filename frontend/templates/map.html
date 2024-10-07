@@ -50,13 +50,13 @@
 
                     // Ajustar peso de acordo com a "idade" do desmatamento
                     if (age <= 5) {
-                        weight = 1.0;  // Vermelho - Desmatamento muito recente (últimos 5 anos)
+                        weight = 1.0;  // Laranja - Desmatamento muito recente (últimos 5 anos)
                     } else if (age <= 15) {
-                        weight = 0.7;  // Laranja - Desmatamento intermediário (5-15 anos)
+                        weight = 0.7;  // Laranja claro - Desmatamento intermediário (5-15 anos)
                     } else if (age <= 25) {
                         weight = 0.4;  // Amarelo - Desmatamento antigo (15-25 anos)
                     } else {
-                        weight = 0.2;  // Verde - Desmatamento mais antigo (mais de 25 anos)
+                        weight = 0.2;  // Verde - Área preservada (mais de 25 anos)
                     }
                 }
 
@@ -67,15 +67,15 @@
 
         // Adicionar camada de mapa de calor com parâmetros ajustados
         L.heatLayer(heatData, {
-            radius: 30,  // Ajustar para aumentar a área de influência dos pontos
-            blur: 40,    // Ajustar desfoque para suavizar a transição entre cores
-            maxZoom: 10, // Ajustar zoom máximo
-            max: 1.0,    // Definir o máximo para normalizar os valores e evitar saturação
+            radius: 20,   // Ajuste do raio para reduzir sobreposição em escala maior
+            blur: 25,     // Ajustar desfoque para suavizar transições e melhorar desempenho
+            maxZoom: 6,   // Ajuste para melhorar a visualização de longe
+            max: 1.0,     // Definir o máximo para normalizar os valores e evitar saturação
             gradient: {
-                0.2: 'green',
-                0.4: 'yellow',
-                0.7: 'orange',
-                1.0: 'red'
+                0.2: 'green',  // Áreas preservadas
+                0.4: 'yellow', // Desmatamento antigo
+                0.7: 'orange', // Desmatamento intermediário
+                1.0: 'red'     // Desmatamento recente
             }
         }).addTo(map);
     </script>

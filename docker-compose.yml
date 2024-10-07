@@ -11,27 +11,51 @@ services:
       - "27017:27017"
     volumes:
       - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
-      - /caminho/para/seus/dados:/data/db  # Volume local para garantir persistência
-    deploy:
-      resources:
-        limits:
-          cpus: '10.0'
-          memory: 12G
-    cpuset: "0-9"  # Atribui o uso dos núcleos 0 a 3
-
-  flask-app:
-    build: .
-    depends_on:
-      - mongo
-    environment:
-      - MONGO_URI=mongodb://root:example@mongo:27017/
-    ports:
-      - "5000:5000"
-    volumes:
-      - .:/usr/src/app
+      - ./mongo_data:/data/db  # Volume local para garantir persistência
+    networks:
+      - app-network
     deploy:
       resources:
         limits:
           cpus: '10.0'
           memory: 24G
-    cpuset: "2-11"  # Atribui o uso dos núcleos 4 a 11
+
+  frontend:
+    build: ./frontend
+    container_name: frontend
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./frontend:/app
+    depends_on:
+      - backend
+    restart: always
+    networks:
+      - app-network
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+
+  backend:
+    build: ./backend
+    container_name: backend
+    environment:
+      - MONGO_URI=mongodb://root:example@mongo:27017/
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - mongo
+    networks:
+      - app-network
+    deploy:
+      resources:
+        limits:
+          cpus: '10.0'
+          memory: 24G
+networks:
+  app-network:
+    driver: bridge

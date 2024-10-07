@@ -1,12 +1,11 @@
+# Backend (Flask API) - app_backend.py
 import xml.etree.ElementTree as ET
 import pymongo
 import datetime
 import rasterio
-from flask import Flask, render_template
+from flask import Flask, jsonify
 from flask_pymongo import PyMongo
 from multiprocessing import Process, cpu_count
-import folium
-from folium.plugins import HeatMap
 
 # Configuração do Flask
 app = Flask(__name__)
@@ -100,54 +99,17 @@ def insert_data_to_mongo_parallel(color_legend, coordinates):
 # Rotas simples
 @app.route('/')
 def home():
-    return render_template('index.html')
+    return jsonify({"message": "API do backend de desmatamento"})
 
-@app.route('/about')
-def about():
-    return render_template('about.html')
-
-@app.route('/dashboard')
-def dashboard():
+@app.route('/data')
+def get_data():
     data = mongo.db.deforestation_data.find()
-    return render_template('dashboard.html', data=data)
-
-@app.route('/map')
-def map_view():
-    # Criar um mapa centrado no Brasil
-    folium_map = folium.Map(location=[-15.7801, -47.9292], zoom_start=4)
-
-    # Obter dados do MongoDB
-    data = mongo.db.deforestation_data.find()
-    heat_data = []
-
-    for item in data:
-        if 'lat' in item and 'lon' in item and 'timestamp' in item:
-            year = item['timestamp'].year
-            color_weight = 0
-            if year >= 2020:
-                color_weight = 0.8  # Vermelho - Desmatamento recente
-            elif 2010 <= year < 2020:
-                color_weight = 0.6  # Laranja - Desmatamento intermediário
-            elif 2000 <= year < 2010:
-                color_weight = 0.4  # Amarelo - Desmatamento antigo
-            else:
-                color_weight = 0.2  # Verde - Área não desmatada
-
-            heat_data.append([item['lat'], item['lon'], color_weight])
-
-    # Adicionar camada de mapa de calor com parâmetros ajustados
-    HeatMap(
-        heat_data,
-        min_opacity=0.3,    # Aumentar a opacidade mínima para tornar mais visível
-        max_zoom=10,        # Reduzir o zoom máximo para renderização detalhada
-        radius=15,          # Reduzir o raio para menos sobreposição
-        blur=50,            # Aumentar o desfoque para suavizar as transições
-        max_intensity=0.8   # Reduzir a intensidade máxima para evitar saturação
-    ).add_to(folium_map)
-
-    # Renderizar o mapa como HTML
-    return folium_map._repr_html_()
-
+    return jsonify([{
+        "name": item["name"],
+        "lat": item["lat"],
+        "lon": item["lon"],
+        "timestamp": item["timestamp"].isoformat()
+    } for item in data])
 
 if __name__ == "__main__":
     # Ler legenda do arquivo QML
