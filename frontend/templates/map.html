@@ -2,15 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css"/>
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script> <!-- Biblioteca do Leaflet para heatmap -->
-    <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
-    <title>Mapa de Desmatamento</title>
+    <title>Mapa de Desmatamento Simplificado</title>
     <style>
-        /* Faz o mapa preencher toda a tela */
         html, body {
             height: 100%;
             margin: 0;
@@ -19,97 +12,117 @@
             height: 100%;
             width: 100%;
         }
+        .legend {
+            background: white;
+            padding: 10px;
+            line-height: 18px;
+            color: #555;
+        }
+        .legend i {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.7;
+        }
     </style>
+
+    <!-- Incluindo o Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+    <!-- Incluindo o Leaflet JS -->
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+    <!-- Incluindo o Leaflet.markercluster CSS e JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css"/>
+    <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
 </head>
 <body>
     <div id="map"></div>
 
-<script>
-    // Inicializa o mapa com visualização centrada no Brasil
-    var map = L.map('map', {
-        zoomControl: true  // Inclui o controle de zoom no mapa
-    }).setView([-15.7801, -47.9292], 4);
+    <script>
+        // Inicializa o mapa centrado em Brasília, Brasil
+        var map = L.map('map').setView([-15.7801, -47.9292], 4);
 
-    // Adiciona camada de mapa do OpenStreetMap
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
+        // Adiciona a camada de tiles do OpenStreetMap
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
 
-    // Grupo de marcadores para clusterização
-    var markers = L.markerClusterGroup();
+        // Cria um grupo de clusters para os marcadores
+        var markers = L.markerClusterGroup();
 
-    // Função para carregar dados dinamicamente conforme a área do mapa
-    function loadMapData(bounds) {
-        const ne = bounds.getNorthEast();
-        const sw = bounds.getSouthWest();
+        // Define as cores para cada categoria
+        var categoryColors = {
+            'Desmatamento até 2000': '#006400', // Verde escuro
+            'Desmatamento até 2010': '#FFFF00', // Amarelo
+            'Desmatamento até 2020': '#FFA500', // Laranja
+            'Desmatamento após 2020': '#FF0000', // Vermelho
+            'Vegetação Nativa': '#32CD32' // Verde claro
+        };
 
-        // Chama a API passando as coordenadas do bounding box para filtrar os dados
-        fetch(`http://127.0.0.1:5000/data?ne_lat=${ne.lat}&ne_lng=${ne.lng}&sw_lat=${sw.lat}&sw_lng=${sw.lng}`)
+        // Função para obter a cor com base no ano
+        function getColor(year) {
+            if (year >= 2020) {
+                return categoryColors['Desmatamento após 2020'];
+            } else if (year >= 2010) {
+                return categoryColors['Desmatamento até 2020'];
+            } else if (year >= 2000) {
+                return categoryColors['Desmatamento até 2010'];
+            } else if (year < 2000 && year !== null) {
+                return categoryColors['Desmatamento até 2000'];
+            } else {
+                return categoryColors['Vegetação Nativa'];
+            }
+        }
+
+        // Busca e adiciona todos os dados do backend
+        fetch("http://127.0.0.1:5000/data")
             .then(response => response.json())
             .then(data => {
-                console.log('Dados recebidos:', data); // Log dos dados recebidos
+                console.log('Dados recebidos:', data);
 
-                let heatData = [];
+                // Adiciona marcadores ao cluster para cada ponto de dados
                 data.forEach(item => {
-                    heatData.push([item.lat, item.lon, 0.5]); // O terceiro valor é a intensidade
+                    const year = item.periods;
+                    const color = getColor(year);
 
-                    // Cria um círculo no mapa para cada ponto de desmatamento
-                    let marker = L.circleMarker([item.lat, item.lon], {
-                        radius: 6,
-                        color: item.color,
-                        fillColor: item.color,
+                    var circleMarker = L.circleMarker([item.lat, item.lon], {
+                        radius: 4,
+                        color: color,
+                        fillColor: color,
                         fillOpacity: 0.6
-                    }).bindPopup(`<b>${item.name}</b><br>Coordenadas: ${item.lat}, ${item.lon}`);
+                    }).bindPopup(`
+                        <b>${item.name}</b><br>
+                        Ano: ${year || 'Desconhecido'}<br>
+                        Coordenadas: ${item.lat.toFixed(5)}, ${item.lon.toFixed(5)}<br>
+                        Fonte: ${item.source}
+                    `);
 
-                    markers.addLayer(marker);
+                    markers.addLayer(circleMarker);
                 });
 
-                // Limpa marcadores antigos antes de adicionar novos
-                markers.clearLayers();
-
-                // Adiciona o grupo de marcadores ao mapa
+                // Adiciona o grupo de clusters ao mapa
                 map.addLayer(markers);
-
-                // Adiciona o heatmap ao mapa
-                L.heatLayer(heatData, { radius: 20, blur: 15, maxZoom: 10 }).addTo(map);
             })
             .catch(error => console.error('Erro ao buscar os dados:', error));
-    }
 
-    // Carrega dados ao mover ou aplicar zoom no mapa
-    map.on('moveend', function () {
-        const bounds = map.getBounds();
-        loadMapData(bounds);
-    });
+        // Adiciona uma legenda ao mapa
+        var legend = L.control({position: 'bottomright'});
 
-    // Carrega dados iniciais
-    loadMapData(map.getBounds());
+        legend.onAdd = function (map) {
+            var div = L.DomUtil.create('div', 'legend');
+            div.innerHTML += '<h4>Legenda</h4>';
+            for (var category in categoryColors) {
+                div.innerHTML +=
+                    '<i style="background:' + categoryColors[category] + '"></i> ' +
+                    category + '<br>';
+            }
+            return div;
+        };
 
-    // Ajusta o tamanho do mapa ao redimensionar a janela do navegador
-    window.addEventListener('resize', function () {
-        map.invalidateSize();
-    });
-
-    // Adiciona a legenda ao mapa
-    var legend = L.control({position: 'bottomright'});
-
-    legend.onAdd = function (map) {
-        var div = L.DomUtil.create('div', 'info legend');
-        var labels = [
-            {color: '#308703', label: 'Vegetação Nativa'},
-            {color: '#ffff00', label: 'Desmatamento até 2000'},
-            {color: '#ff9600', label: 'Desmatamento Recente'}
-        ];
-
-        labels.forEach(item => {
-            div.innerHTML += `<i style="background:${item.color}; width: 18px; height: 18px; display: inline-block; margin-right: 5px;"></i>${item.label}<br>`;
-        });
-
-        return div;
-    };
-
-    legend.addTo(map);
-</script>
-
+        legend.addTo(map);
+    </script>
 </body>
 </html>

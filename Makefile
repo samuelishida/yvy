@@ -44,8 +44,8 @@ rebuild: stop-all
 
 # Remover todos os volumes e reconstruir tudo
 clean:
-	docker-compose down -v
-	docker-compose build
+	docker-compose down --remove-orphans
+	rm -rf ./mongo_data
 
 # Executar todos os serviços
 run:

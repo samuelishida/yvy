@@ -1,11 +1,7 @@
-# Frontend (Flask App) - app_frontend.py
 import requests
 import datetime
 import folium
 from flask import Flask, render_template
-from folium.plugins import HeatMap
-
-
 
 # Configuração do Flask
 app = Flask(__name__)
@@ -46,17 +42,17 @@ def map_view():
     for item in data:
         year = datetime.datetime.fromisoformat(item['timestamp']).year
 
-        # Determine the color based on the year
-        color = ''
+        # Determine the color based on the year with a default value
         if year >= 2020:
-            color = 'orange'  # Transparent orange for recent data
+            color = 'orange'  # Recent deforestation
         elif 2010 <= year < 2020:
-            color = 'yellow'
+            color = 'yellow'  # Deforestation up to 2020
         elif 2000 <= year < 2010:
-            color = 'green'
+            color = 'green'   # Older deforestation
         else:
-            color = 'darkgreen'
+            color = 'darkgreen'  # Vegetação Nativa or before 2000
 
+        # Add the marker with a popup displaying relevant data
         folium.CircleMarker(
             location=(item['lat'], item['lon']),
             radius=7,
@@ -64,14 +60,12 @@ def map_view():
             fill=True,
             fill_color=color,
             fill_opacity=0.6
-        ).add_to(folium_map)
+        ).add_to(folium_map).add_child(folium.Popup(f"<b>{item['name']}</b><br>Year: {year}<br>Coordinates: ({item['lat']}, {item['lon']})"))
 
     # Render the map as HTML
     map_html = folium_map._repr_html_()
     return render_template('map.html', map_html=map_html)
 
-
 if __name__ == "__main__":
-    # Rodar o aplicativo Flask
+    # Run the Flask app
     app.run(host='0.0.0.0', port=5001)
-

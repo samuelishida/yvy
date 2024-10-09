@@ -6,11 +6,11 @@ import rasterio
 import pymongo
 import zipfile
 import os
+import re
 from flask import Flask, jsonify, request, abort
 from flask_pymongo import PyMongo
 from multiprocessing import Pool, cpu_count
 from flask_cors import CORS
-
 
 # Configuração do Flask
 app = Flask(__name__)
@@ -53,7 +53,7 @@ def parse_qml(file_path):
     tree = ET.parse(file_path)
     root = tree.getroot()
     color_legend = {}
-    
+
     for entry in root.findall(".//paletteEntry"):
         value = entry.get('value')
         color = entry.get('color')
@@ -63,7 +63,7 @@ def parse_qml(file_path):
                 'color': color,
                 'label': label,
             }
-    
+
     return color_legend
 
 # Função para ler o arquivo TIF e extrair coordenadas
@@ -73,8 +73,8 @@ def parse_tif(file_path):
         band1 = dataset.read(1)  # Lê o primeiro canal
         rows, cols = band1.shape
 
-        for row in range(0, rows, 50):  # Reduzir o salto para aumentar o nível de detalhe
-            for col in range(0, cols, 50):  # Reduzir o salto para aumentar o nível de detalhe
+        for row in range(0, rows, 50):  # Ajuste o passo conforme necessário
+            for col in range(0, cols, 50):
                 value = band1[row, col]
                 if value != dataset.nodata:  # Verifica se o valor não é um valor nulo
                     # Converter a posição do pixel para coordenadas geográficas
@@ -87,82 +87,132 @@ def parse_tif(file_path):
 
     return coordinates
 
-# Função para processar cada coordenada e verificar/inserir no MongoDB
 def process_coordinate_batch(args):
     coordinates_batch, color_legend = args
+    batch_size = 1000  # Ajuste o tamanho do lote conforme necessário
     batch_data = []
+    total_inserted = 0
+    total_duplicates = 0
+
     for coord in coordinates_batch:
         value = coord['value']
         if value in color_legend:
+            label = color_legend[value]['label']
+            # Extrai o ano do label
+            match = re.search(r'(\d{4})', label)
+            if match:
+                year = int(match.group(1))
+            else:
+                year = None  # Ano desconhecido
             data = {
-                "name": color_legend[value]['label'],
+                "name": label,
                 "clazz": "Desmatamento",
-                "periods": "N/A",
+                "periods": year,
                 "source": "TerraBrasilis",
-                "color": color_legend[value]['color'],  # Inclui a cor diretamente do color_legend
+                "color": color_legend[value]['color'],
                 "lat": coord['lat'],
                 "lon": coord['lon'],
                 "timestamp": datetime.datetime.now()
             }
+
             batch_data.append(data)
 
+            if len(batch_data) >= batch_size:
+                try:
+                    result = mongo.db.deforestation_data.insert_many(batch_data, ordered=False)
+                    total_inserted += len(result.inserted_ids)
+                    print(f"{total_inserted} documentos inseridos no MongoDB.")
+                except pymongo.errors.BulkWriteError as e:
+                    # Conta o número de erros de chaves duplicadas
+                    write_errors = e.details.get('writeErrors', [])
+                    total_duplicates += len(write_errors)
+                    total_inserted += len(batch_data) - len(write_errors)
+                    print(f"{total_inserted} documentos inseridos, {total_duplicates} duplicatas ignoradas.")
+                batch_data = []  # Reinicia o batch_data
+
+    # Insere quaisquer dados restantes
     if batch_data:
-        operations = []
-        for data in batch_data:
-            operations.append(
-                pymongo.UpdateOne(
-                    {"name": data["name"], "lat": data["lat"], "lon": data["lon"]},
-                    {"$setOnInsert": data},
-                    upsert=True
-                )
-            )
-        if operations:
-            mongo.db.deforestation_data.bulk_write(operations, ordered=False)
-        print(f"{len(batch_data)} documents processed and upserted into MongoDB.")
+        try:
+            result = mongo.db.deforestation_data.insert_many(batch_data, ordered=False)
+            total_inserted += len(result.inserted_ids)
+            print(f"{total_inserted} documentos inseridos no MongoDB.")
+        except pymongo.errors.BulkWriteError as e:
+            write_errors = e.details.get('writeErrors', [])
+            total_duplicates += len(write_errors)
+            total_inserted += len(batch_data) - len(write_errors)
+            print(f"{total_inserted} documentos inseridos, {total_duplicates} duplicatas ignoradas.")
+
+    print(f"Processamento concluído: {total_inserted} inserções, {total_duplicates} duplicatas.")
 
 
 # Função para dividir o trabalho entre múltiplos processos
 def insert_data_to_mongo_parallel(color_legend, coordinates):
-    num_processes = max(1, cpu_count() // 2 + 2)
+    num_processes = max(1, cpu_count() // 2  +  cpu_count() // 3)
     chunk_size = len(coordinates) // num_processes
     coordinate_batches = [coordinates[i * chunk_size: (i + 1) * chunk_size] for i in range(num_processes)]
-    
+
     with Pool(processes=num_processes) as pool:
         pool.map(process_coordinate_batch, [(batch, color_legend) for batch in coordinate_batches])
 
-# Rotas simples
+# Rota principal
 @app.route('/')
 def home():
     return jsonify({"message": "API do backend de desmatamento"})
 
+# Rota para obter os dados
 @app.route('/data')
 def get_data():
-    try:
-        ne_lat = float(request.args.get('ne_lat', None))
-        ne_lng = float(request.args.get('ne_lng', None))
-        sw_lat = float(request.args.get('sw_lat', None))
-        sw_lng = float(request.args.get('sw_lng', None))
-    except (TypeError, ValueError):
-        return abort(400, description="Invalid or missing query parameters. Please provide valid 'ne_lat', 'ne_lng', 'sw_lat', and 'sw_lng'.")
+    # Recupera os parâmetros de consulta, se houver
+    ne_lat = request.args.get('ne_lat', None)
+    ne_lng = request.args.get('ne_lng', None)
+    sw_lat = request.args.get('sw_lat', None)
+    sw_lng = request.args.get('sw_lng', None)
 
-    query = {
-        "lat": {"$lte": ne_lat, "$gte": sw_lat},
-        "lon": {"$lte": ne_lng, "$gte": sw_lng}
-    }
+    query = {}
 
-    data = mongo.db.deforestation_data.find(query).limit(1000)  # Limit to 1000 items per request
+    if ne_lat and ne_lng and sw_lat and sw_lng:
+        try:
+            ne_lat = float(ne_lat)
+            ne_lng = float(ne_lng)
+            sw_lat = float(sw_lat)
+            sw_lng = float(sw_lng)
+            # Cria a query para filtrar os dados com base nos parâmetros fornecidos
+            query = {
+                "lat": {"$lte": ne_lat, "$gte": sw_lat},
+                "lon": {"$lte": ne_lng, "$gte": sw_lng}
+            }
+        except (TypeError, ValueError):
+            return abort(400, description="Parâmetros de consulta inválidos. Forneça 'ne_lat', 'ne_lng', 'sw_lat' e 'sw_lng' válidos.")
+
+    # Consulta o MongoDB
+    data_cursor = mongo.db.deforestation_data.find(query)
+    data_records = list(data_cursor)
+
+    # Converte os dados para o formato adequado para JSON
     return jsonify([{
-        "name": item["name"],
-        "lat": item["lat"],
-        "lon": item["lon"],
-        "color": item["color"],
-        "timestamp": item["timestamp"].isoformat()
-    } for item in data])
-
+        "name": item.get("name"),
+        "lat": item.get("lat"),
+        "lon": item.get("lon"),
+        "color": item.get("color"),
+        "timestamp": item.get("timestamp").isoformat() if item.get("timestamp") else None,
+        "periods": item.get("periods"),
+        "source": item.get("source")
+    } for item in data_records])
 
 if __name__ == "__main__":
     # Baixar e extrair os arquivos TIF e QML, se necessário
     download_and_extract_data()
+
+    # mongo.db.deforestation_data.drop_index('name_lat_lon_index')
+
+    # Criar o índice composto antes de inserir os dados
+    print("Criando índice nos campos 'name', 'lat' e 'lon'...")
+    mongo.db.deforestation_data.create_index(
+        [("name", pymongo.ASCENDING), ("lat", pymongo.ASCENDING), ("lon", pymongo.ASCENDING)],
+        name="name_lat_lon_index",
+        unique=True
+    )
+    print("Índice criado com sucesso.")
 
     # Ler legenda do arquivo QML
     color_legend = parse_qml("/app/prodes_brasil_2023.qml")
@@ -170,13 +220,8 @@ if __name__ == "__main__":
     # Ler coordenadas do arquivo TIF
     coordinates = parse_tif("/app/prodes_brasil_2023.tif")
 
-    # Verificar se o MongoDB já possui dados inseridos
-    existing_count = mongo.db.deforestation_data.count_documents({})
-    if existing_count == 0:
-        # Inserir dados da base QML e TIF no MongoDB em paralelo
-        insert_data_to_mongo_parallel(color_legend, coordinates)
-    else:
-        print(f"MongoDB já contém {existing_count} documentos. Nenhuma inserção adicional necessária.")
-    
+    # Inserir dados no MongoDB em paralelo
+    insert_data_to_mongo_parallel(color_legend, coordinates)
+
     # Rodar o aplicativo Flask
     app.run(host='0.0.0.0', port=5000)
