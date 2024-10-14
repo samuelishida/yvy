@@ -46,6 +46,16 @@ build_frontend:
   only:
     - main
 
+setup_network:
+  stage: build
+  image: docker:24.0.2
+  services:
+    - docker:24.0.2-dind
+  script:
+    - docker network create $APP_NETWORK || echo "Rede já existente."
+  only:
+    - main
+
 # Etapa de Deploy e Inicialização dos Containers
 deploy_application:
   stage: deploy
