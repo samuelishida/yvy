@@ -46,16 +46,6 @@ build_frontend:
   only:
     - main
 
-setup_network:
-  stage: build
-  image: docker:24.0.2
-  services:
-    - docker:24.0.2-dind
-  script:
-    - docker network create $APP_NETWORK || echo "Rede já existente."
-  only:
-    - main
-
 # Etapa de Deploy e Inicialização dos Containers
 deploy_application:
   stage: deploy
@@ -64,6 +54,7 @@ deploy_application:
     - docker:24.0.2-dind
   script:
     # Inicializando o MongoDB
+    - docker network create $APP_NETWORK || echo "Rede já existente."
     - docker run --name mongo --network $APP_NETWORK -e MONGO_INITDB_ROOT_USERNAME=root -e MONGO_INITDB_ROOT_PASSWORD=example -v $CI_PROJECT_DIR/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro -v $CI_PROJECT_DIR/mongo_data:/data/db -p 27017:27017 mongo:latest
     
     # Build e execução do backend
@@ -74,6 +65,6 @@ deploy_application:
     - docker build -t frontend ./frontend
     - docker run --name frontend --network $APP_NETWORK -p 3000:3000 frontend
   dependencies:
-    - setup_network
+    - build_frontend
   only:
     - main
