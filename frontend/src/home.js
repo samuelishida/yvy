@@ -4,7 +4,7 @@ const Home = () => {
   return (
     <div className="iframe-container">
       <iframe
-        src="/index.html"
+        src="/index-one.html"
         width="100%"
         height="1000"
         style={{ border: 'none' }}

@@ -1,44 +1,23 @@
-# Stage 1: Build the React App
-FROM node:18-slim as build
-
-# Definir o diretório de trabalho
+# Etapa de Build do React
+FROM node:18 AS build
 WORKDIR /app
-
-# Copiar arquivos package.json e package-lock.json para instalar dependências
-COPY package.json ./
-
-# Instalar as dependências necessárias
+COPY ./package.json ./ 
 RUN npm install
-
-# Copiar todos os arquivos do projeto para o container
-COPY . .
-
-# Construir a aplicação para produção
+COPY . . 
 RUN npm run build
 
-# Stage 2: Serve the App with NGINX or Serve
-FROM node:18-slim
-
-# Diretório de trabalho para o servidor
+# Etapa do servidor Express
+FROM node:18
 WORKDIR /app
+# Copia a pasta `build` gerada pelo React para o diretório `/app`
+COPY --from=build /app/build ./build
+# Copia o arquivo `server.js` para o diretório `/app`
+COPY ./build/server.js ./
+# Instala dependências necessárias (incluindo Express)
+RUN npm install express
 
-# Copiar o build da aplicação React para o container
-COPY --from=build /app/build /app/build
-
-# Instalar o pacote Serve globalmente para servir o build da aplicação
-RUN npm install -g serve
-
-# Copiar todos os arquivos do projeto para o container
-COPY . .
-
-# Copiar o script de entrada
-COPY docker-entrypoint.sh /docker-entrypoint.sh
-
-# Dar permissão de execução ao script de entrada
-RUN chmod +x /docker-entrypoint.sh
-
-# Expor a porta 3000
+# Porta do servidor
 EXPOSE 3000
 
-# Definir o script de entrada
-ENTRYPOINT ["/docker-entrypoint.sh"]
+# Comando para rodar o servidor Express
+CMD ["node", "server.js"]
