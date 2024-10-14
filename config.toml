@@ -1,0 +1,18 @@
+concurrent = 1
+check_interval = 0
+shutdown_timeout = 0
+
+[session_server]
+  session_timeout = 1800
+
+[[runners]]
+  name = "MSI"
+  url = "https://gitlab.com"
+  id = 41891602
+  token = "glrt-t3_P7dMALWbnkfsm3dECrSH"
+  executor = "docker"
+  [runners.docker]
+    tls_verify = false
+    image = "docker:24.0"
+    privileged = true
+    volumes = ["/cache", "/var/run/docker.sock:/var/run/docker.sock"]
