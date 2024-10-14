@@ -54,15 +54,15 @@ deploy_application:
     - docker:24.0.2-dind
   script:
     # Inicializando o MongoDB
-    - docker run -d --name mongo --network $APP_NETWORK -e MONGO_INITDB_ROOT_USERNAME=root -e MONGO_INITDB_ROOT_PASSWORD=example -v $CI_PROJECT_DIR/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro -v $CI_PROJECT_DIR/mongo_data:/data/db -p 27017:27017 mongo:latest
+    - docker run --name mongo --network $APP_NETWORK -e MONGO_INITDB_ROOT_USERNAME=root -e MONGO_INITDB_ROOT_PASSWORD=example -v $CI_PROJECT_DIR/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro -v $CI_PROJECT_DIR/mongo_data:/data/db -p 27017:27017 mongo:latest
     
     # Build e execução do backend
     - docker build -t backend ./backend
-    - docker run -d --name backend --network $APP_NETWORK -e MONGO_URI=mongodb://root:example@mongo:27017/ -v $CI_PROJECT_DIR/backend:/app -p 5000:5000 backend
+    - docker run --name backend --network $APP_NETWORK -e MONGO_URI=mongodb://root:example@mongo:27017/ -v $CI_PROJECT_DIR/backend:/app -p 5000:5000 backend
     
     # Build e execução do frontend
     - docker build -t frontend ./frontend
-    - docker run -d --name frontend --network $APP_NETWORK -p 3000:3000 frontend
+    - docker run --name frontend --network $APP_NETWORK -p 3000:3000 frontend
   dependencies:
     - setup_network
   only:
