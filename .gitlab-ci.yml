@@ -12,6 +12,8 @@ setup_environment:
   services:
     - docker:24.0.2-dind
   before_script:
+    # Instalar curl antes de baixar docker-compose
+    - apk add --no-cache curl
     # Baixar e instalar o docker-compose diretamente como binário
     - curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
     - chmod +x /usr/local/bin/docker-compose
@@ -27,6 +29,8 @@ deploy_application:
   services:
     - docker:24.0.2-dind
   before_script:
+    # Instalar curl antes de baixar docker-compose
+    - apk add --no-cache curl
     # Baixar e instalar o docker-compose diretamente como binário
     - curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
     - chmod +x /usr/local/bin/docker-compose
