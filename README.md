@@ -2,7 +2,7 @@
 
 ## Getting Started
 
-Este repositório é o projeto Yvy, um aplicativo de observabilidade ambiental para monitorar o desmatamento no Brasil, utilizando Flask, Leaflet, MongoDB e dados do TerraBrasilis.
+Este repositório é o projeto Yvy, um aplicativo de observabilidade ambiental para monitorar o desmatamento no Brasil, utilizando Flask, Leaflet, MongoDB e dados do Yvy.
 
 ### Pré-requisitos
 
@@ -20,16 +20,12 @@ Este repositório é o projeto Yvy, um aplicativo de observabilidade ambiental p
 
 3. Configure o Docker e inicialize os containers:
    ```bash
-   make
+   make rebuild
    ```
 
 ### Uso
 
-Após inicializar o Docker, o aplicativo estará disponível em `http://localhost:5000`.
-
-- Acesse a página inicial para informações básicas.
-- Navegue até `/dashboard` para visualizar os dados.
-- Acesse `/map` para visualizar o mapa do TerraBrasilis.
+Após inicializar o Docker, o aplicativo estará disponível em `http://localhost:3000`.
 
 #### Acessando o MongoDB
 
@@ -46,13 +42,13 @@ db.yvy_data.countDocuments({})
 
 ### Estrutura do Projeto
 
-- `backend/backend.py`: Script principal do Flask para o backend.
-- `frontend/frontend.py`: Script principal do Flask para o frontend.
-- `frontend/templates/`: Contém os arquivos HTML renderizados pelas rotas do Flask.
-- `frontend/static/`: Arquivos estáticos como CSS e JavaScript.
-- `docker-compose.yml`: Configuração do Docker para facilitar o desenvolvimento.
-- `requirements.txt`: Lista de dependências do Python.
-- `Makefile`: Scripts para automatizar a construção e execução dos serviços (frontend e backend).
+- `backend/backend.py`:    Script principal do Flask para o backend.
+- `frontend/src/index.js`: Script principal do React para o frontend.
+- `frontend/public/`:      Contém os arquivos HTML renderizados pelas rotas do React.
+- `frontend/src/`:         Arquivos estáticos como CSS e JavaScript.
+- `docker-compose.yml`:    Configuração do Docker para facilitar o desenvolvimento.
+- `requirements.txt`:      Lista de dependências do Python.
+- `Makefile`:              Scripts para automatizar a construção e execução dos serviços (frontend e backend).
 
 ### Automação com Makefile
 

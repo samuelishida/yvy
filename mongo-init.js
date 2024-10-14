@@ -1,5 +1,5 @@
-// Conecte-se ao banco de dados "terrabrasilis_data" (será criado automaticamente se não existir)
-db = db.getSiblingDB('terrabrasilis_data');
+// Conecte-se ao banco de dados "Yvy_data" (será criado automaticamente se não existir)
+db = db.getSiblingDB('yvy_data');
 
 // Crie um usuário com permissões de leitura e escrita
 db.createUser({
@@ -8,7 +8,7 @@ db.createUser({
   roles: [
     {
       role: "readWrite",
-      db: "terrabrasilis_data"
+      db: "yvy_data"
     }
   ]
 });

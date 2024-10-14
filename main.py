@@ -10,7 +10,7 @@ from folium.plugins import HeatMap
 
 # Configuração do Flask
 app = Flask(__name__)
-app.config["MONGO_URI"] = "mongodb://root:example@mongo:27017/terrabrasilis_data"
+app.config["MONGO_URI"] = "mongodb://root:example@mongo:27017/Yvy_data"
 mongo = PyMongo(app)
 
 # Função para ler o arquivo QML e extrair a legenda

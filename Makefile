@@ -31,11 +31,13 @@ build: stop-frontend stop-backend
 rebuild-frontend: stop-frontend
 	docker-compose rm -f frontend
 	docker-compose build frontend
+	docker-compose up -d frontend
 
 # Reconstruir apenas o backend (derruba e reconstrói)
 rebuild-backend: stop-backend
 	docker-compose rm -f backend
 	docker-compose build backend
+	docker-compose up -d backend
 
 # Reconstruir todos os serviços (frontend, backend, etc.)
 rebuild: stop-all

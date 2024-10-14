@@ -1,0 +1,9 @@
+.btn-custom {
+    background-color: #a9c8a7; /* Um tom de verde parecido com a imagem fornecida */
+    border-color: #a9c8a7; /* Ajusta também a cor da borda */
+    color: #ffffff; /* Texto branco */
+}
+.btn-custom:hover {
+    background-color: #8fb98c; /* Um tom de verde um pouco mais escuro para o hover */
+    border-color: #8fb98c;
+}

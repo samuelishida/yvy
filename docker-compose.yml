@@ -18,15 +18,14 @@ services:
       resources:
         limits:
           cpus: '12.0'
-          memory: 24G
+          memory: 8G
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
     container_name: frontend
     ports:
-      - "5001:5001"
-    volumes:
-      - ./frontend:/app
+      - "3000:3000"
     depends_on:
       - backend
     restart: always
@@ -55,7 +54,7 @@ services:
       resources:
         limits:
           cpus: '12.0'
-          memory: 24G
+          memory: 8G
 
 networks:
   app-network:
