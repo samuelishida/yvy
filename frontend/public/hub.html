@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <title>Yvy - Visualização de Mapas e Notícias Ambientais</title>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        .btn-custom {
+            background-color: #a9c8a7; 
+            border-color: #a9c8a7; 
+            color: #ffffff; 
+            margin: 5px;
+        }
+        .btn-custom:hover {
+            background-color: #8fb98c; 
+            border-color: #8fb98c;
+        }
+        .iframe-container {
+            display: none;
+            width: 100%;
+            height: calc(100vh - 80px);
+            position: absolute;
+            top: 80px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+        .iframe-container.active {
+            display: block;
+        }
+        .jumbotron {
+            margin-bottom: 0;
+        }
+        .news-section-overview {
+            margin-top: 50px;
+        }
+        .news-card {
+            margin: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="jumbotron text-center">
+        <h1 class="display-4">Bem-vindo ao Yvy!</h1>
+        <p class="lead">Visualize dados ambientais de forma fácil e interativa.</p>
+        <div class="d-flex flex-wrap justify-content-center mt-4">
+            <button class="btn btn-custom btn-lg mb-3" onclick="showIframe('iframe-air-quality')">Ver Mapa de Qualidade do Ar</button>
+            <button class="btn btn-custom btn-lg mb-3" onclick="showIframe('iframe-forest')">Ver Mapa de Florestas Global Forest Watch</button>
+            <button class="btn btn-custom btn-lg mb-3" onclick="showIframe('iframe-temperature')">Ver Mapa de Temperatura OpenWeatherMap</button>
+            <a class="btn btn-custom btn-lg mb-3" href="https://worldview.earthdata.nasa.gov/" target="_blank" role="button">Ver Mapa de Queimadas da NASA</a>
+            <button class="btn btn-custom btn-lg mb-3" onclick="showIframe('iframe-terrabrasilis')">Ver Mapa TerraBrasilis</button>
+            <button class="btn btn-custom btn-lg mb-3" onclick="showIframe('iframe-sea-level')">Visualizar Mapa de Nível do Mar - Climate Central</button>
+        </div>
+    </div>
+
+    <!-- Iframes para exibir os mapas -->
+    <div id="iframe-air-quality" class="iframe-container">
+        <iframe src="https://waqi.info/#/c/-14.636/-58.315/5.1z" width="100%" height="100%" style="border: 0;" title="Mapa de Qualidade do Ar"></iframe>
+    </div>
+    <div id="iframe-forest" class="iframe-container">
+        <iframe src="https://www.globalforestwatch.org/map/?lang=pt_BR&map=eyJjZW50ZXIiOnsibGF0IjotMTQuODM5NDU2MDI0MjIzNDQsImxuZyI6LTU3LjMxMDExNzE1MDUyODc2fSwiem9vbSI6NC4xOTIyMzU2Njc2Njc4MDh9" width="100%" height="100%" style="border: 0;" title="Mapa de Florestas Global Forest Watch"></iframe>
+    </div>
+    <div id="iframe-temperature" class="iframe-container">
+        <iframe src="https://openweathermap.org/weathermap?basemap=map&cities=true&layer=temperature&lat=-22.8042&lon=-47.0668&zoom=5" width="100%" height="100%" style="border: 0;" title="Mapa de Temperatura OpenWeatherMap"></iframe>
+    </div>
+    <div id="iframe-terrabrasilis" class="iframe-container">
+        <iframe src="https://terrabrasilis.dpi.inpe.br/app/map/deforestation?hl=pt_br" width="100%" height="100%" style="border: 0;" title="Mapa TerraBrasilis"></iframe>
+    </div>
+    <div id="iframe-sea-level" class="iframe-container">
+        <iframe allow="fullscreen 'src'" frameBorder="0" src="https://coastal.climatecentral.org/embed/map/10/-43.3654/-22.7935/?theme=water_level&map_type=water_level_above_mhhw&basemap=roadmap&contiguous=true&elevation_model=best_available&water_level=1.0&water_unit=m" width="100%" height="100%" title="Climate Central | Land below 1.0 meters of water"></iframe>
+    </div>
+
+    <script>
+        function showIframe(iframeId) {
+            // Esconder todos os iframes
+            const iframes = document.querySelectorAll('.iframe-container');
+            iframes.forEach(iframe => {
+                iframe.classList.remove('active');
+            });
+
+            // Mostrar o iframe selecionado
+            document.getElementById(iframeId).classList.add('active');
+        }
+    </script>
+</body>
+</html>

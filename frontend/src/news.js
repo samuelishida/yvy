@@ -1,17 +1,17 @@
 import React from 'react';
 
-const Home = () => {
+const News = () => {
   return (
     <div className="iframe-container">
       <iframe
-        src="/hub.html"
+        src="/news.html"
         width="100%"
         height="1000"
         style={{ border: 'none' }}
-        title="Yvy Home"
+        title="Notícias"
       />
     </div>
   );
 };
 
-export default Home;
+export default News;
