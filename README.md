@@ -1,14 +1,6 @@
 # Yvy
 
-## Getting Started
-
-Este repositório é o projeto Yvy, um aplicativo de observabilidade ambiental para monitorar o desmatamento no Brasil, utilizando Flask, Leaflet, MongoDB e dados do Yvy.
-
-### Pré-requisitos
-
-- Python 3.9+
-- Docker e Docker Compose
-- Git
+Este repositório é o projeto Yvy, um aplicativo de observabilidade ambiental para monitorar o desmatamento no Brasil, utilizando Flask, React, MongoDB e dados do Yvy.
 
 ### Instalação
 
@@ -42,13 +34,15 @@ db.yvy_data.countDocuments({})
 
 ### Estrutura do Projeto
 
-- `backend/backend.py`:    Script principal do Flask para o backend.
+- `backend/backend.py`: Script principal do Flask para o backend.
+- `frontend/public/index.html`: Arquivo HTML principal para o frontend.
 - `frontend/src/index.js`: Script principal do React para o frontend.
-- `frontend/public/`:      Contém os arquivos HTML renderizados pelas rotas do React.
-- `frontend/src/`:         Arquivos estáticos como CSS e JavaScript.
-- `docker-compose.yml`:    Configuração do Docker para facilitar o desenvolvimento.
-- `requirements.txt`:      Lista de dependências do Python.
-- `Makefile`:              Scripts para automatizar a construção e execução dos serviços (frontend e backend).
+- `frontend/src/home.js`: Componente Home do React que renderiza o conteúdo do `index.html`.
+- `frontend/src/dashboard.js`: Componente Dashboard do React.
+- `frontend/src/`: Arquivos estáticos como CSS e JavaScript.
+- `docker-compose.yml`: Configuração do Docker para facilitar o desenvolvimento.
+- `requirements.txt`: Lista de dependências do Python.
+- `Makefile`: Scripts para automatizar a construção e execução dos serviços (frontend e backend).
 
 ### Automação com Makefile
 
@@ -76,7 +70,6 @@ O projeto inclui um Makefile para facilitar o gerenciamento dos serviços. Aqui 
   - `make run` - Inicializa todos os serviços.
   - `make run-frontend` - Inicializa o frontend em segundo plano.
   - `make run-backend` - Inicializa o backend em segundo plano.
-  
 
 ### Contribuindo
 
