@@ -17,13 +17,10 @@ Este repositório é o projeto Yvy, um aplicativo de observabilidade ambiental p
    git clone https://gitlab.com/samuelishida/yvy.git
    cd yvy
    ```
-2. Baixe e extraia a base de dados do TerraBrasilis:
-   - Acesse o link [TerraBrasilis PRODES Brasil](https://terrabrasilis.dpi.inpe.br/download/dataset/brasil-prodes/raster/prodes_brasil_2023.zip) para baixar a base de dados.
-   - Extraia o arquivo ZIP na pasta do projeto.
 
 3. Configure o Docker e inicialize os containers:
    ```bash
-   sudo docker-compose up --build
+   make
    ```
 
 ### Uso
@@ -31,8 +28,8 @@ Este repositório é o projeto Yvy, um aplicativo de observabilidade ambiental p
 Após inicializar o Docker, o aplicativo estará disponível em `http://localhost:5000`.
 
 - Acesse a página inicial para informações básicas.
-- Navegue até `/dashboard` para visualizar os dados de desmatamento.
-- Acesse `/map` para visualizar o mapa interativo com sobreposição de dados.
+- Navegue até `/dashboard` para visualizar os dados.
+- Acesse `/map` para visualizar o mapa do TerraBrasilis.
 
 #### Acessando o MongoDB
 
@@ -42,9 +39,9 @@ make mongo-access
 
 show dbs
 
-use terrabrasilis_data
+use yvy_data
 
-db.deforestation_data.countDocuments({})
+db.yvy_data.countDocuments({})
 ```
 
 ### Estrutura do Projeto
