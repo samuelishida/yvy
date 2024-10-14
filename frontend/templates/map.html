@@ -2,127 +2,17 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Mapa de Desmatamento Simplificado</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa de Desmatamento no Brasil</title>
     <style>
-        html, body {
-            height: 100%;
-            margin: 0;
-        }
-        #map {
-            height: 100%;
+        iframe {
             width: 100%;
-        }
-        .legend {
-            background: white;
-            padding: 10px;
-            line-height: 18px;
-            color: #555;
-        }
-        .legend i {
-            width: 18px;
-            height: 18px;
-            float: left;
-            margin-right: 8px;
-            opacity: 0.7;
+            height: 100vh;
+            border: none;
         }
     </style>
-
-    <!-- Incluindo o Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-
-    <!-- Incluindo o Leaflet JS -->
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-    <!-- Incluindo o Leaflet.markercluster CSS e JS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css"/>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css"/>
-    <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
 </head>
 <body>
-    <div id="map"></div>
-
-    <script>
-        // Inicializa o mapa centrado em Brasília, Brasil
-        var map = L.map('map').setView([-15.7801, -47.9292], 4);
-
-        // Adiciona a camada de tiles do OpenStreetMap
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors'
-        }).addTo(map);
-
-        // Cria um grupo de clusters para os marcadores
-        var markers = L.markerClusterGroup();
-
-        // Define as cores para cada categoria
-        var categoryColors = {
-            'Desmatamento até 2000': '#006400', // Verde escuro
-            'Desmatamento até 2010': '#FFFF00', // Amarelo
-            'Desmatamento até 2020': '#FFA500', // Laranja
-            'Desmatamento após 2020': '#FF0000', // Vermelho
-            'Vegetação Nativa': '#32CD32' // Verde claro
-        };
-
-        // Função para obter a cor com base no ano
-        function getColor(year) {
-            if (year >= 2020) {
-                return categoryColors['Desmatamento após 2020'];
-            } else if (year >= 2010) {
-                return categoryColors['Desmatamento até 2020'];
-            } else if (year >= 2000) {
-                return categoryColors['Desmatamento até 2010'];
-            } else if (year < 2000 && year !== null) {
-                return categoryColors['Desmatamento até 2000'];
-            } else {
-                return categoryColors['Vegetação Nativa'];
-            }
-        }
-
-        // Busca e adiciona todos os dados do backend
-        fetch("http://127.0.0.1:5000/data")
-            .then(response => response.json())
-            .then(data => {
-                console.log('Dados recebidos:', data);
-
-                // Adiciona marcadores ao cluster para cada ponto de dados
-                data.forEach(item => {
-                    const year = item.periods;
-                    const color = getColor(year);
-
-                    var circleMarker = L.circleMarker([item.lat, item.lon], {
-                        radius: 4,
-                        color: color,
-                        fillColor: color,
-                        fillOpacity: 0.6
-                    }).bindPopup(`
-                        <b>${item.name}</b><br>
-                        Ano: ${year || 'Desconhecido'}<br>
-                        Coordenadas: ${item.lat.toFixed(5)}, ${item.lon.toFixed(5)}<br>
-                        Fonte: ${item.source}
-                    `);
-
-                    markers.addLayer(circleMarker);
-                });
-
-                // Adiciona o grupo de clusters ao mapa
-                map.addLayer(markers);
-            })
-            .catch(error => console.error('Erro ao buscar os dados:', error));
-
-        // Adiciona uma legenda ao mapa
-        var legend = L.control({position: 'bottomright'});
-
-        legend.onAdd = function (map) {
-            var div = L.DomUtil.create('div', 'legend');
-            div.innerHTML += '<h4>Legenda</h4>';
-            for (var category in categoryColors) {
-                div.innerHTML +=
-                    '<i style="background:' + categoryColors[category] + '"></i> ' +
-                    category + '<br>';
-            }
-            return div;
-        };
-
-        legend.addTo(map);
-    </script>
+    <iframe src='https://terrabrasilis.dpi.inpe.br/app/map/deforestation?hl=en'></iframe>
 </body>
 </html>
