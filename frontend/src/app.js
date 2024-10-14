@@ -26,15 +26,15 @@ const App = () => {
               <span className="navbar-toggler-icon"></span>
             </button>
             <div className="collapse navbar-collapse" id="navbarNav">
-              <ul className="navbar-nav">
+              <ul className="navbar-nav ms-auto">
                 <li className="nav-item">
-                  <Link className="nav-link" to="/">Home</Link>
+                  <Link className="nav-link" to="/" onClick={() => window.innerWidth < 992 && document.querySelector('.navbar-toggler').click()}>Home</Link>
                 </li>
                 <li className="nav-item">
-                  <Link className="nav-link" to="/Noticias">Notícias</Link>
+                  <Link className="nav-link" to="/Noticias" onClick={() => window.innerWidth < 992 && document.querySelector('.navbar-toggler').click()}>Notícias</Link>
                 </li>
                 <li className="nav-item">
-                  <Link className="nav-link" to="/Dados">Dashboard</Link>
+                  <Link className="nav-link" to="/Dados" onClick={() => window.innerWidth < 992 && document.querySelector('.navbar-toggler').click()}>Dashboard</Link>
                 </li>
               </ul>
             </div>

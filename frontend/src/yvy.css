@@ -2,8 +2,32 @@
     background-color: #a9c8a7; /* Um tom de verde parecido com a imagem fornecida */
     border-color: #a9c8a7; /* Ajusta também a cor da borda */
     color: #ffffff; /* Texto branco */
+    margin-bottom: 10px;
 }
 .btn-custom:hover {
     background-color: #8fb98c; /* Um tom de verde um pouco mais escuro para o hover */
     border-color: #8fb98c;
 }
+/* Para garantir que os itens da navbar estejam alinhados corretamente no desktop */
+.navbar-nav {
+    margin-left: auto;
+  }
+  
+  /* Ajuste para centralizar os botões no mobile */
+  @media (max-width: 992px) {
+    .navbar-collapse {
+      text-align: center;
+    }
+    
+    .nav-item {
+      margin-bottom: 10px; /* Adiciona espaçamento entre os links no mobile */
+    }
+    .navbar-collapse.show {
+        display: block !important; /* Forçar que o menu esteja visível quando expandido */
+      }
+  }
+  
+/* Corrigir o tamanho do iframe para ocupar a altura disponível */
+.iframe-container {
+    height: calc(100vh - 80px); /* Ajustar a altura para ocupar a tela inteira menos o tamanho da navbar */
+  }

@@ -1,17 +1,16 @@
-const express = require('express');
 const path = require('path');
-
+const express = require('express');
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// Serve os arquivos estáticos da pasta build do React
-app.use(express.static(path.join(__dirname, 'build')));
+const buildPath = path.join(__dirname, 'build');
+app.use(express.static(buildPath));
 
-// Para qualquer rota, sirva o index.html
+// Adicione esta rota para capturar todas as requisições que não correspondem a rotas de arquivos estáticos
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(buildPath, 'index.html'));
 });
 
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
