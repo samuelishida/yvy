@@ -17,6 +17,8 @@ setup_environment:
     # Baixar e instalar o docker-compose diretamente como binário
     - curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
     - chmod +x /usr/local/bin/docker-compose
+    # Criar link simbólico para garantir que esteja acessível no PATH
+    - ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
   script:
     - docker-compose -f docker-compose.yml up -d
   only:
@@ -34,6 +36,8 @@ deploy_application:
     # Baixar e instalar o docker-compose diretamente como binário
     - curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
     - chmod +x /usr/local/bin/docker-compose
+    # Criar link simbólico para garantir que esteja acessível no PATH
+    - ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
   script:
     - docker-compose -f docker-compose.yml up -d
   only:
