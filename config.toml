@@ -1,18 +1,53 @@
-concurrent = 1
-check_interval = 0
-shutdown_timeout = 0
+[mongo]
+service = "mongo"
+image = "mongo:latest"
+container_name = "mongo"
+environment = [
+  "MONGO_INITDB_ROOT_USERNAME=root",
+  "MONGO_INITDB_ROOT_PASSWORD=example"
+]
+ports = [
+  "27017:27017"
+]
+volumes = [
+  "./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro",
+  "./mongo_data:/data/db"
+]
+resources_limits_cpus = "1.0"
 
-[session_server]
-  session_timeout = 1800
+[frontend]
+service = "frontend"
+builder = "dockerfile"
+context = "./frontend"
+container_name = "frontend"
+ports = [
+  "3000:3000"
+]
+depends_on = [
+  "backend"
+]
+restart_policy_type = "always"
+resources_limits_cpus = "1.0"
 
-[[runners]]
-  name = "MSI"
-  url = "https://gitlab.com"
-  id = 41891602
-  token = "glrt-t3_P7dMALWbnkfsm3dECrSH"
-  executor = "docker"
-  [runners.docker]
-    tls_verify = false
-    image = "docker:24.0"
-    privileged = true
-    volumes = ["/cache", "/var/run/docker.sock:/var/run/docker.sock"]
+[backend]
+service = "backend"
+builder = "dockerfile"
+context = "./backend"
+container_name = "backend"
+environment = [
+  "MONGO_URI=mongodb://root:example@mongo:27017/"
+]
+ports = [
+  "5000:5000"
+]
+volumes = [
+  "./backend:/app"
+]
+depends_on = [
+  "mongo"
+]
+resources_limits_cpus = "1.0"
+
+[network]
+driver = "bridge"
+name = "app-network"
