@@ -27,3 +27,4 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "Build do frontend concluído com sucesso!"
+
