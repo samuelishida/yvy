@@ -1,4 +1,4 @@
-# Define os alvos (targets)
+#@@@
 .PHONY: build-frontend build-backend build-both rebuild-frontend rebuild-backend rebuild-all clean-volumes stop-frontend stop-backend stop-all run mongo-access install-docker
 
 # Instalar o Docker (baseado em sistema Debian/Ubuntu)
