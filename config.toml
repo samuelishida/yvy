@@ -3,7 +3,7 @@
 # Configuração do Frontend
 [frontend]
 service = "frontend"
-builder = "NODE"
+builder = "NIXPACKS"
 buildCommand = "chmod +x build-frontend.sh && ./build-frontend.sh"
 startCommand = "chmod +x run-frontend.sh && ./run-frontend.sh"
 ports = [
