@@ -1,16 +1,16 @@
-const path = require('path');
 const express = require('express');
+const path = require('path');
 const app = express();
 
-const buildPath = path.join(__dirname, 'build');
-app.use(express.static(buildPath));
+// Servir os arquivos estáticos do build do React
+app.use(express.static(path.join(__dirname, 'build')));
 
-// Adicione esta rota para capturar todas as requisições que não correspondem a rotas de arquivos estáticos
 app.get('*', (req, res) => {
-  res.sendFile(path.join(buildPath, 'index.html'));
+  res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });
 
-const PORT = process.env.PORT || 3000;
+// Porta padrão do Railway
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Servidor frontend rodando na porta ${PORT}`);
 });

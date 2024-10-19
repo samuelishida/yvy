@@ -4,13 +4,10 @@
 [frontend]
 service = "frontend"
 builder = "NIXPACKS"
-buildCommand = "npm install && npm run build"
-startCommand = "npm start"
+buildCommand = "cd frontend && npm install && npm run build"
+startCommand = "cd frontend && npm start"
 ports = [
   "3000:3000"
-]
-depends_on = [
-  "backend"
 ]
 restart_policy_type = "always"
 resources_limits_cpus = "1.0"
