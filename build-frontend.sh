@@ -1,4 +1,5 @@
 #!/bin/bash
+#
 
 # Definir o diretório base do frontend
 FRONTEND_DIR="./frontend"
