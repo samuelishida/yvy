@@ -4,8 +4,8 @@
 [frontend]
 service = "frontend"
 builder = "NIXPACKS"
-buildCommand = "chmod +x build-frontend.sh && ./build-frontend.sh"
-startCommand = "chmod +x run-frontend.sh && ./run-frontend.sh"
+buildCommand = "npm install && npm run build"
+startCommand = "npm start"
 ports = [
   "3000:3000"
 ]
