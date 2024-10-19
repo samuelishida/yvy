@@ -20,8 +20,8 @@ resources_limits_cpus = "1.0"
 [frontend]
 service = "frontend"
 builder = "NODE"
-buildCommand = "npm install && npm run build"
-startCommand = "npm start"
+buildCommand = "chmod +x build-frontend.sh && ./build-frontend.sh"
+startCommand = "chmod +x run-frontend.sh && ./run-frontend.sh"
 ports = [
   "3000:3000"
 ]
