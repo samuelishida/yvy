@@ -1,20 +1,4 @@
 # Configuração do MongoDB
-[mongo]
-service = "mongo"
-image = "mongo:latest"
-container_name = "mongo"
-environment = [
-  "MONGO_INITDB_ROOT_USERNAME=root",
-  "MONGO_INITDB_ROOT_PASSWORD=example"
-]
-ports = [
-  "27017:27017"
-]
-volumes = [
-  "./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro",
-  "./mongo_data:/data/db"
-]
-resources_limits_cpus = "1.0"
 
 # Configuração do Frontend
 [frontend]
@@ -31,22 +15,6 @@ depends_on = [
 restart_policy_type = "always"
 resources_limits_cpus = "1.0"
 
-# Configuração do Backend
-[backend]
-service = "backend"
-builder = "NODE"
-buildCommand = "npm install"
-startCommand = "npm start"
-environment = [
-  "MONGO_URI=mongodb://root:example@mongo:27017/"
-]
-ports = [
-  "5000:5000"
-]
-depends_on = [
-  "mongo"
-]
-resources_limits_cpus = "1.0"
 
 # Configuração da Rede
 [network]
