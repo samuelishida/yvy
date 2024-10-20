@@ -1,5 +1,4 @@
 /* Contêiner de notícias */
-
 .news-container {
     display: flex;
     flex-direction: column;

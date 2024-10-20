@@ -10,7 +10,7 @@ body {
 
 /* Estilização geral dos contêineres */
 .container {
-  max-width: 100%;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 20px;
 }
@@ -22,16 +22,6 @@ body {
   display: flex; /* Adicionando flexbox para organizar os itens */
   justify-content: center; /* Centralizar itens na horizontal */
   align-items: center; /* Centralizar na vertical */
-}
-
-.navbar-brand {
-  color: #ffffff;
-  text-decoration: none;
-  font-size: 1.5rem;
-}
-
-.navbar-brand:hover {
-  color: #8fb98c;
 }
 
 .navbar-nav {
@@ -81,7 +71,7 @@ body {
   background-color: #a9c8a7;
   border-color: #a9c8a7;
   color: #ffffff;
-  padding: 10px 20px;
+  padding: 5px 5x;
   border-radius: 5px;
   transition: background-color 0.3s, box-shadow 0.3s;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
@@ -108,7 +98,7 @@ a:hover {
 /* Títulos */
 h1, h2, h3, h4, h5, h6 {
   color: #4b7049;
-  margin-bottom: 10px;
+  margin-bottom: 5px;
 }
 
 /* Texto geral */
@@ -117,61 +107,23 @@ p {
   margin-top: 5px;
 }
 
-/* Estilo das notícias */
-.news-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 20px;
-}
-
-.news-article {
-  width: 95%;
-  margin: 10px 0;
-  border: 1px solid #ccc;
-  padding: 10px;
-  border-radius: 10px;
-  background-color: #fff;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Sombra leve nos artigos */
-  max-width: 900px;
-}
-
-.news-image {
+/* Ajustar o tamanho do iframe para ocupar a altura disponível */
+.iframe-container {
+  height: calc(100vh - 80px);
   width: 100%;
-  height: auto;
-  max-width: 600px; /* Limita a largura máxima da imagem */
-  max-height: 400px; /* Limita a altura máxima da imagem */
-  object-fit: cover;
-  border-radius: 10px;
-  display: block;
-  margin: 0 auto; /* Centraliza horizontalmente */
-  margin-bottom: 20px;
+  display: none; /* Esconder todos os iframes por padrão */
+  justify-content: center;
+  align-items: center;
 }
 
-.news-content h3 {
-  font-size: 1.8rem;
-  color: #4b7049; /* Cor verde para títulos de notícias */
+.iframe-container.active {
+  display: flex; /* Mostrar apenas o iframe ativo */
 }
 
-.news-content p {
-  font-size: 1rem;
-  color: #333;
-}
-
-/* Ajuste dos botões lado a lado */
-.button-container {
-  display: flex;
-  justify-content: space-between; /* Distribui os botões com espaçamento */
-  width: 100%; /* Garante que o contêiner ocupe a largura total */
-  margin-top: 20px; /* Espaçamento entre os botões e o conteúdo */
-}
-
-.button-container .btn {
-  flex: 1; /* Faz com que todos os botões tenham a mesma largura */
-  margin: 0 5px; /* Espaçamento lateral entre os botões */
-  font-size: 1rem;
-  padding: 10px;
-  text-align: center;
+iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
 }
 
 /* Rodapé */
@@ -204,17 +156,12 @@ footer a:hover {
     align-items: center; /* Centralizar itens no mobile */
   }
 
-  .button-container {
-    flex-direction: column; /* Empilhar botões no mobile */
-    align-items: center;
+  .iframe-container {
+    height: calc(100vh - 80px); /* Ajuste para se adaptar melhor em telas menores */
   }
 
-  .btn {
-    margin-bottom: 10px; /* Espaçamento entre botões no mobile */
-    width: 100%; /* Botões ocupam largura total no mobile */
-  }
-
-  .news-content h3 {
-    font-size: 1.4rem; /* Ajuste de tamanho de título no mobile */
+  iframe {
+    height: 100%;
+    width: 100%;
   }
 }

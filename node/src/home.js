@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import './home.css'; 
-import './yvy.css'; 
 
 const Home = () => {
   const [activeIframe, setActiveIframe] = useState('iframe-main');
