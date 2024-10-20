@@ -29,10 +29,9 @@ async function fetchAndSaveNews() {
 
     // Buscar notícias das fontes obtidas
     const response = await newsapi.v2.everything({
-      // q: 'environment OR sustainability OR ecology OR biodiversity OR "meio ambiente" OR sustentabilidade OR ecologia OR biodiversidade',
+      q: 'environment OR sustainability OR ecology OR biodiversity OR "meio ambiente" OR sustentabilidade OR ecologia OR biodiversidade',
       language: 'pt', // ou 'en', dependendo do idioma desejado
       sortBy: 'publishedAt',
-      country: 'br',
       category: 'science',
       pageSize: 50,
     });   
