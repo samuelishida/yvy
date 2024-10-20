@@ -112,9 +112,9 @@
 
         /* Ajustar o tamanho do iframe para ocupar a altura disponível */
         .iframe-container {
-            height: calc(100vh - 80px);
+            display: none; /* Esconde todos os iframes por padrão */
             width: 100%;
-            display: none; /* Esconder todos os iframes por padrão */
+            height: calc(100vh - 80px);
             justify-content: center;
             align-items: center;
         }
@@ -189,7 +189,10 @@
             });
 
             // Mostrar o iframe selecionado
-            document.getElementById(iframeId).classList.add('active');
+            const selectedIframe = document.getElementById(iframeId);
+            if (selectedIframe) {
+                selectedIframe.classList.add('active');
+            }
         }
     </script>
 </body>
