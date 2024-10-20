@@ -31,6 +31,10 @@ for NPMRC_PATH in "${NPMRC_PATHS[@]}"; do
   fi
 done
 
+npm config set production true
+npm config set loglevel error
+
+
 # Se o arquivo .npmrc não foi encontrado, criar um novo
 if [ "$NPMRC_FOUND" = false ]; then
   echo "Nenhum arquivo .npmrc foi encontrado. Criando um novo em /root/.npmrc"
@@ -43,7 +47,9 @@ cd frontend || { echo "Diretório 'frontend' não encontrado."; exit 1; }
 
 
 echo "Executando npm install --omit=dev..."
-npm install --omit=dev
+# Executar npm install com produção forçada
+npm install --omit=dev --production=true
+
 
 
 # Construir o frontend
