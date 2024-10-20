@@ -1,0 +1,107 @@
+/* News.css */
+
+/* Seu estilo personalizado */
+.btn-custom {
+    background-color: #a9c8a7; /* Um tom de verde parecido com a imagem fornecida */
+    border-color: #a9c8a7; /* Ajusta também a cor da borda */
+    color: #ffffff; /* Texto branco */
+    margin-bottom: 10px;
+}
+.btn-custom:hover {
+    background-color: #8fb98c; /* Um tom de verde um pouco mais escuro para o hover */
+    border-color: #8fb98c;
+}
+
+/* Para garantir que os itens da navbar estejam alinhados corretamente no desktop */
+.navbar-nav {
+    margin-left: auto;
+}
+
+/* Ajuste para centralizar os botões no mobile */
+@media (max-width: 992px) {
+    .navbar-collapse {
+        text-align: center;
+    }
+    .nav-item {
+        margin-bottom: 10px; /* Adiciona espaçamento entre os links no mobile */
+    }
+    .navbar-collapse.show {
+        display: block !important; /* Forçar que o menu esteja visível quando expandido */
+    }
+}
+
+/* Corrigir o tamanho do iframe para ocupar a altura disponível */
+.iframe-container {
+    height: calc(100vh - 80px); /* Ajustar a altura para ocupar a tela inteira menos o tamanho da navbar */
+}
+
+/* Estilização dos blocos de notícias */
+.news-container {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.news-title {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.news-scroll {
+    max-height: 600px; /* Ajuste a altura conforme necessário */
+    overflow-y: auto;
+    padding-right: 10px;
+}
+
+.news-scroll::-webkit-scrollbar {
+    width: 8px;
+}
+
+.news-scroll::-webkit-scrollbar-thumb {
+    background-color: #a9c8a7;
+    border-radius: 4px;
+}
+
+.news-block {
+    display: flex;
+    margin-bottom: 20px;
+    background-color: #f8f9fa; /* Cor de fundo do bloco */
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.news-image {
+    width: 200px;
+    object-fit: cover;
+}
+
+.news-content {
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+}
+
+.news-heading {
+    margin: 0;
+    font-size: 1.5em;
+    color: #343a40;
+}
+
+.news-description {
+    flex-grow: 1;
+    margin: 10px 0;
+    color: #495057;
+}
+
+.news-link {
+    align-self: flex-start;
+    color: #28a745;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.news-link:hover {
+    text-decoration: underline;
+}

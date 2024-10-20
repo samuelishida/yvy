@@ -10,8 +10,9 @@ const newsapi = new NewsAPI(NEWS_API_KEY);
 async function fetchAndSaveNews() {
   try {
     const response = await newsapi.v2.topHeadlines({
-      sources: 'globo,info-money', // Especifique as fontes desejadas
-      // Outros parâmetros podem ser omitidos quando 'sources' é usado
+      q: 'meio ambiente OR sustentabilidade OR ecologia',
+      country: 'br',
+      pageSize: 100,
     });
 
     const articles = response.articles;
