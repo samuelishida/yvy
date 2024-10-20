@@ -1,90 +1,158 @@
 # Yvy
 
-Este repositório é o projeto Yvy, um aplicativo de observabilidade ambiental para monitorar o desmatamento no Brasil, utilizando Flask, React, MongoDB e dados do Yvy.
+Este repositório é o projeto Yvy, um aplicativo de observabilidade ambiental para monitorar o desmatamento no Brasil, utilizando Node.js, React, MongoDB e dados do Yvy.
 
-### Instalação
+## 🧰 Instalação
 
-1. Clone o repositório:
-   ```bash
-   git clone https://gitlab.com/samuelishida/yvy.git
-   cd yvy
-   ```
+Clone o repositório:
 
-3. Configure o Docker e inicialize os containers:
-   ```bash
-   make rebuild
-   ```
-
-### Uso
-
-Após inicializar o Docker, o aplicativo estará disponível em `http://localhost:3000`.
-
-#### Acessando o MongoDB
-
-Para verificar os dados no MongoDB, execute:
 ```bash
-make mongo-access
-
-show dbs
-
-use yvy_data
-
-db.yvy_data.countDocuments({})
+git clone https://gitlab.com/samuelishida/yvy.git
+cd yvy
 ```
 
-### Estrutura do Projeto
+Instale as dependências do projeto:
 
-- `backend/backend.py`: Script principal do Flask para o backend.
-- `frontend/public/index.html`: Arquivo HTML principal para o frontend.
-- `frontend/src/index.js`: Script principal do React para o frontend.
-- `frontend/src/home.js`: Componente Home do React que renderiza o conteúdo do `index.html`.
-- `frontend/src/dashboard.js`: Componente Dashboard do React.
-- `frontend/src/`: Arquivos estáticos como CSS e JavaScript.
-- `docker-compose.yml`: Configuração do Docker para facilitar o desenvolvimento.
-- `requirements.txt`: Lista de dependências do Python.
-- `Makefile`: Scripts para automatizar a construção e execução dos serviços (frontend e backend).
+```bash
+make install
+```
 
-### Automação com Makefile
+**Nota:** Certifique-se de ter o Node.js e o npm instalados em sua máquina.
 
-O projeto inclui um Makefile para facilitar o gerenciamento dos serviços. Aqui estão os comandos disponíveis:
+## 🚀 Uso
 
-- Construir serviços:
-  - `make build-frontend` - Parar e construir somente o frontend.
-  - `make build-backend` - Parar e construir somente o backend.
-  - `make build` - Parar e construir tanto o frontend quanto o backend.
+Para iniciar a aplicação, você pode utilizar os comandos disponíveis no Makefile.
 
-- Parar serviços:
-  - `make stop-frontend` - Parar o serviço do frontend.
-  - `make stop-backend` - Parar o serviço do backend.
-  - `make stop` - Parar todos os serviços.
+### Iniciar a aplicação em modo de desenvolvimento:
 
-- Reconstruir serviços:
-  - `make rebuild-frontend` - Derruba, remove e reconstrói o frontend.
-  - `make rebuild-backend` - Derruba, remove e reconstrói o backend.
-  - `make rebuild` - Derruba, remove, reconstrói e reinicia todos os serviços.
+```bash
+make dev
+```
 
-- Limpar volumes e reconstruir:
-  - `make clean` - Remove todos os volumes persistentes e reconstrói os serviços.
+Isso iniciará o servidor com o nodemon, que reinicia automaticamente a aplicação quando alterações no código são detectadas.
 
-- Executar os serviços:
-  - `make run` - Inicializa todos os serviços.
-  - `make run-frontend` - Inicializa o frontend em segundo plano.
-  - `make run-backend` - Inicializa o backend em segundo plano.
+### Iniciar a aplicação em modo de produção:
 
-### Contribuindo
+```bash
+make start
+```
+
+Isso iniciará o servidor em modo de produção.
+
+A aplicação estará disponível em [http://localhost:8080](http://localhost:8080) ou na porta especificada no seu arquivo `.env`.
+
+## 🔧 Configuração das Variáveis de Ambiente
+
+Crie um arquivo `.env` na raiz do projeto com as seguintes variáveis:
+
+```env
+MONGODB_URI=sua_uri_de_conexao_mongodb
+NEWS_API_KEY=sua_chave_da_newsapi
+PORT=8080
+```
+
+- **MONGODB_URI**: A URI de conexão com o seu banco de dados MongoDB.
+- **NEWS_API_KEY**: Sua chave de API obtida em [NewsAPI.org](https://newsapi.org).
+- **PORT**: (Opcional) A porta em que o servidor irá rodar.
+
+**Importante:** Não compartilhe o arquivo `.env` em repositórios públicos.
+
+## 🗂️ Estrutura do Projeto
+
+- **server.js**: Arquivo principal do backend em Node.js (Express).
+- **models/**: Diretório contendo os modelos do Mongoose para o MongoDB.
+  - **models/News.js**: Modelo para os artigos de notícias.
+- **news-api.js**: Script para buscar e salvar notícias da NewsAPI.
+- **mongo.js**: Script para conectar ao MongoDB.
+- **Makefile**: Scripts para automatizar a execução e gerenciamento da aplicação.
+- **package.json**: Lista de dependências do projeto e scripts npm.
+- **client/**: Diretório contendo o código do frontend em React.
+  - **client/public/index.html**: Arquivo HTML principal para o frontend.
+  - **client/src/index.js**: Script principal do React para o frontend.
+  - **client/src/components/**: Componentes React utilizados na aplicação.
+
+## 🚧 Automação com Makefile
+
+O projeto inclui um Makefile para facilitar o gerenciamento dos comandos. Aqui estão os comandos disponíveis:
+
+- **Instalar as dependências**:
+
+  ```bash
+  make install
+  ```
+
+- **Iniciar a aplicação em modo de desenvolvimento**:
+
+  ```bash
+  make dev
+  ```
+
+- **Iniciar a aplicação em modo de produção**:
+
+  ```bash
+  make start
+  ```
+
+- **Parar a aplicação (se estiver usando pm2)**:
+
+  ```bash
+  make stop
+  ```
+
+- **Reiniciar a aplicação (se estiver usando pm2)**:
+
+  ```bash
+  make restart
+  ```
+
+- **Construir o frontend**:
+
+  ```bash
+  make build
+  ```
+
+- **Limpar arquivos temporários ou de build**:
+
+  ```bash
+  make clean
+  ```
+
+## 📊 Acessando o MongoDB
+
+Para verificar os dados no MongoDB, você pode utilizar uma ferramenta como o [MongoDB Compass](https://www.mongodb.com/try/download/compass) ou a linha de comando:
+
+```bash
+mongo --host localhost --port 27017 -u seu_usuario -p sua_senha
+
+> show dbs
+> use yvy_data
+> db.news.countDocuments({})
+```
+
+## 🤝 Contribuindo
 
 1. Faça um fork do projeto.
-2. Crie uma branch para sua feature (`git checkout -b feature/nova-feature`).
-3. Commit suas alterações (`git commit -m 'Adiciona nova feature'`).
-4. Faça push para a branch (`git push origin feature/nova-feature`).
+2. Crie uma branch para sua feature:
+
+   ```bash
+   git checkout -b feature/minha-nova-feature
+   ```
+
+3. Commit suas alterações:
+
+   ```bash
+   git commit -m 'Adiciona minha nova feature'
+   ```
+
+4. Faça push para a branch:
+
+   ```bash
+   git push origin feature/minha-nova-feature
+   ```
+
 5. Abra um Pull Request.
 
-### Licença
+## 📜 Licença
 
-Este projeto está licenciado sob a licença MIT - veja o arquivo [LICENSE](LICENSE) para mais detalhes.
+Este projeto está licenciado sob a [licença MIT](LICENSE) - veja o arquivo LICENSE para mais detalhes.
 
-### Contato
-
-Samuel Ishida - [GitLab](https://gitlab.com/samuelishida)
-
-Sinta-se à vontade para abrir uma issue se encontrar algum problema ou tiver sugestões de melhorias.
