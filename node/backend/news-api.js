@@ -17,15 +17,15 @@ async function hasRecentNews() {
 
 // Função para extrair título do URL usando regex
 function extractTitleFromUrl(url) {
-  const regex = /(?:https?:\/\/)?(?:www\.)?[\w-]+\.\w{2,}(?:\/[\w-]+)*\/([\w-]+)(?:\.htm[l]?)?$/;
+  // Regex para capturar a parte final do caminho da URL antes de .html ou .shtml ou outro sufixo comum
+  const regex = /(?:https?:\/\/)?(?:www\.)?[\w-]+\.\w{2,}(?:\/[\w-]+)*\/([\w-]+)(?:\.\w+)?$/;
   const match = url.match(regex);
   if (match && match[1]) {
-    // Substituir hífens por espaços e capitalizar as palavras
+    // Substituir hífens por espaços e capitalizar a primeira letra de cada palavra
     return match[1].replace(/-/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
   }
   return null;
 }
-
 async function fetchAndSaveNews() {
   try {
     const hasNews = await hasRecentNews();
@@ -52,12 +52,14 @@ async function fetchAndSaveNews() {
     const bulkOps = articles.map((article) => {
       // Se o título estiver ausente, tentar extrair do URL
       if (!article.title) {
-        const extractedTitle = extractTitleFromUrl(article.url);
-        if (extractedTitle) {
-          article.title = extractedTitle;
-        } else {
-          article.title = "#"; // Caso não seja possível extrair
+        let extractedTitle = extractTitleFromUrl(article.url);
+        
+        // Se não conseguiu extrair do URL, usar a descrição ou definir como '#'
+        if (!extractedTitle && article.description) {
+          extractedTitle = article.description.substring(0, 24) + '...'; // Usar parte da descrição como título
         }
+
+        article.title = extractedTitle || "#"; // Se não for possível extrair, usar '#'
       }
 
       return {
