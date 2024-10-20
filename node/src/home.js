@@ -9,7 +9,7 @@ const Home = () => {
   };
 
   return (
-    <div className="iframe-container">
+    <div className="yvy-header">
       <h1 className="display-4 text-center">Bem-vindo ao Yvy!</h1>
       <p className="lead text-center">Visualize dados ambientais de forma fácil e interativa.</p>
       <div className="d-flex flex-wrap justify-content-center mt-4">
