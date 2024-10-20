@@ -27,14 +27,23 @@ async function fetchAndSaveNews() {
       return;
     }
 
-    // Se não houver notícias recentes, faz a requisição à API de notícias
-    const response = await newsapi.v2.everything({
-      // q: 'environment OR sustainability OR ecology OR biodiversity OR meio ambiente OR sustentabilidade OR ecologia OR biodiversidade',
+    // Obter as fontes de notícias da categoria "science"
+    const sourcesResponse = await newsapi.v2.sources({
+      category: 'science',
       language: 'pt',
+      country: 'br'
+    });
+
+    const scienceSources = sourcesResponse.sources.map(source => source.id).join(',');
+
+    // Buscar notícias das fontes obtidas
+    const response = await newsapi.v2.everything({
+      // q: 'environment OR sustainability OR ecology OR biodiversity OR "meio ambiente" OR sustentabilidade OR ecologia OR biodiversidade',
+      language: 'pt', // ou 'en', dependendo do idioma desejado
       sortBy: 'publishedAt',
       pageSize: 50,
-      sources: 'national-geographic, new-scientist, nature, scientific-american, reuters, bbc-news'
-    });    
+      sources: scienceSources
+    });   
 
     const articles = response.articles;
 
