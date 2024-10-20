@@ -112,15 +112,20 @@
 
         /* Ajustar o tamanho do iframe para ocupar a altura disponível */
         .iframe-container {
-            display: none; /* Esconde todos os iframes por padrão */
             width: 100%;
             height: calc(100vh - 80px);
             justify-content: center;
             align-items: center;
         }
 
+        /* Esconder os iframes secundários por padrão */
+        .iframe-secondary {
+            display: none;
+        }
+
+        /* Mostrar o iframe selecionado */
         .iframe-container.active {
-            display: flex; /* Mostrar apenas o iframe ativo */
+            display: flex;
         }
 
         iframe {
@@ -163,30 +168,38 @@
         </div>
     </div>
 
-    <!-- Iframes para exibir os mapas -->
-    <div id="iframe-air-quality" class="iframe-container">
+    <!-- Iframe principal que deve sempre ser visível -->
+    <div id="iframe-main" class="iframe-container">
+        <iframe src="/hub.html" title="Yvy Home"></iframe>
+    </div>
+
+    <!-- Iframes secundários para exibir os mapas -->
+    <div id="iframe-air-quality" class="iframe-container iframe-secondary">
         <iframe src="https://waqi.info/#/c/-14.636/-58.315/5.1z" title="Mapa de Qualidade do Ar"></iframe>
     </div>
-    <div id="iframe-forest" class="iframe-container">
+    <div id="iframe-forest" class="iframe-container iframe-secondary">
         <iframe src="https://www.globalforestwatch.org/map/?lang=pt_BR&map=eyJjZW50ZXIiOnsibGF0IjotMTQuODM5NDU2MDI0MjIzNDQsImxuZyI6LTU3LjMxMDExNzE1MDUyODc2fSwiem9vbSI6NC4xOTIyMzU2Njc2Njc4MDh9" title="Mapa de Florestas Global Forest Watch"></iframe>
     </div>
-    <div id="iframe-temperature" class="iframe-container">
+    <div id="iframe-temperature" class="iframe-container iframe-secondary">
         <iframe src="https://openweathermap.org/weathermap?basemap=map&cities=true&layer=temperature&lat=-22.8042&lon=-47.0668&zoom=5" title="Mapa de Temperatura OpenWeatherMap"></iframe>
     </div>
-    <div id="iframe-terrabrasilis" class="iframe-container">
+    <div id="iframe-terrabrasilis" class="iframe-container iframe-secondary">
         <iframe src="https://terrabrasilis.dpi.inpe.br/app/map/deforestation?hl=pt_br" title="Mapa TerraBrasilis"></iframe>
     </div>
-    <div id="iframe-sea-level" class="iframe-container">
+    <div id="iframe-sea-level" class="iframe-container iframe-secondary">
         <iframe src="https://coastal.climatecentral.org/embed/map/10/-43.3654/-22.7935/?theme=water_level&map_type=water_level_above_mhhw&basemap=roadmap&contiguous=true&elevation_model=best_available&water_level=1.0&water_unit=m" title="Climate Central | Land below 1.0 meters of water"></iframe>
     </div>
 
     <script>
         function showIframe(iframeId) {
-            // Esconder todos os iframes
-            const iframes = document.querySelectorAll('.iframe-container');
+            // Esconder todos os iframes secundários
+            const iframes = document.querySelectorAll('.iframe-secondary');
             iframes.forEach(iframe => {
                 iframe.classList.remove('active');
             });
+
+            // Esconder o iframe principal
+            document.getElementById('iframe-main').style.display = 'none';
 
             // Mostrar o iframe selecionado
             const selectedIframe = document.getElementById(iframeId);
