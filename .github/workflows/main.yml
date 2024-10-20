@@ -21,26 +21,24 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '16'  # Use the Node.js version you need
+          node-version: '16'
+
+      # Define o caminho de trabalho se o package.json estiver em uma subpasta
+      - name: Change directory to the project folder
+        working-directory: ./node  # Ajuste este caminho se necessário
 
       # Install dependencies
       - name: Install dependencies
-        run: |
-          npm install
+        run: npm ci
 
-      # Run the build script (build.sh)
+      # Run the build script (if applicable)
       - name: Build project
-        run: |
-          chmod +x ./build.sh
-          ./build.sh
+        run: npm run build
 
       # Run tests (if applicable)
       - name: Run tests
-        run: |
-          npm test  # This assumes you have tests in your project
+        run: npm test
 
-      # Run the server (run.sh)
+      # Deploy or start the server
       - name: Run server
-        run: |
-          chmod +x ./run.sh
-          ./run.sh
+        run: npm start
