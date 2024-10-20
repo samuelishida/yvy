@@ -1,7 +1,7 @@
 // News.js
 
 import React, { useEffect, useState } from 'react';
-import './News.css'; // Certifique-se de que o arquivo CSS está importado
+import './news.css'; // Certifique-se de que o arquivo CSS está importado
 import Carousel from 'react-bootstrap/Carousel';
 
 const News = () => {
