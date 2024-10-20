@@ -17,7 +17,6 @@ const Home = () => {
         <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-air-quality')}>Qualidade do Ar</button>
         <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-forest')}>Florestas Global Forest Watch</button>
         <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-temperature')}>Temperatura OpenWeatherMap</button>
-        <a className="btn btn-custom btn-lg mb-3" href="https://worldview.earthdata.nasa.gov/" target="_blank" rel="noopener noreferrer">Queimadas da NASA</a>
         <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-terrabrasilis')}>TerraBrasilis</button>
         <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-sea-level')}>Nível do Mar 80 anos</button>
       </div>

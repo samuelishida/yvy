@@ -15,26 +15,16 @@ const App = () => {
         <nav className="navbar navbar-expand-lg navbar-light bg-light">
           <div className="container-fluid">
             <Link className="navbar-brand" to="/">Yvy</Link>
-            <button
-              className="navbar-toggler"
-              type="button"
-
-              aria-controls="navbarNav"
-              aria-expanded="false"
-              aria-label="Toggle navigation"
-            >
-              <span className="navbar-toggler-icon"></span>
-            </button>
-            <div className="collapse navbar-collapse" id="navbarNav">
+            <div className="navbar-nav">
               <ul className="navbar-nav ms-auto">
                 <li className="nav-item">
-                  <Link className="nav-link" to="/" onClick={() => window.innerWidth < 992 && document.querySelector('.navbar-toggler').click()}>Home</Link>
+                  <Link className="nav-link" to="/">Home</Link>
                 </li>
                 <li className="nav-item">
-                  <Link className="nav-link" to="/Noticias" onClick={() => window.innerWidth < 992 && document.querySelector('.navbar-toggler').click()}>Notícias</Link>
+                  <Link className="nav-link" to="/Noticias">Notícias</Link>
                 </li>
                 <li className="nav-item">
-                  <Link className="nav-link" to="/Dados" onClick={() => window.innerWidth < 992 && document.querySelector('.navbar-toggler').click()}>Dashboard</Link>
+                  <Link className="nav-link" to="/Dados">Dashboard</Link>
                 </li>
               </ul>
             </div>
