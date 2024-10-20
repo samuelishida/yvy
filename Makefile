@@ -30,6 +30,6 @@ build:
 clean:
 	rm -rf build
 
-# Executar testes
+# Executar testes 
 test:
 	npm test
