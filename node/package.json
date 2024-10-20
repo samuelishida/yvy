@@ -24,6 +24,7 @@
   "scripts": {
     "start": "node server.js",
     "server": "nodemon server.js",
+    "serve": "node server.js",
     "client": "react-scripts start",
     "build": "react-scripts build",
     "heroku-postbuild": "npm run build",

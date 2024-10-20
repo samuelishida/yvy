@@ -1,2 +1,3 @@
 *.tif
 mongo_data/
+.env
