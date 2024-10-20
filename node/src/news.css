@@ -8,10 +8,10 @@
   
 .news-article {
     width: 95%;
-    margin: 5px 0;
+    margin: 10px 0;
     border: 1px solid #ccc;
-    padding: 5px;
-    border-radius: 5px;
+    padding: 10px;
+    border-radius: 10px;
     background-color: #fff;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Sombra leve nos artigos */
     max-width: 900px;
