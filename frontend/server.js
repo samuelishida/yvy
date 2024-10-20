@@ -3,7 +3,7 @@ const path = require('path');
 const app = express();
 
 // Definir o caminho correto para a pasta 'build'
-const buildPath = path.join(__dirname, 'frontend', 'build');
+const buildPath = path.join(__dirname, 'frontend');
 
 // Servir os arquivos estáticos do build do React
 app.use(express.static(buildPath));
