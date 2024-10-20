@@ -6,8 +6,8 @@ const path = require('path');
 const cron = require('node-cron');
 
 // Importar as funções do backend
-import connectToMongoDB from '../backend/mongo';
-import fetchAndSaveNews from '../backend/news-api';
+const connectToMongoDB = require('../backend/mongo');
+const fetchAndSaveNews = require('../backend/news-api');
 
 const app = express();
 const cors = require('cors');
