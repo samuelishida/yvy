@@ -39,36 +39,44 @@
 /* News.css */
 
 .news-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .news-article {
+    width: 80%;
+    margin: 20px 0;
+    border: 1px solid #ccc;
+    padding: 20px;
+    border-radius: 10px;
+    background-color: #fff;
+  }
+  
+  .news-image {
     width: 100%;
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 20px;
+    height: auto;
+    max-width: 600px; /* Limita o tamanho máximo da imagem */
+    max-height: 400px; /* Opcional, define a altura máxima */
+    object-fit: cover; /* Ajusta a imagem dentro dos limites sem distorção */
+    border-radius: 10px;
   }
   
-  .news-carousel-image {
-    max-height: 500px;
-    object-fit: cover;
+  .news-content {
+    padding: 10px;
   }
   
-  .news-carousel-caption {
-    background-color: rgba(0, 0, 0, 0.5);
-    padding: 20px;
+  .news-content h3 {
+    font-size: 1.5rem;
+    margin-bottom: 10px;
   }
   
-  .news-carousel-caption h3,
-  .news-carousel-caption p {
-    color: #ffffff;
+  .news-content p {
+    font-size: 1rem;
+    margin-bottom: 10px;
   }
   
-  .news-carousel-caption .btn {
-    background-color: #a9c8a7;
-    border-color: #a9c8a7;
-    color: #ffffff;
-  }
-  
-  .news-carousel-caption .btn:hover {
-    background-color: #8fb98c;
-    border-color: #8fb98c;
-    color: #ffffff;
+  .news-content .btn {
+    font-size: 1rem;
   }
   
