@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
-import './home.css'; // Certifique-se de criar esse arquivo e adicionar os estilos que explicarei abaixo
+import './home.css'; 
 
 const Home = () => {
-  const [activeIframe, setActiveIframe] = useState('iframe-main'); // Definindo iframe principal como padrão
+  const [activeIframe, setActiveIframe] = useState('iframe-main');
 
-  // Função para alternar entre iframes
   const showIframe = (iframeId) => {
     setActiveIframe(iframeId);
   };
@@ -19,6 +18,9 @@ const Home = () => {
         <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-temperature')}>Temperatura OpenWeatherMap</button>
         <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-terrabrasilis')}>TerraBrasilis</button>
         <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-sea-level')}>Nível do Mar 80 anos</button>
+        <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-earthquakes')}>Terremotos USGS</button>
+        <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-fires')}>Incêndios Florestais NASA FIRMS</button>
+        <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-windy')}>Alertas Meteorológicos Windy</button>
       </div>
 
       <div id="iframe-air-quality" className="iframe-container" style={{ display: activeIframe === 'iframe-air-quality' ? 'block' : 'none' }}>
@@ -39,6 +41,18 @@ const Home = () => {
 
       <div id="iframe-sea-level" className="iframe-container" style={{ display: activeIframe === 'iframe-sea-level' ? 'block' : 'none' }}>
         <iframe src="https://coastal.climatecentral.org/embed/map/10/-43.3654/-22.7935/?theme=water_level&map_type=water_level_above_mhhw&basemap=roadmap&contiguous=true&elevation_model=best_available&water_level=1.0&water_unit=m" title="Climate Central | Land below 1.0 meters of water" width="100%" height="600px" style={{ border: 'none' }} />
+      </div>
+
+      <div id="iframe-earthquakes" className="iframe-container" style={{ display: activeIframe === 'iframe-earthquakes' ? 'block' : 'none' }}>
+        <iframe src="https://earthquake.usgs.gov/earthquakes/map/?extent=-43.2932,-107.3584&extent=7.01367,-8.9209" title="Mapa de Terremotos USGS" width="100%" height="600px" style={{ border: 'none' }} />
+      </div>
+
+      <div id="iframe-fires" className="iframe-container" style={{ display: activeIframe === 'iframe-fires' ? 'block' : 'none' }}>
+        <iframe src="https://firms.modaps.eosdis.nasa.gov/map/" title="Mapa de Incêndios Florestais NASA FIRMS" width="100%" height="600px" style={{ border: 'none' }} />
+      </div>
+
+      <div id="iframe-windy" className="iframe-container" style={{ display: activeIframe === 'iframe-windy' ? 'block' : 'none' }}>
+        <iframe src="https://www.windy.com/?-22.952,-43.212,5" title="Windy - Mapa Meteorológico" width="100%" height="600px" style={{ border: 'none' }} />
       </div>
     </div>
   );
