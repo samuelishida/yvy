@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import './news.css';
 
 const News = () => {
@@ -23,18 +23,18 @@ const News = () => {
     fetchNews();
   }, [page]);
 
-  // Definir a função handleScroll dentro do useEffect
-  const handleScroll = () => {
+  // Usando useCallback para memoizar a função handleScroll
+  const handleScroll = useCallback(() => {
     if (window.innerHeight + document.documentElement.scrollTop !== document.documentElement.offsetHeight || loading) {
       return;
     }
     setPage((prevPage) => prevPage + 1);
-  };
+  }, [loading]);
 
   useEffect(() => {
     window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll); // Cleanup
-  }, [handleScroll, loading]); // Adicionando handleScroll como dependência
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [handleScroll]);
 
   return (
     <div className="news-container">
