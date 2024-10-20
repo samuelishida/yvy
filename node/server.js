@@ -10,6 +10,9 @@ const connectToMongoDB = require('./mongo');
 const fetchAndSaveNews = require('./news-api');
 
 const app = express();
+const cors = require('cors');
+
+app.use(cors());
 
 // Conectar ao MongoDB
 connectToMongoDB();
