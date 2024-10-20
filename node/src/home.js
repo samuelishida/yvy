@@ -1,5 +1,5 @@
 import React from 'react';
-import News from 'news-view'; // Certifique-se que 'news-view' está corretamente instalado e configurado
+import News from './news-view'; // Certifique-se que 'news-view' está corretamente instalado e configurado
 
 const Home = () => {
   return (
