@@ -1,6 +1,5 @@
 // news-api.js
 
-require('dotenv').config();
 const NewsAPI = require('newsapi');
 const News = require('../models/News');
 
@@ -9,16 +8,17 @@ const newsapi = new NewsAPI(NEWS_API_KEY);
 
 async function fetchAndSaveNews() {
   try {
-    const response = await newsapi.v2.topHeadlines({
-      q: 'meio ambiente OR sustentabilidade OR ecologia',
-      country: 'br',
+    const response = await newsapi.v2.everything({
+      q: 'environment OR sustainability OR ecology OR "climate change" OR biodiversity',
+      language: 'pt',
+      sortBy: 'publishedAt',
       pageSize: 100,
     });
 
     const articles = response.articles;
 
     if (!articles || articles.length === 0) {
-      console.log('Nenhum artigo encontrado para as fontes fornecidas.');
+      console.log('Nenhum artigo encontrado para os termos fornecidos.');
       return;
     }
 
