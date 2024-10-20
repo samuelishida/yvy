@@ -157,7 +157,7 @@ footer a:hover {
   }
 
   .iframe-container {
-    height: calc(100vh - 120px); /* Ajuste para se adaptar melhor em telas menores */
+    height: calc(100vh - 80px); /* Ajuste para se adaptar melhor em telas menores */
   }
 
   iframe {
