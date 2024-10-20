@@ -42,7 +42,7 @@ if [ "$NPMRC_FOUND" = false ]; then
   echo "Arquivo .npmrc criado com 'production=true' em /root/.npmrc"
 fi
 
-# Continuar com o build do frontend
+# Continuar com o build do frontend 
 cd frontend || { echo "Diretório 'frontend' não encontrado."; exit 1; }
 
 npm audit fix --force
