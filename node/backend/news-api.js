@@ -33,7 +33,7 @@ async function fetchAndSaveNews() {
       language: 'pt',
       sortBy: 'publishedAt',
       pageSize: 50,
-      // domains: 'bbc.co.uk, theverge.com, nationalgeographic.com, g1.globo.com, reuters.com, bloomberg.com, wired.com, cnn.com, aljazeera.com, nature.com, scientificamerican.com, elpais.com, folha.uol.com.br'
+      sources: 'national-geographic, new-scientist, nature, scientific-american, reuters, bbc-news'
     });    
 
     const articles = response.articles;
