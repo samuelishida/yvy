@@ -24,7 +24,7 @@ async function fetchAndSaveNews() {
 
     if (hasNews) {
       console.log('Notícias recentes já estão disponíveis no banco de dados. Nenhuma nova requisição será feita.');
-      return;
+      // return;
     }
 
     // Se não houver notícias recentes, faz a requisição à API de notícias
