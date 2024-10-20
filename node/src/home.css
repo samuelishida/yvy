@@ -1,6 +1,6 @@
 /* Contêiner principal para cabeçalho */
 .yvy-header {
-    padding: 20px;
+    padding: 10px;
     text-align: center;
     background: linear-gradient(135deg, #a9c8a7, #4b7049); /* Um gradiente suave para o fundo */
     color: white;
@@ -21,7 +21,7 @@
   
   /* Estilização dos iframes */
   .iframe-container {
-    margin-top: 20px;
+    margin-top: 10px;
     text-align: center;
   }
   
@@ -35,7 +35,6 @@
   @media (max-width: 768px) {
     .btn-custom {
       width: 100%; /* Botões ocuparão a largura completa no mobile */
-      margin-top: 10px;
     }
   
     iframe {
