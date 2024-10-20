@@ -15,17 +15,22 @@ async function hasRecentNews() {
   return recentNews.length > 0;
 }
 
-// Função para extrair título do URL usando regex
+
+// Função para extrair título do URL usando regex e decodificação de caracteres
 function extractTitleFromUrl(url) {
-  // Regex para capturar a parte final do caminho da URL antes de .html ou .shtml ou outro sufixo comum
-  const regex = /(?:https?:\/\/)?(?:www\.)?[\w-]+\.\w{2,}(?:\/[\w-]+)*\/([\w-]+)(?:\.\w+)?$/;
+  // Regex para capturar a parte final do caminho da URL antes de extensões como .html, .shtml ou números
+  const regex = /(?:https?:\/\/)?(?:www\.)?[\w.-]+\.\w{2,}(?:\/[\w%-]+)*\/([\w%-]+)(?:[\.\d]*)?$/;
   const match = url.match(regex);
   if (match && match[1]) {
+    // Decodificar caracteres especiais na URL (ex: %C3%AD -> í)
+    const decodedTitle = decodeURIComponent(match[1]);
     // Substituir hífens por espaços e capitalizar a primeira letra de cada palavra
-    return match[1].replace(/-/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+    return decodedTitle.replace(/-/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
   }
   return null;
 }
+
+
 async function fetchAndSaveNews() {
   try {
     const hasNews = await hasRecentNews();
