@@ -1,9 +1,7 @@
-// server.js
 require('dotenv').config();
 
 const express = require('express');
 const path = require('path');
-const cron = require('node-cron');
 
 // Importar as funções do backend
 const connectToMongoDB = require('./backend/mongo');
@@ -17,12 +15,16 @@ app.use(cors());
 // Conectar ao MongoDB
 connectToMongoDB();
 
-// Agendar a atualização das notícias (por exemplo, a cada hora)
-cron.schedule('0 * * * *', () => {
+// Agendar a atualização das notícias a cada 1 minuto e 30 segundos
+cron.schedule('*/1 * * * *', async () => {
   console.log('Iniciando a atualização das notícias...');
-  fetchAndSaveNews();
+  try {
+    await fetchAndSaveNews();
+    console.log('Atualização de notícias concluída com sucesso.');
+  } catch (error) {
+    console.error('Erro ao atualizar notícias:', error.message);
+  }
 });
-
 // Executar a atualização das notícias na inicialização
 fetchAndSaveNews();
 
