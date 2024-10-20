@@ -50,8 +50,7 @@ npm config set loglevel error
 
 echo "Executando npm install --omit=dev..."
 # Executar npm install com produção forçada
-npm install --omit=dev --production=true
-
+npm install querystring-es3 --omit=dev --production=true
 
 
 # Construir o node
