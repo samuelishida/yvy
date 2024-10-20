@@ -3,7 +3,7 @@
 # Configuração do Frontend
 [frontend]
 service = "frontend"
-builder = "NIXPACKS"
+builder = "NODE"
 buildCommand = "cd frontend && npm run install:prod && npm run build"
 startCommand = "cd frontend && npm run serve"
 ports = [
