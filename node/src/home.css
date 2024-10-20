@@ -35,7 +35,7 @@
   @media (max-width: 768px) {
     .btn-custom {
       width: 100%; /* Botões ocuparão a largura completa no mobile */
-      margin-bottom: 10px;
+      margin-top: 10px;
     }
   
     iframe {
