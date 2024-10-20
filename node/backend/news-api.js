@@ -24,7 +24,7 @@ async function fetchAndSaveNews() {
 
     if (hasNews) {
       console.log('Notícias recentes já estão disponíveis no banco de dados. Nenhuma nova requisição será feita.');
-      // return;
+      return;
     }
 
     // Se não houver notícias recentes, faz a requisição à API de notícias
@@ -33,8 +33,8 @@ async function fetchAndSaveNews() {
       language: 'pt',
       sortBy: 'publishedAt',
       pageSize: 50,
-      sources: 'bbc-news, the-verge, national-geographic'
-    });
+      domains: 'bbc.co.uk, theverge.com, nationalgeographic.com, g1.globo.com, reuters.com, bloomberg.com, wired.com, cnn.com, aljazeera.com, nature.com, scientificamerican.com, elpais.com, folha.uol.com.br'
+    });    
 
     const articles = response.articles;
 
