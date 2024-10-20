@@ -49,9 +49,7 @@
       @media (max-width: 992px) {
          
 
-          .nav-item {
-              margin-bottom: 10px;
-          }
+
 
       }
 
@@ -64,7 +62,7 @@
           border-radius: 5px;
           transition: background-color 0.3s, box-shadow 0.3s;
           box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-          margin-bottom: 10px;
+          margin-top: 10px;
       }
 
       .btn-custom:hover {
@@ -88,13 +86,13 @@
       /* Títulos */
       h1, h2, h3, h4, h5, h6 {
           color: #4b7049;
-          margin-bottom: 20px;
+          margin-bottom: 5px;
       }
 
       /* Texto geral */
       p {
           line-height: 1.6;
-          margin-bottom: 15px;
+          margin-top: 5px;
       }
 
       /* Ajustar o tamanho do iframe para ocupar a altura disponível */
