@@ -29,7 +29,7 @@ async function fetchAndSaveNews() {
 
     // Se não houver notícias recentes, faz a requisição à API de notícias
     const response = await newsapi.v2.everything({
-      q: 'environment OR sustainability OR ecology OR biodiversity OR meio ambiente OR sustentabilidade OR ecologia OR biodiversidade',
+      // q: 'environment OR sustainability OR ecology OR biodiversity OR meio ambiente OR sustentabilidade OR ecologia OR biodiversidade',
       language: 'pt',
       sortBy: 'publishedAt',
       pageSize: 50,
