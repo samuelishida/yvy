@@ -53,7 +53,7 @@ echo "Executando npm install --omit=dev..."
 npm install --omit=dev
 
 # Instalar querystring-es3 e craco, se ainda não estiverem instalados
-npm install bootstrap
+npm install react-bootstrap bootstrap
 
 npm install querystring-es3 @craco/craco --save
 
