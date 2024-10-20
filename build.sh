@@ -54,6 +54,7 @@ npm install --omit=dev
 
 # Instalar querystring-es3 e craco, se ainda não estiverem instalados
 npm install react-bootstrap bootstrap
+npm install react-infinite-scroll-component
 
 npm install querystring-es3 @craco/craco --save
 

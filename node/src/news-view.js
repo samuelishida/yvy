@@ -1,41 +1,40 @@
 import React, { useEffect, useState } from 'react';
-import './news.css'; // Certifique-se de que o arquivo CSS está importado
+import './news.css';
 
 const News = () => {
   const [articles, setArticles] = useState([]);
-  const [page, setPage] = useState(1); // Para controlar a paginação
-  const [loading, setLoading] = useState(false); // Para controlar o estado de carregamento
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const fetchNews = async () => {
       try {
-        setLoading(true); // Define o estado de carregamento como true
+        setLoading(true);
         const response = await fetch(`/api/news?page=${page}`);
         const data = await response.json();
-        setArticles((prevArticles) => [...prevArticles, ...data]); // Adiciona mais artigos
-        setLoading(false); // Define o estado de carregamento como false
+        setArticles((prevArticles) => [...prevArticles, ...data]);
+        setLoading(false);
       } catch (error) {
         console.error('Erro ao carregar notícias:', error);
-        setLoading(false); // Define o estado de carregamento como false
+        setLoading(false);
       }
     };
 
     fetchNews();
   }, [page]);
 
-  // Função para detectar o scroll
+  // Definir a função handleScroll dentro do useEffect
   const handleScroll = () => {
     if (window.innerHeight + document.documentElement.scrollTop !== document.documentElement.offsetHeight || loading) {
       return;
     }
-    // Aumenta a página para carregar mais artigos
     setPage((prevPage) => prevPage + 1);
   };
 
   useEffect(() => {
     window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll); // Cleanup do event listener
-  }, [loading]);
+    return () => window.removeEventListener('scroll', handleScroll); // Cleanup
+  }, [handleScroll, loading]); // Adicionando handleScroll como dependência
 
   return (
     <div className="news-container">
