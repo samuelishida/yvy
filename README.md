@@ -44,6 +44,11 @@ Isso iniciará o servidor em modo de produção.
 
 A aplicação estará disponível em [http://localhost:8080](http://localhost:8080) ou na porta especificada no seu arquivo `.env`.
 
+Também é possível fazer push na branch dev e verificar as alterações no link:
+
+https://yvy-dev.up.railway.app/
+
+
 ## 🔧 Configuração das Variáveis de Ambiente
 
 Crie um arquivo `.env` na raiz do projeto com as seguintes variáveis:
