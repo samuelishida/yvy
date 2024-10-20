@@ -28,23 +28,19 @@ for NPMRC_PATH in "${NPMRC_PATHS[@]}"; do
   fi
 done
 
-# Definir o diretório base do frontend
-FRONTEND_DIR="./frontend"
+# Ir para o diretório do frontend
+cd frontend || { echo "Diretório 'frontend' não encontrado."; exit 1; }
 
-# Verificar se o diretório existe
-if [ ! -d "$FRONTEND_DIR" ]; then
-  echo "O diretório frontend não foi encontrado. Verifique o caminho."
-  exit 1
+# Verificar se o script install:prod existe no package.json
+if npm run | grep -q "install:prod"; then
+  echo "Executando npm run install:prod..."
+  npm run install:prod
+else
+  echo "Executando npm install --omit=dev..."
+  npm install --omit=dev
 fi
 
-# Ir para o diretório do frontend
-cd $FRONTEND_DIR
-
-# Passo 1: Instalar dependências
-echo "Instalando dependências do frontend..."
-npm install
-
-# Passo 2: Build do frontend
+# Construir o frontend
 echo "Construindo o frontend..."
 npm run build
 
