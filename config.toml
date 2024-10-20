@@ -4,7 +4,7 @@
 [frontend]
 service = "frontend"
 builder = "NIXPACKS"
-buildCommand = "cd frontend && npm install --omit=dev --production && npm run build"
+buildCommand = "cd frontend && npm run install:prod  && npm run build"
 startCommand = "cd frontend && npm run serve"
 ports = [
   "3000:3000"
