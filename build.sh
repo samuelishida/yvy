@@ -42,8 +42,8 @@ if [ "$NPMRC_FOUND" = false ]; then
   echo "Arquivo .npmrc criado com 'production=true' em /root/.npmrc"
 fi
 
-# Continuar com o build do frontend 
-cd frontend || { echo "Diretório 'frontend' não encontrado."; exit 1; }
+# Continuar com o build do node 
+cd node || { echo "Diretório 'node' não encontrado."; exit 1; }
 
 npm audit fix --force
 npm config set loglevel error
@@ -54,14 +54,14 @@ npm install --omit=dev --production=true
 
 
 
-# Construir o frontend
-echo "Construindo o frontend..."
+# Construir o node
+echo "Construindo o node..."
 npm run build
 
 # Verificar se o build foi bem-sucedido
 if [ $? -ne 0 ]; then
-  echo "Erro ao construir o frontend."
+  echo "Erro ao construir o node."
   exit 1
 fi
 
-echo "Build do frontend concluído com sucesso!"
+echo "Build do node concluído com sucesso!"
