@@ -10,15 +10,14 @@ const newsapi = new NewsAPI(NEWS_API_KEY);
 async function fetchAndSaveNews() {
   try {
     const response = await newsapi.v2.topHeadlines({
-      country: 'br',
-      q: 'meio ambiente OR sustentabilidade OR ecologia',
-      // Se desejar, adicione mais termos relacionados
+      sources: 'globo,info-money', // Especifique as fontes desejadas
+      // Outros parâmetros podem ser omitidos quando 'sources' é usado
     });
 
     const articles = response.articles;
 
     if (!articles || articles.length === 0) {
-      console.log('Nenhum artigo encontrado para os termos de busca fornecidos.');
+      console.log('Nenhum artigo encontrado para as fontes fornecidas.');
       return;
     }
 
@@ -32,7 +31,7 @@ async function fetchAndSaveNews() {
 
     await News.bulkWrite(bulkOps);
 
-    console.log(`${articles.length} artigos sobre meio ambiente foram processados e salvos com sucesso.`);
+    console.log(`${articles.length} artigos foram processados e salvos com sucesso.`);
   } catch (error) {
     console.error('Erro ao buscar ou salvar notícias:', error.message);
   }
