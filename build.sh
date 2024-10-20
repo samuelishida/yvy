@@ -50,7 +50,10 @@ npm config set loglevel error
 
 echo "Executando npm install --omit=dev..."
 # Executar npm install com produção forçada
-npm install querystring-es3 --omit=dev --production=true
+npm install --omit=dev --production=true
+
+# Instalar querystring-es3 e craco, se ainda não estiverem instalados
+npm install querystring-es3 @craco/craco --save
 
 
 # Construir o node
