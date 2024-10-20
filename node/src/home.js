@@ -3,12 +3,9 @@ import React from 'react';
 const Home = () => {
   return (
    
-    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
-    <title>Yvy - Visualização de Mapas e Notícias Ambientais</title>
-
+    
     <div className="iframe-container">
-      
-
+      <title>Yvy - Visualização de Mapas e Notícias Ambientais</title>
       <div class="jumbotron text-center">
         <h1 class="display-4">Bem-vindo ao Yvy!</h1>
         <p class="lead">Visualize dados ambientais de forma fácil e interativa.</p>
@@ -62,7 +59,7 @@ const Home = () => {
             }
         }
     </script>
-</body>
+
       
     </div>
     
