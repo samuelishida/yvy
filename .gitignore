@@ -2,3 +2,4 @@
 mongo_data/
 node/.env
 node/node_modules
+*-lock.json
