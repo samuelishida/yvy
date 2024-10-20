@@ -14,11 +14,7 @@ const Home = () => {
         style={{ border: 'none' }}
         title="Yvy Home"
       />
-      {/* Seção de Notícias */}
-      <div className="news-section">
-        <h2>Latest News</h2>
-        <News />
-      </div>
+      
     </div>
     
   );
