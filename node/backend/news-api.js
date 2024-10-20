@@ -61,7 +61,7 @@ async function fetchAndSaveNews() {
         
         // Se não conseguiu extrair do URL, usar a descrição ou definir como '#'
         if (!extractedTitle && article.description) {
-          extractedTitle = article.description.substring(0, 24) + '...'; // Usar parte da descrição como título
+          extractedTitle = article.description.substring(0, 50) + '...'; // Usar parte da descrição como título
         }
 
         article.title = extractedTitle || "#"; // Se não for possível extrair, usar '#'
