@@ -19,7 +19,6 @@ async function hasRecentNews() {
 
 async function fetchAndSaveNews() {
   try {
-    // Primeiro, checa se já há notícias recentes no banco de dados
     const hasNews = await hasRecentNews();
 
     if (hasNews) {
@@ -27,14 +26,13 @@ async function fetchAndSaveNews() {
       return;
     }
 
-    // Buscar notícias das fontes obtidas
-    const response = await newsapi.v2.everything({
-      q: 'environment OR sustainability OR ecology OR biodiversity OR "meio ambiente" OR sustentabilidade OR ecologia OR biodiversidade',
-      language: 'pt', // ou 'en', dependendo do idioma desejado
-      sortBy: 'publishedAt',
-      category: 'science',
+    // Usar o endpoint 'top-headlines' com a categoria 'science'
+    const response = await newsapi.v2.topHeadlines({
+      q: 'meio ambiente OR sustentabilidade OR ecologia OR biodiversidade',
+      category: 'science', // Pode ser 'science' ou outras categorias disponíveis
+      language: 'pt',
       pageSize: 50,
-    });   
+    });
 
     const articles = response.articles;
 
@@ -60,3 +58,4 @@ async function fetchAndSaveNews() {
 }
 
 module.exports = fetchAndSaveNews;
+
