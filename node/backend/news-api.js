@@ -7,15 +7,15 @@ const NEWS_API_KEY = process.env.NEWS_API_KEY;
 const newsapi = new NewsAPI(NEWS_API_KEY);
 
 // Função para verificar se há notícias recentes no banco de dados
-// async function hasRecentNews() {
-//   const oneHourAgo = new Date();
-//   oneHourAgo.setHours(oneHourAgo.getHours() - 1); // Ajusta o intervalo para 1 hora atrás
+async function hasRecentNews() {
+  const oneHourAgo = new Date();
+  oneHourAgo.setHours(oneHourAgo.getHours() - 1); // Ajusta o intervalo para 1 hora atrás
 
-//   // Checa se há notícias publicadas na última 1 hora
-//   const recentNews = await News.find({ publishedAt: { $gte: oneHourAgo } }).limit(1);
+  // Checa se há notícias publicadas na última 1 hora
+  const recentNews = await News.find({ publishedAt: { $gte: oneHourAgo } }).limit(1);
 
-//   return recentNews.length > 0;
-// }
+  return recentNews.length > 0;
+}
 
 async function fetchAndSaveNews() {
   try {
