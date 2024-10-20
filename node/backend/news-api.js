@@ -2,7 +2,7 @@
 
 require('dotenv').config();
 const NewsAPI = require('newsapi');
-const News = require('./models/News');
+const News = require('../models/News');
 
 const NEWS_API_KEY = process.env.NEWS_API_KEY;
 const newsapi = new NewsAPI(NEWS_API_KEY);
