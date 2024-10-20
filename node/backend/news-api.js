@@ -1,5 +1,3 @@
-// news-api.js
-
 const NewsAPI = require('newsapi');
 const News = require('../models/News');
 
@@ -15,6 +13,17 @@ async function hasRecentNews() {
   const recentNews = await News.find({ publishedAt: { $gte: oneHourAgo } }).limit(1);
 
   return recentNews.length > 0;
+}
+
+// Função para extrair título do URL usando regex
+function extractTitleFromUrl(url) {
+  const regex = /(?:https?:\/\/)?(?:www\.)?[\w-]+\.\w{2,}(?:\/[\w-]+)*\/([\w-]+)(?:\.htm[l]?)?$/;
+  const match = url.match(regex);
+  if (match && match[1]) {
+    // Substituir hífens por espaços e capitalizar as palavras
+    return match[1].replace(/-/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+  return null;
 }
 
 async function fetchAndSaveNews() {
@@ -40,13 +49,25 @@ async function fetchAndSaveNews() {
       return;
     }
 
-    const bulkOps = articles.map((article) => ({
-      updateOne: {
-        filter: { url: article.url },
-        update: { $set: article },
-        upsert: true,
-      },
-    }));
+    const bulkOps = articles.map((article) => {
+      // Se o título estiver ausente, tentar extrair do URL
+      if (!article.title) {
+        const extractedTitle = extractTitleFromUrl(article.url);
+        if (extractedTitle) {
+          article.title = extractedTitle;
+        } else {
+          article.title = "#"; // Caso não seja possível extrair
+        }
+      }
+
+      return {
+        updateOne: {
+          filter: { url: article.url },
+          update: { $set: article },
+          upsert: true,
+        },
+      };
+    });
 
     await News.bulkWrite(bulkOps);
 
@@ -57,4 +78,3 @@ async function fetchAndSaveNews() {
 }
 
 module.exports = fetchAndSaveNews;
-
