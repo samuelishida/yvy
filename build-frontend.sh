@@ -33,7 +33,7 @@ done
 
 npm config set production true
 npm config set loglevel error
-
+export NODE_ENV=production
 
 # Se o arquivo .npmrc não foi encontrado, criar um novo
 if [ "$NPMRC_FOUND" = false ]; then
@@ -45,6 +45,8 @@ fi
 # Continuar com o build do frontend
 cd frontend || { echo "Diretório 'frontend' não encontrado."; exit 1; }
 
+npm audit fix --force
+npm config set loglevel error
 
 echo "Executando npm install --omit=dev..."
 # Executar npm install com produção forçada
