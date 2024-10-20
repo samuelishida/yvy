@@ -2,7 +2,7 @@
 
 Este repositório é o projeto Yvy, um aplicativo de observabilidade ambiental para monitorar o desmatamento no Brasil, utilizando Node.js, React, MongoDB e dados do Yvy.
 
-https://yvy-production.up.railway.app/
+https://yvy.up.railway.app/
 
 
 ## 🧰 Instalação
