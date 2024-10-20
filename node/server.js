@@ -20,8 +20,8 @@ connectToMongoDB();
 cron.schedule('*/5 * * * *', async () => {
   console.log('Iniciando a atualização das notícias...');
   try {
-    await fetchAndSaveNews();
-    console.log('Atualização de notícias concluída com sucesso.');
+    // await fetchAndSaveNews();
+    // console.log('Atualização de notícias concluída com sucesso.');
   } catch (error) {
     console.error('Erro ao atualizar notícias:', error.message);
   }
