@@ -18,8 +18,8 @@ async function hasRecentNews() {
 
 // Função para extrair título do URL usando regex e decodificação de caracteres
 function extractTitleFromUrl(url) {
-  // Regex para capturar a parte final do caminho da URL antes de extensões como .html, .shtml ou números
-  const regex = /(?:https?:\/\/)?(?:www\.)?[\w.-]+\.\w{2,}(?:\/[\w%-]+)*\/([\w%-]+)(?:[\.\d]*)?$/;
+  // Regex para capturar a última parte do caminho da URL (antes de ".html", ".shtml", ou números)
+  const regex = /(?:https?:\/\/)?(?:www\.)?[\w.-]+\.\w{2,}(?:\/[\w%-]+)*\/([\w%-]+)(?:\.\w+)?$/;
   const match = url.match(regex);
   if (match && match[1]) {
     // Decodificar caracteres especiais na URL (ex: %C3%AD -> í)
@@ -29,7 +29,6 @@ function extractTitleFromUrl(url) {
   }
   return null;
 }
-
 
 async function fetchAndSaveNews() {
   try {
