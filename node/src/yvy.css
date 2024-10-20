@@ -19,12 +19,16 @@ body {
 .navbar {
   background-color: #4b7049;
   padding: 10px 20px;
+  display: flex; /* Adicionando flexbox para organizar os itens */
+  justify-content: center; /* Centralizar itens na horizontal */
+  align-items: center; /* Centralizar na vertical */
 }
 
 .navbar-nav {
-  margin-left: auto;
-  margin-right: auto;
-  text-align: center;
+  display: flex; /* Habilitar flexbox */
+  flex-direction: row; /* Manter itens lado a lado */
+  justify-content: center; /* Centralizar os itens */
+  align-items: center; /* Alinhar itens verticalmente */
 }
 
 .nav-item {
@@ -48,18 +52,17 @@ body {
 /* Responsividade para dispositivos móveis */
 @media (max-width: 992px) {
   .navbar-nav {
-      flex-direction: column;
-      text-align: center;
+    flex-direction: column; /* Empilhar em coluna em telas menores */
   }
 
   .nav-item {
-      margin-left: 0;
-      margin-right: 0;
-      margin-bottom: 10px;
+    margin-left: 0;
+    margin-right: 0;
+    margin-bottom: 10px;
   }
 
   .navbar {
-      text-align: center;
+    text-align: center;
   }
 }
 
@@ -145,21 +148,20 @@ footer a:hover {
 /* Responsividade para melhorar a exibição no mobile */
 @media (max-width: 768px) {
   body {
-      font-size: 14px;
+    font-size: 14px;
   }
 
   .navbar-nav {
-      flex-direction: column;
-      align-items: center;
+    flex-direction: column; /* Continuar em coluna para mobile */
+    align-items: center; /* Centralizar itens no mobile */
   }
 
   .iframe-container {
-      height: calc(100vh - 120px); /* Ajuste para se adaptar melhor em telas menores */
+    height: calc(100vh - 120px); /* Ajuste para se adaptar melhor em telas menores */
   }
 
   iframe {
-      height: 100%;
-      width: 100%;
+    height: 100%;
+    width: 100%;
   }
 }
-
