@@ -1,23 +1,17 @@
-# Etapa de Build do React
-FROM node:18 AS build
-WORKDIR /app
-COPY ./package.json ./ 
-RUN npm install
-COPY . . 
-RUN npm run build
+# Usar uma imagem oficial do Node.js como base
+FROM node:18-alpine
 
-# Etapa do servidor Express
-FROM node:18
+# Definir o diretório de trabalho dentro do contêiner
 WORKDIR /app
-# Copia a pasta `build` gerada pelo React para o diretório `/app`
-COPY --from=build /app/build ./build
-# Copia o arquivo `server.js` para o diretório `/app`
-COPY ./build/server.js ./
-# Instala dependências necessárias (incluindo Express)
-RUN npm install express
 
-# Porta do servidor
+# Copiar os arquivos do projeto para dentro do contêiner
+COPY . .
+
+# Executar o primeiro script bash para configurar o npmrc e instalar dependências
+RUN chmod +x /app/first-script.sh && /app/first-script.sh
+
+# Expor a porta do servidor Express (geralmente 3000, ajuste se necessário)
 EXPOSE 3000
 
-# Comando para rodar o servidor Express
-CMD ["node", "server.js"]
+# Executar o segundo script bash para rodar o servidor Express
+CMD ["/bin/bash", "/app/second-script.sh"]

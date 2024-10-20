@@ -1,60 +1,25 @@
-version: '3.8'
-
+version: '3'
 services:
-  mongo:
-    image: mongo:latest
-    container_name: mongo
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: example
-    ports:
-      - "27017:27017"
-    volumes:
-      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
-      - ./mongo_data:/data/db  # Volume local para garantir persistência
-    networks:
-      - app-network
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-
-  frontend:
+  app:
     build:
-      context: ./frontend
-    container_name: frontend
+      context: .
+      dockerfile: Dockerfile
     ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-    restart: always
-    networks:
-      - app-network
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-
-
-  backend:
-    build: ./backend
-    container_name: backend
+      - '3000:3000'
     environment:
-      - MONGO_URI=mongodb://root:example@mongo:27017/
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./backend:/app
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://mongo:27017/app_db
     depends_on:
       - mongo
-    networks:
-      - app-network
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
+    volumes:
+      - .:/app
 
+  mongo:
+    image: mongo:6.0
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
 
-networks:
-  app-network:
-    driver: bridge
+volumes:
+  mongo-data:
