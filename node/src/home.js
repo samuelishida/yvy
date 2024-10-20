@@ -32,9 +32,8 @@ const Home = () => {
           <ul className="navbar-nav ml-auto">
             {/* Botão com dropdown */}
             <li className="nav-item dropdown">
-              <a
+              <button
                 className="nav-link dropdown-toggle"
-                href="#"
                 id="navbarDropdown"
                 role="button"
                 data-toggle="dropdown"
@@ -42,7 +41,7 @@ const Home = () => {
                 aria-expanded="false"
               >
                 Visualizações Ambientais
-              </a>
+              </button>
               <div className="dropdown-menu" aria-labelledby="navbarDropdown">
                 <button className="dropdown-item" onClick={() => showIframe('iframe-air-quality')}>Qualidade do Ar</button>
                 <button className="dropdown-item" onClick={() => showIframe('iframe-forest')}>Florestas Global Forest Watch</button>
