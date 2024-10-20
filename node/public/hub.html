@@ -5,7 +5,148 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
     <title>Yvy - Visualização de Mapas e Notícias Ambientais</title>
+    <style>
+        /* Definir um fundo com gradiente suave de tons de verde */
+body {
+  background: linear-gradient(to bottom right, #d8f3dc, #b7e4c7); /* Gradiente suave de verde claro */
+  font-family: 'Arial', sans-serif; /* Escolha uma fonte clean e legível */
+  color: #333; /* Cor padrão do texto */
+  margin: 0;
+  padding: 0;
+  min-height: 100vh; /* Garante que a altura ocupe a tela inteira */
+}
 
+/* Estilização geral dos contêineres */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* Navbar */
+.navbar {
+  background-color: #4b7049; /* Tom de verde escuro */
+  padding: 10px 20px;
+}
+
+.navbar-nav {
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+}
+
+.nav-item {
+  margin-left: 15px;
+  margin-right: 15px;
+}
+
+.nav-item a {
+  color: #ffffff; /* Texto branco para contraste */
+  text-decoration: none;
+  padding: 8px 16px;
+  font-size: 1rem;
+  transition: background-color 0.3s;
+}
+
+.nav-item a:hover {
+  background-color: #3e5940; /* Cor mais escura no hover */
+  border-radius: 5px;
+}
+
+/* Ajuste para dispositivos móveis */
+@media (max-width: 992px) {
+  .navbar-collapse {
+      text-align: center;
+  }
+
+  .nav-item {
+      margin-bottom: 10px;
+  }
+
+  .navbar-collapse.show {
+      display: block !important;
+  }
+}
+
+/* Estilos para o botão personalizado */
+.btn-custom {
+  background-color: #a9c8a7; /* Verde suave */
+  border-color: #a9c8a7;
+  color: #ffffff;
+  padding: 10px 20px;
+  border-radius: 5px;
+  transition: background-color 0.3s, box-shadow 0.3s;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  margin-bottom: 10px;
+}
+
+.btn-custom:hover {
+  background-color: #8fb98c; /* Verde mais escuro no hover */
+  border-color: #8fb98c;
+  box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15); /* Sombra ao passar o mouse */
+}
+
+/* Links */
+a {
+  color: #4b7049; /* Cor de link em verde escuro */
+  text-decoration: none;
+  transition: color 0.3s;
+}
+
+a:hover {
+  color: #8fb98c; /* Cor de link no hover */
+  text-decoration: underline; /* Sublinhado no hover */
+}
+
+/* Títulos */
+h1, h2, h3, h4, h5, h6 {
+  color: #4b7049; /* Cor verde para os títulos */
+  margin-bottom: 20px;
+}
+
+/* Texto geral */
+p {
+  line-height: 1.6;
+  margin-bottom: 15px;
+}
+
+
+
+/* Ajustar o tamanho do iframe para ocupar a altura disponível */
+.iframe-container {
+  height: calc(100vh - 80px); /* Ocupa a tela menos a altura da navbar */
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+/* Rodapé */
+footer {
+  background-color: #4b7049; /* Verde escuro */
+  color: #ffffff;
+  text-align: center;
+  padding: 20px 0;
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+}
+
+footer a {
+  color: #a9c8a7; /* Link do rodapé com verde claro */
+}
+
+footer a:hover {
+  color: #8fb98c; /* Cor de hover do link no rodapé */
+}
+
+    </style>
 </head>
 <body>
     <div class="jumbotron text-center">
