@@ -29,6 +29,7 @@ function extractTitleFromUrl(url) {
   return null;
 }
 
+
 async function fetchAndSaveNews() {
   try {
     const hasNews = await hasRecentNews();
