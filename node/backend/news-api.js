@@ -17,18 +17,14 @@ async function hasRecentNews() {
 
 // Função para extrair título do URL usando regex e decodificação de caracteres
 function extractTitleFromUrl(url) {
-  // Regex para capturar a última parte do caminho da URL (antes de ".html", ".shtml", ou números)
   const regex = /(?:https?:\/\/)?(?:www\.)?[\w.-]+\.\w{2,}(?:\/[\w%-]+)*\/([\w%-]+)(?:\.\w+)?$/;
   const match = url.match(regex);
   if (match && match[1]) {
-    // Decodificar caracteres especiais na URL (ex: %C3%AD -> í)
     const decodedTitle = decodeURIComponent(match[1]);
-    // Substituir hífens por espaços e capitalizar a primeira letra de cada palavra
     return decodedTitle.replace(/-/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
   }
   return null;
 }
-
 
 async function fetchAndSaveNews() {
   try {
@@ -53,22 +49,26 @@ async function fetchAndSaveNews() {
       return;
     }
 
-    const bulkOps = articles.map((article) => {
-      // Debug: Logar o artigo que está sendo processado
-      console.log('Artigo processado:', article);
+    const bulkOps = await Promise.all(articles.map(async (article) => {
+      // Verificar se o artigo já existe no banco de dados
+      const existingArticle = await News.findOne({ url: article.url });
 
       // Se o título estiver ausente, tentar extrair do URL
       if (!article.title) {
         let extractedTitle = extractTitleFromUrl(article.url);
-
-        // Se não conseguiu extrair do URL, usar a descrição ou definir como '#'
         if (!extractedTitle && article.description) {
-          extractedTitle = article.description.substring(0, 50) + '...'; // Usar parte da descrição como título
+          extractedTitle = article.description.substring(0, 50) + '...';
         }
-
-        article.title = extractedTitle || "#"; // Se não for possível extrair, usar '#'
+        article.title = extractedTitle || "#";
       }
 
+      // Se o artigo já existir e `publishedAt` for o mesmo, não fazer nada
+      if (existingArticle && existingArticle.publishedAt.getTime() === new Date(article.publishedAt).getTime()) {
+        console.log(`Artigo já existente e atualizado: ${article.title}`);
+        return null; // Não precisa ser atualizado
+      }
+
+      // Se for um artigo novo ou se tiver atualização, aplicar o updateOne com upsert
       return {
         updateOne: {
           filter: { url: article.url },
@@ -76,14 +76,18 @@ async function fetchAndSaveNews() {
           upsert: true,
         },
       };
-    });
+    }));
 
-    // Debug: Logar o array de operações de bulk
-    console.log('Operações de bulk:', bulkOps);
+    // Remover operações `null` (quando não há necessidade de atualização)
+    const validOps = bulkOps.filter(op => op !== null);
 
-    await News.bulkWrite(bulkOps);
-
-    console.log(`${articles.length} artigos foram processados e salvos com sucesso.`);
+    if (validOps.length > 0) {
+      // Executar o bulkWrite somente se houver operações válidas
+      await News.bulkWrite(validOps);
+      console.log(`${validOps.length} artigos foram processados e salvos com sucesso.`);
+    } else {
+      console.log('Nenhum artigo novo ou atualizado encontrado.');
+    }
   } catch (error) {
     console.error('Erro ao buscar ou salvar notícias:', error.message);
   }
