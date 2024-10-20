@@ -9,6 +9,7 @@ const fetchAndSaveNews = require('./backend/news-api');
 
 const app = express();
 const cors = require('cors');
+const cron = require('node-cron');
 
 app.use(cors());
 
