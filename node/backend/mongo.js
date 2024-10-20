@@ -1,9 +1,10 @@
-// mongo.js
-
 const mongoose = require('mongoose');
 require('dotenv').config();
 
 const MONGODB_URI = process.env.MONGODB_URI;
+
+// Definir o strictQuery para false (comportamento futuro do Mongoose 7)
+mongoose.set('strictQuery', false);
 
 function connectToMongoDB() {
   mongoose.connect(MONGODB_URI, {
