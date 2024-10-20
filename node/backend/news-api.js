@@ -6,15 +6,14 @@ const newsapi = new NewsAPI(NEWS_API_KEY);
 
 // Função para verificar se há notícias recentes no banco de dados
 async function hasRecentNews() {
-  const oneHourAgo = new Date();
-  oneHourAgo.setHours(oneHourAgo.getHours() - 1); // Ajusta o intervalo para 1 hora atrás
+  const fifteenMinutesAgo = new Date();
+  fifteenMinutesAgo.setMinutes(fifteenMinutesAgo.getMinutes() - 15); // Ajusta o intervalo para 15 minutos atrás
 
-  // Checa se há notícias publicadas na última 1 hora
-  const recentNews = await News.find({ publishedAt: { $gte: oneHourAgo } }).limit(1);
+  // Checa se há notícias publicadas nos últimos 15 minutos
+  const recentNews = await News.find({ publishedAt: { $gte: fifteenMinutesAgo } }).limit(1);
 
   return recentNews.length > 0;
 }
-
 
 // Função para extrair título do URL usando regex e decodificação de caracteres
 function extractTitleFromUrl(url) {
@@ -43,7 +42,7 @@ async function fetchAndSaveNews() {
       q: 'environment OR sustainability OR ecology OR climate OR "meio ambiente" OR sustentabilidade OR ecologia OR biodiversidade',
       language: 'pt', // ou 'en'
       sortBy: 'publishedAt',
-      pageSize: 50,
+      pageSize: 1,
     });
 
     const articles = response.articles;
