@@ -1,47 +1,9 @@
-/* News.css */
-
-/* Seu estilo personalizado */
-.btn-custom {
-    background-color: #a9c8a7; /* Um tom de verde parecido com a imagem fornecida */
-    border-color: #a9c8a7; /* Ajusta também a cor da borda */
-    color: #ffffff; /* Texto branco */
-    margin-bottom: 10px;
-}
-.btn-custom:hover {
-    background-color: #8fb98c; /* Um tom de verde um pouco mais escuro para o hover */
-    border-color: #8fb98c;
-}
-
-/* Para garantir que os itens da navbar estejam alinhados corretamente no desktop */
-.navbar-nav {
-    margin-left: auto;
-}
-
-/* Ajuste para centralizar os botões no mobile */
-@media (max-width: 992px) {
-    .navbar-collapse {
-        text-align: center;
-    }
-    .nav-item {
-        margin-bottom: 10px; /* Adiciona espaçamento entre os links no mobile */
-    }
-    .navbar-collapse.show {
-        display: block !important; /* Forçar que o menu esteja visível quando expandido */
-    }
-}
-
-/* Corrigir o tamanho do iframe para ocupar a altura disponível */
-.iframe-container {
-    height: calc(100vh - 80px); /* Ajustar a altura para ocupar a tela inteira menos o tamanho da navbar */
-}
-
-/* Estilização dos blocos de notícias */
-/* News.css */
-
+/* Contêiner de notícias */
 .news-container {
     display: flex;
     flex-direction: column;
     align-items: center;
+    padding: 20px;
   }
   
   .news-article {
@@ -51,32 +13,29 @@
     padding: 20px;
     border-radius: 10px;
     background-color: #fff;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Sombra leve nos artigos */
   }
   
   .news-image {
     width: 100%;
     height: auto;
-    max-width: 600px; /* Limita o tamanho máximo da imagem */
-    max-height: 400px; /* Opcional, define a altura máxima */
-    object-fit: cover; /* Ajusta a imagem dentro dos limites sem distorção */
+    max-width: 600px; /* Limita a largura máxima da imagem */
+    max-height: 400px; /* Limita a altura máxima da imagem */
+    object-fit: cover;
     border-radius: 10px;
-  }
-  
-  .news-content {
-    padding: 10px;
+    margin-bottom: 15px;
   }
   
   .news-content h3 {
-    font-size: 1.5rem;
-    margin-bottom: 10px;
+    font-size: 1.8rem;
+    color: #4b7049; /* Cor verde para títulos de notícias */
   }
   
   .news-content p {
     font-size: 1rem;
-    margin-bottom: 10px;
+    color: #333;
   }
   
   .news-content .btn {
     font-size: 1rem;
   }
-  

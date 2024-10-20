@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import './news.css';
+import './yvy.css';
 
 const News = () => {
   const [articles, setArticles] = useState([]);
