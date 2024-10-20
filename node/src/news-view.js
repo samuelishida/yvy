@@ -13,7 +13,14 @@ const News = () => {
         setLoading(true);
         const response = await fetch(`/api/news?page=${page}`);
         const data = await response.json();
-        setArticles((prevArticles) => [...prevArticles, ...data]);
+        
+        // Atualizar o estado substituindo os artigos anteriores, garantindo que os mais recentes venham no topo
+        if (page === 1) {
+          setArticles(data);  // Para a primeira página, substituir tudo
+        } else {
+          setArticles((prevArticles) => [...data, ...prevArticles]);  // Para outras páginas, adicionar no topo
+        }
+
         setLoading(false);
       } catch (error) {
         console.error('Erro ao carregar notícias:', error);
@@ -24,7 +31,6 @@ const News = () => {
     fetchNews();
   }, [page]);
 
-  // Usando useCallback para memoizar a função handleScroll
   const handleScroll = useCallback(() => {
     if (window.innerHeight + document.documentElement.scrollTop !== document.documentElement.offsetHeight || loading) {
       return;
