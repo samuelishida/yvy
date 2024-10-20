@@ -2,9 +2,9 @@
 
 # Definir possíveis caminhos para o arquivo npmrc
 NPMRC_PATHS=(
-  "/root/.npmrc"
-  "/etc/npmrc"
-  "/app/.npmrc"
+  "/root/.npm"
+  "/etc/npm"
+  "/app/.npm"
 )
 
 # Loop para verificar cada caminho dentro do contêiner
