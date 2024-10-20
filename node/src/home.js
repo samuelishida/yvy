@@ -21,11 +21,6 @@ const Home = () => {
         <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-sea-level')}>Nível do Mar 80 anos</button>
       </div>
 
-      {/* Condicionalmente renderizando o iframe baseado no estado */}
-      <div id="iframe-main" className="iframe-container" style={{ display: activeIframe === 'iframe-main' ? 'block' : 'none' }}>
-        <iframe src="/hub.html" title="Yvy Home" width="100%" height="600px" style={{ border: 'none' }} />
-      </div>
-
       <div id="iframe-air-quality" className="iframe-container" style={{ display: activeIframe === 'iframe-air-quality' ? 'block' : 'none' }}>
         <iframe src="https://waqi.info/#/c/-14.636/-58.315/5.1z" title="Mapa de Qualidade do Ar" width="100%" height="600px" style={{ border: 'none' }} />
       </div>
