@@ -53,10 +53,13 @@ async function fetchAndSaveNews() {
     }
 
     const bulkOps = articles.map((article) => {
+      // Debug: Logar o artigo que está sendo processado
+      console.log('Artigo processado:', article);
+
       // Se o título estiver ausente, tentar extrair do URL
       if (!article.title) {
         let extractedTitle = extractTitleFromUrl(article.url);
-        
+
         // Se não conseguiu extrair do URL, usar a descrição ou definir como '#'
         if (!extractedTitle && article.description) {
           extractedTitle = article.description.substring(0, 50) + '...'; // Usar parte da descrição como título
@@ -73,6 +76,9 @@ async function fetchAndSaveNews() {
         },
       };
     });
+
+    // Debug: Logar o array de operações de bulk
+    console.log('Operações de bulk:', bulkOps);
 
     await News.bulkWrite(bulkOps);
 
