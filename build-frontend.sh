@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Definir possíveis caminhos para o arquivo npmrc no contêiner
+# Definir possíveis caminhos para o arquivo npmrc
 NPMRC_PATHS=(
   "/root/.npmrc"
   "/etc/npmrc"
@@ -8,9 +8,11 @@ NPMRC_PATHS=(
 )
 
 # Loop para verificar cada caminho dentro do contêiner
+NPMRC_FOUND=false
 for NPMRC_PATH in "${NPMRC_PATHS[@]}"; do
   # Verificar se o arquivo existe
   if [ -f "$NPMRC_PATH" ]; then
+    NPMRC_FOUND=true
     echo "Arquivo npmrc encontrado em: $NPMRC_PATH"
     
     # Verificar se o arquivo contém a linha "production=false"
@@ -29,7 +31,33 @@ for NPMRC_PATH in "${NPMRC_PATHS[@]}"; do
   fi
 done
 
-# Continue com o build do frontend
-cd frontend && npm run install:prod && npm run build
+# Se o arquivo .npmrc não foi encontrado, criar um novo
+if [ "$NPMRC_FOUND" = false ]; then
+  echo "Nenhum arquivo .npmrc foi encontrado. Criando um novo em /root/.npmrc"
+  echo "production=true" > /root/.npmrc
+  echo "Arquivo .npmrc criado com 'production=true' em /root/.npmrc"
+fi
+
+# Continuar com o build do frontend
+cd frontend || { echo "Diretório 'frontend' não encontrado."; exit 1; }
+
+# Verificar se o script install:prod existe no package.json
+if npm run | grep -q "install:prod"; then
+  echo "Executando npm run install:prod..."
+  npm run install:prod
+else
+  echo "Executando npm install --omit=dev..."
+  npm install --omit=dev
+fi
+
+# Construir o frontend
+echo "Construindo o frontend..."
+npm run build
+
+# Verificar se o build foi bem-sucedido
+if [ $? -ne 0 ]; then
+  echo "Erro ao construir o frontend."
+  exit 1
+fi
 
 echo "Build do frontend concluído com sucesso!"
