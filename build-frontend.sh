@@ -43,9 +43,6 @@ cd frontend || { echo "Diretório 'frontend' não encontrado."; exit 1; }
 
 # Verificar se o script install:prod existe no package.json
 if npm run | grep -q "install:prod"; then
-  echo "Executando npm run install:prod..."
-  npm run install:prod
-else
   echo "Executando npm install --omit=dev..."
   npm install --omit=dev
 fi
