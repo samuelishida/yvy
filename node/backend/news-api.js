@@ -26,11 +26,10 @@ async function fetchAndSaveNews() {
       return;
     }
 
-    // Usar o endpoint 'top-headlines' com a categoria 'science'
-    const response = await newsapi.v2.topHeadlines({
-      q: 'meio ambiente OR sustentabilidade OR ecologia OR biodiversidade',
-      category: 'science', // Pode ser 'science' ou outras categorias disponíveis
-      language: 'pt',
+    const response = await newsapi.v2.everything({
+      q: 'environment OR sustainability OR ecology OR climate OR "meio ambiente" OR sustentabilidade OR ecologia OR biodiversidade',
+      language: 'pt', // ou 'en'
+      sortBy: 'publishedAt',
       pageSize: 50,
     });
 
