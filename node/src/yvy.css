@@ -47,17 +47,12 @@
 
       /* Ajuste para dispositivos móveis */
       @media (max-width: 992px) {
-          .navbar-collapse {
-              text-align: center;
-          }
+         
 
           .nav-item {
               margin-bottom: 10px;
           }
 
-          .navbar-collapse.show {
-              display: block !important;
-          }
       }
 
       /* Estilos para o botão personalizado */
