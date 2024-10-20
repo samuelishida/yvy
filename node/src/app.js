@@ -4,6 +4,8 @@ import { BrowserRouter as Router, Route, Routes, Link } from 'react-router-dom';
 import Home from './home';
 import News from './news';
 import Dashboard from './dashboard';
+import connectToMongoDB from './mongo';
+import fetchAndSaveNews from './news-api';
 import './yvy.css'; // Importar CSS para o estilo da aplicação
 
 const App = () => {
