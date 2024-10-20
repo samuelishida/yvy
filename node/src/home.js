@@ -14,13 +14,13 @@ const Home = () => {
       <p className="lead text-center">Visualize dados ambientais de forma fácil e interativa.</p>
       <div className="d-flex flex-wrap justify-content-center mt-4">
         <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-air-quality')}>Qualidade do Ar</button>
-        <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-forest')}>Florestas Global Forest Watch</button>
         <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-temperature')}>Temperatura OpenWeatherMap</button>
+        <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-windy')}>Windy (Tempestades)</button>
         <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-terrabrasilis')}>TerraBrasilis</button>
+        <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-forest')}>Global Forest Watch</button>
         <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-sea-level')}>Nível do Mar 80 anos</button>
-        <button className="btn btn-custom btn-lg mb-3" onClick={() => showIframe('iframe-windy')}>Alertas Meteorológicos Windy</button>
         <button className="btn btn-custom btn-lg mb-3" onClick={() => window.open('https://firms.modaps.eosdis.nasa.gov/map/', '_blank')}>
-          Incêndios Florestais NASA FIRMS
+          NASA Incêndios (Externo)
         </button>
 
       </div>
