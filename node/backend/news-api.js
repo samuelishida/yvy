@@ -43,7 +43,7 @@ async function fetchAndSaveNews() {
       q: 'environment OR sustainability OR ecology OR climate OR "meio ambiente" OR sustentabilidade OR ecologia OR biodiversidade',
       language: 'pt', // ou 'en'
       sortBy: 'publishedAt',
-      pageSize: 1,
+      pageSize: 3,
     });
 
     const articles = response.articles;

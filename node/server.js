@@ -16,8 +16,8 @@ app.use(cors());
 // Conectar ao MongoDB
 connectToMongoDB();
 
-// Agendar a atualização das notícias a cada 1 minuto e 30 segundos
-cron.schedule('*/1 * * * *', async () => {
+// Agendar a atualização das notícias a cada 5 minutos
+cron.schedule('*/5 * * * *', async () => {
   console.log('Iniciando a atualização das notícias...');
   try {
     await fetchAndSaveNews();
@@ -26,6 +26,7 @@ cron.schedule('*/1 * * * *', async () => {
     console.error('Erro ao atualizar notícias:', error.message);
   }
 });
+
 // Executar a atualização das notícias na inicialização
 fetchAndSaveNews();
 
