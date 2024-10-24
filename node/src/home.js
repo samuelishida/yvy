@@ -47,7 +47,7 @@ const Home = () => {
 
       <div id="iframe-windy" className="iframe-container" style={{ display: activeIframe === 'iframe-windy' ? 'block' : 'none' }}>
         <iframe 
-          src="https://embed.windy.com/embed2.html?lat=-22.952&lon=-43.212&detailLat=-22.952&detailLon=-43.212&width=650&height=450&zoom=5&level=surface&overlay=wind&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=true&type=map&location=coordinates&detail=true&metricWind=default&metricTemp=default&radarRange=-1" 
+          src="https://embed.windy.com/embed2.html?-Rain-thunder-rain?rain,-16.531,-53.350,5&detailLat=-22.952&detailLon=-43.212&width=650&height=450&zoom=5&level=surface&overlay=wind&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=true&type=map&location=coordinates&detail=true&metricWind=default&metricTemp=default&radarRange=-1" 
           title="Windy - Mapa Meteorológico" 
           width="100%" 
           height="100%" 
