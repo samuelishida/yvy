@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install backend test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements-dev.txt
+          pip install -r backend/requirements.txt
+
+      - name: Run backend tests
+        run: |
+          pytest -q backend/tests frontend/tests
+
+      - name: Compile Python sources
+        run: |
+          python -m py_compile backend/backend.py backend/ingest.py frontend/frontend.py main.py gpw.py
+
+      - name: Validate shell scripts
+        run: |
+          sh -n backup.sh
+          sh -n backend/start.sh
+          sh -n frontend/start.sh
+
+      - name: Validate Mongo init script syntax
+        run: |
+          node -c mongo-init.js

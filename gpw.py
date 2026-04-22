@@ -1,71 +1,70 @@
-import requests
+import logging
+import os
 import time
 
+import requests
+
+
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
+logger = logging.getLogger("yvy.gpw")
+
+
 def get_auth_token(username, password):
-    url = 'https://data-api.globalforestwatch.org/auth/token'
-    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    url = "https://data-api.globalforestwatch.org/auth/token"
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
     data = {
-        'username': username,
-        'password': password
+        "username": username,
+        "password": password,
     }
-    response = requests.post(url, headers=headers, data=data)
-    print(f"Response status code: {response.status_code}")
-    print(f"Response text: {response.text}")
+    response = requests.post(url, headers=headers, data=data, timeout=30)
     if response.status_code == 200:
-        token = response.json()['data']['access_token']
-        print("Authorization token obtained successfully.")
+        token = response.json()["data"]["access_token"]
+        logger.info("Authorization token obtained successfully.")
         return token
-    else:
-        print(f"Failed to obtain auth token: {response.status_code} - {response.text}")
-        return None
+
+    logger.error("Failed to obtain auth token: %s - %s", response.status_code, response.text)
+    return None
 
 
-
-# Function to create an API key
-def create_api_key(auth_token, alias, email, organization, domains=[]):
-    url = 'https://data-api.globalforestwatch.org/auth/apikey'
+def create_api_key(auth_token, alias, email, organization, domains=None):
+    url = "https://data-api.globalforestwatch.org/auth/apikey"
     headers = {
-        'Authorization': f'Bearer {auth_token}',
-        'Content-Type': 'application/json'
+        "Authorization": f"Bearer {auth_token}",
+        "Content-Type": "application/json",
     }
     data = {
-        'alias': alias,
-        'email': email,
-        'organization': organization,
-        'domains': domains
+        "alias": alias,
+        "email": email,
+        "organization": organization,
+        "domains": domains or [],
     }
-    response = requests.post(url, headers=headers, json=data)
-    print(f"Response status code: {response.status_code}")
-    print(f"Response text: {response.text}")
+    response = requests.post(url, headers=headers, json=data, timeout=30)
 
-    # Check if status code is in the 2xx range
-    if response.status_code >= 200 and response.status_code < 300:
-        api_key = response.json()['data']['api_key']
-        print("API key created successfully.")
+    if 200 <= response.status_code < 300:
+        api_key = response.json()["data"]["api_key"]
+        logger.info("API key created successfully.")
         return api_key
-    else:
-        print(f"Failed to create API key: {response.status_code} - {response.text}")
-        return None
+
+    logger.error("Failed to create API key: %s - %s", response.status_code, response.text)
+    return None
 
 
-# Usage example
 if __name__ == "__main__":
-    # Replace these with your actual credentials and information
-    username = 'samuelwinston420@gmail.com'       # Your GFW username
-    password = 'hcUK1MZm.'       # Your GFW password
-    email = 'samuelwinston420@gmail.com' # Your email associated with GFW
-    organization = 'dev'
-    alias = f"api-key-ivy-{int(time.time())}"
-    domains = []                     # List of domains, leave empty if not applicable
+    username = os.getenv("GFW_USERNAME", "")
+    password = os.getenv("GFW_PASSWORD", "")
+    email = os.getenv("GFW_EMAIL", "")
+    organization = os.getenv("GFW_ORGANIZATION", "dev")
+    alias = os.getenv("GFW_API_KEY_ALIAS", f"api-key-yvy-{int(time.time())}")
 
-    # Obtain the authorization token
+    if not username or not password or not email:
+        raise SystemExit("Set GFW_USERNAME, GFW_PASSWORD, and GFW_EMAIL before running this script.")
+
     auth_token = get_auth_token(username, password)
     if auth_token:
-        # Create the API key
-        api_key = create_api_key(auth_token, alias, email, organization, domains)
+        api_key = create_api_key(auth_token, alias, email, organization)
         if api_key:
-            print(f"Your new API key is: {api_key}")
+            print(api_key)
         else:
-            print("Failed to create API key.")
+            raise SystemExit("Failed to create API key.")
     else:
-        print("Failed to obtain authorization token.")
+        raise SystemExit("Failed to obtain authorization token.")

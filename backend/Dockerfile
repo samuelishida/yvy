@@ -1,26 +1,28 @@
-# Usando a imagem Python base
-FROM python:3.9-slim
+# Usando a imagem Python base (Python 3.13 - atualizado)
+FROM python:3.13-slim
 
-# Instalar build tools (needed for gevent) + net-tools
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    net-tools \
-    wget \
-    unzip \
-    && rm -rf /var/lib/apt/lists/*
+# Create non-root user for security
+RUN useradd --create-home appuser
 
-# Definir o diretório de trabalho no container
+# Install only the healthcheck dependency needed in the runtime image
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Copiar os arquivos necessários para o container
+# Copy requirements and source
 COPY requirements.txt ./
 COPY backend.py ./
+COPY ingest.py ./ingest.py
+COPY start.sh ./start.sh
 
-# Instalar as dependências do backend
+# Install Python deps (includes gunicorn)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expor a porta em que o aplicativo será executado
+RUN chmod +x /app/start.sh
+
+# Switch to non-root user
+USER appuser
+
 EXPOSE 5000
 
-# Comando para rodar o backend
-CMD ["python", "backend.py"]
+CMD ["/app/start.sh"]

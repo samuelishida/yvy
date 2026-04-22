@@ -37,19 +37,21 @@
 
     // Grupo de marcadores para clusterização
     var markers = L.markerClusterGroup();
+    var heatLayer = L.heatLayer([], { radius: 20, blur: 15, maxZoom: 10 }).addTo(map);
+    map.addLayer(markers);
 
     // Função para carregar dados dinamicamente conforme a área do mapa
     function loadMapData(bounds) {
         const ne = bounds.getNorthEast();
         const sw = bounds.getSouthWest();
 
-        // Chama a API passando as coordenadas do bounding box para filtrar os dados
-        fetch(`http://127.0.0.1:5000/data?ne_lat=${ne.lat}&ne_lng=${ne.lng}&sw_lat=${sw.lat}&sw_lng=${sw.lng}`)
+        // Chama o proxy do frontend para manter a chave de API fora do browser
+        fetch(`/api/data?ne_lat=${ne.lat}&ne_lng=${ne.lng}&sw_lat=${sw.lat}&sw_lng=${sw.lng}`)
             .then(response => response.json())
             .then(data => {
-                console.log('Dados recebidos:', data); // Log dos dados recebidos
-
                 let heatData = [];
+                markers.clearLayers();
+
                 data.forEach(item => {
                     heatData.push([item.lat, item.lon, 0.5]); // O terceiro valor é a intensidade
 
@@ -63,15 +65,7 @@
 
                     markers.addLayer(marker);
                 });
-
-                // Limpa marcadores antigos antes de adicionar novos
-                markers.clearLayers();
-
-                // Adiciona o grupo de marcadores ao mapa
-                map.addLayer(markers);
-
-                // Adiciona o heatmap ao mapa
-                L.heatLayer(heatData, { radius: 20, blur: 15, maxZoom: 10 }).addTo(map);
+                heatLayer.setLatLngs(heatData);
             })
             .catch(error => console.error('Erro ao buscar os dados:', error));
     }

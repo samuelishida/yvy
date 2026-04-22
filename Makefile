@@ -1,5 +1,5 @@
 # Define os alvos (targets)
-.PHONY: build-frontend build-backend build-both rebuild-frontend rebuild-backend rebuild-all clean-volumes stop-frontend stop-backend stop-all run mongo-access
+.PHONY: build-frontend build-backend build-both rebuild-frontend rebuild-backend rebuild clean stop-frontend stop-backend stop run run-frontend run-backend mongo-access
 
 # Parar o frontend
 stop-frontend:
@@ -38,7 +38,7 @@ rebuild-backend: stop-backend
 	docker compose build backend
 
 # Reconstruir todos os serviços (frontend, backend, etc.)
-rebuild: stop-all
+rebuild: stop
 	docker compose build
 	docker compose up
 
@@ -57,4 +57,4 @@ run-backend:
 
 # Acessar o MongoDB
 mongo-access:
-	docker run -it --rm --network host mongo:4.4-bionic mongo --host localhost --port 27017 -u root -p example
+	docker compose exec mongo sh -lc 'mongosh --authenticationDatabase admin -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD" "$$MONGO_DATABASE"'

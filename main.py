@@ -1,163 +1,170 @@
-import xml.etree.ElementTree as ET
-import pymongo
 import datetime
-import rasterio
-from flask import Flask, render_template
-from flask_pymongo import PyMongo
-from multiprocessing import Process, cpu_count
-import folium
-from folium.plugins import HeatMap
+import logging
+import os
 
-# Configuração do Flask
-app = Flask(__name__)
-app.config["MONGO_URI"] = "mongodb://root:example@mongo:27017/terrabrasilis_data"
-mongo = PyMongo(app)
+import requests
 
-# Função para ler o arquivo QML e extrair a legenda
-def parse_qml(file_path):
-    tree = ET.parse(file_path)
-    root = tree.getroot()
-    color_legend = {}
-    
-    for entry in root.findall(".//paletteEntry"):
-        value = entry.get('value')
-        color = entry.get('color')
-        label = entry.get('label')
-        if value and color and label:
-            color_legend[int(value)] = {
-                'color': color,
-                'label': label,
-            }
-    
-    return color_legend
 
-# Função para ler o arquivo TIF e extrair coordenadas
-def parse_tif(file_path):
-    coordinates = []
-    with rasterio.open(file_path) as dataset:
-        band1 = dataset.read(1)  # Lê o primeiro canal
-        rows, cols = band1.shape
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
+logger = logging.getLogger("yvy.integrations")
 
-        for row in range(0, rows, 50):  # Reduzir o salto para aumentar o nível de detalhe
-            for col in range(0, cols, 50):  # Reduzir o salto para aumentar o nível de detalhe
-                value = band1[row, col]
-                if value != dataset.nodata:  # Verifica se o valor não é um valor nulo
-                    # Converter a posição do pixel para coordenadas geográficas
-                    lon, lat = dataset.xy(row, col)
-                    coordinates.append({
-                        "value": value,
-                        "lat": lat,
-                        "lon": lon
-                    })
 
-    return coordinates
+def insert_data_to_mongo(data, source):
+    logger.info("Fetched data from %s at %s", source, datetime.datetime.now(datetime.UTC).isoformat())
+    logger.debug("Payload from %s: %s", source, data)
 
-# Função para processar cada coordenada e verificar/inserir no MongoDB
-def process_coordinate_batch(coordinates_batch, color_legend):
-    batch_data = []
-    for coord in coordinates_batch:
-        value = coord['value']
-        if value in color_legend:
-            query = {
-                "name": color_legend[value]['label'],
-                "lat": coord['lat'],
-                "lon": coord['lon']
-            }
-            if mongo.db.deforestation_data.find_one(query) is None:
-                data = {
-                    "name": color_legend[value]['label'],
-                    "clazz": "Desmatamento",
-                    "periods": "N/A",
-                    "source": "TerraBrasilis",
-                    "color": color_legend[value]['color'],
-                    "lat": coord['lat'],
-                    "lon": coord['lon'],
-                    "timestamp": datetime.datetime.now()
-                }
-                batch_data.append(data)
 
-    if batch_data:
-        mongo.db.deforestation_data.insert_many(batch_data)
-        print(f"{len(batch_data)} documents inserted into MongoDB.")
+def get_openweathermap_data(api_key, city):
+    url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}"
+    response = requests.get(url, timeout=30)
+    if response.status_code == 200:
+        insert_data_to_mongo(response.json(), "OpenWeatherMap")
+    else:
+        logger.error("Failed to fetch OpenWeatherMap data: %s", response.status_code)
 
-# Função para dividir o trabalho entre múltiplos processos
-def insert_data_to_mongo_parallel(color_legend, coordinates):
-    num_processes = cpu_count()
-    chunk_size = len(coordinates) // num_processes
-    processes = []
 
-    for i in range(num_processes):
-        start = i * chunk_size
-        end = None if i == num_processes - 1 else (i + 1) * chunk_size
-        coordinates_batch = coordinates[start:end]
-        p = Process(target=process_coordinate_batch, args=(coordinates_batch, color_legend))
-        processes.append(p)
-        p.start()
+def get_waqi_data(api_key, city):
+    url = f"https://api.waqi.info/feed/{city}/?token={api_key}"
+    response = requests.get(url, timeout=30)
+    if response.status_code == 200:
+        insert_data_to_mongo(response.json(), "WAQI")
+    else:
+        logger.error("Failed to fetch WAQI data: %s", response.status_code)
 
-    for p in processes:
-        p.join()
 
-# Rotas simples
-@app.route('/')
-def home():
-    return render_template('index.html')
+def get_nasa_earthdata_data(api_key, start_date, end_date, lon, lat):
+    url = (
+        "https://api.nasa.gov/planetary/earth/assets"
+        f"?lon={lon}&lat={lat}&begin={start_date}&end={end_date}&api_key={api_key}"
+    )
+    response = requests.get(url, timeout=30)
+    if response.status_code == 200:
+        insert_data_to_mongo(response.json(), "NASA EarthData")
+    else:
+        logger.error("Failed to fetch NASA EarthData: %s", response.status_code)
 
-@app.route('/about')
-def about():
-    return render_template('about.html')
 
-@app.route('/dashboard')
-def dashboard():
-    data = mongo.db.deforestation_data.find()
-    return render_template('dashboard.html', data=data)
+def create_geostore(geojson, api_key):
+    url = "https://data-api.globalforestwatch.org/geostore"
+    headers = {
+        "Content-Type": "application/json",
+        "x-api-key": api_key,
+    }
+    payload = {"geometry": geojson}
+    response = requests.post(url, headers=headers, json=payload, timeout=30)
+    data = response.json()
+    if response.status_code in [200, 201]:
+        geostore_id = data.get("data", {}).get("gfw_geostore_id")
+        if geostore_id:
+            logger.info("Geostore created successfully.")
+            return geostore_id
 
-@app.route('/map')
-def map_view():
-    # Criar um mapa centrado no Brasil
-    folium_map = folium.Map(location=[-15.7801, -47.9292], zoom_start=4)
+        logger.error("The gfw_geostore_id key was not found in the response.")
+        return None
 
-    # Obter dados do MongoDB
-    data = mongo.db.deforestation_data.find()
-    heat_data = []
+    logger.error("Failed to create geostore: %s - %s", response.status_code, response.text)
+    return None
 
-    for item in data:
-        if 'lat' in item and 'lon' in item and 'timestamp' in item:
-            year = item['timestamp'].year
-            color_weight = 0
-            if year >= 2020:
-                color_weight = 0.8  # Vermelho - Desmatamento recente
-            elif 2010 <= year < 2020:
-                color_weight = 0.6  # Laranja - Desmatamento intermediário
-            elif 2000 <= year < 2010:
-                color_weight = 0.4  # Amarelo - Desmatamento antigo
-            else:
-                color_weight = 0.2  # Verde - Área não desmatada
 
-            heat_data.append([item['lat'], item['lon'], color_weight])
+def get_iqair_data(api_key, city, state, country):
+    url = f"https://api.airvisual.com/v2/city?city={city}&state={state}&country={country}&key={api_key}"
+    response = requests.get(url, timeout=30)
+    if response.status_code == 200:
+        insert_data_to_mongo(response.json(), "IQAir AirVisual")
+    else:
+        logger.error("Failed to fetch IQAir data: %s", response.status_code)
 
-    # Adicionar camada de mapa de calor com parâmetros ajustados
-    HeatMap(
-        heat_data,
-        min_opacity=0.3,    # Aumentar a opacidade mínima para tornar mais visível
-        max_zoom=10,        # Reduzir o zoom máximo para renderização detalhada
-        radius=15,          # Reduzir o raio para menos sobreposição
-        blur=50,            # Aumentar o desfoque para suavizar as transições
-        max_intensity=0.8   # Reduzir a intensidade máxima para evitar saturação
-    ).add_to(folium_map)
 
-    # Renderizar o mapa como HTML
-    return folium_map._repr_html_()
+def get_global_forest_watch_data(api_key, geometry):
+    geostore_id = create_geostore(geometry, api_key)
+    if not geostore_id:
+        logger.error("Failed to create geostore. Skipping data fetch.")
+        return
+
+    dataset_name = "umd_tree_cover_loss"
+    dataset_version = "v1.8"
+    url = f"https://data-api.globalforestwatch.org/dataset/{dataset_name}/{dataset_version}/statistics"
+    headers = {
+        "x-api-key": api_key,
+        "Content-Type": "application/json",
+    }
+    payload = {"geostore_id": geostore_id}
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()
+        insert_data_to_mongo(response.json(), "Global Forest Watch")
+        logger.info("Global Forest Watch data fetched successfully.")
+    except requests.exceptions.RequestException as error:
+        logger.error("Failed to fetch Global Forest Watch data: %s", error)
+
+
+def list_gfw_datasets(api_key):
+    url = "https://data-api.globalforestwatch.org/datasets"
+    headers = {"x-api-key": api_key}
+
+    try:
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        datasets = response.json().get("data", [])
+        for dataset in datasets:
+            dataset_id = dataset.get("id")
+            attributes = dataset.get("attributes", {})
+            title = attributes.get("title", "No Title")
+            description = attributes.get("description", "No Description")
+            versions = attributes.get("versions", [])
+            logger.info("Dataset %s (%s): %s | versions=%s", title, dataset_id, description, versions)
+    except requests.exceptions.RequestException as error:
+        logger.error("Failed to list datasets: %s", error)
+
+
+def require_env(name):
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+def consolidate_data():
+    openweathermap_api_key = require_env("OPENWEATHERMAP_API_KEY")
+    global_forest_watch_api_key = require_env("GFW_API_KEY")
+
+    waqi_api_key = os.getenv("WAQI_API_KEY", "").strip()
+    nasa_api_key = os.getenv("NASA_API_KEY", "").strip()
+    iqair_api_key = os.getenv("IQAIR_API_KEY", "").strip()
+
+    city = os.getenv("CITY", "Sao Paulo")
+    state = os.getenv("STATE", "Sao Paulo")
+    country = os.getenv("COUNTRY", "Brazil")
+    start_date = os.getenv("START_DATE", "2022-01-01")
+    end_date = os.getenv("END_DATE", "2022-12-31")
+    lon = float(os.getenv("LON", "-46.6333"))
+    lat = float(os.getenv("LAT", "-23.5505"))
+
+    sao_paulo_geojson = {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [-46.8261, -24.0087],
+                [-46.3652, -24.0087],
+                [-46.3652, -23.3567],
+                [-46.8261, -23.3567],
+                [-46.8261, -24.0087],
+            ]
+        ],
+    }
+
+    get_openweathermap_data(openweathermap_api_key, city)
+    list_gfw_datasets(global_forest_watch_api_key)
+    get_global_forest_watch_data(global_forest_watch_api_key, sao_paulo_geojson)
+
+    if waqi_api_key:
+        get_waqi_data(waqi_api_key, city)
+    if nasa_api_key:
+        get_nasa_earthdata_data(nasa_api_key, start_date, end_date, lon, lat)
+    if iqair_api_key:
+        get_iqair_data(iqair_api_key, city, state, country)
 
 
 if __name__ == "__main__":
-    # Ler legenda do arquivo QML
-    color_legend = parse_qml("prodes_brasil_2023.qml")
-
-    # Ler coordenadas do arquivo TIF
-    coordinates = parse_tif("prodes_brasil_2023.tif")
-
-    # Inserir dados da base QML e TIF no MongoDB em paralelo
-    insert_data_to_mongo_parallel(color_legend, coordinates)
-    
-    # Rodar o aplicativo Flask
-    app.run(host='0.0.0.0', port=5000)
+    consolidate_data()

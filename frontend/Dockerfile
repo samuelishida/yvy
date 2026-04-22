@@ -1,20 +1,24 @@
-FROM python:3.9-slim
+FROM python:3.13-slim
 
-# Install net-tools for netstat command
-RUN apt-get update && apt-get install -y net-tools
+# Create non-root user for security
+RUN useradd --create-home appuser
 
-# Diretório de trabalho no container
+# Install only the healthcheck dependency needed in the runtime image
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Copiar os arquivos necessários
 COPY requirements.txt ./
 COPY frontend.py ./
+COPY start.sh ./start.sh
 
-# Instalar as dependências do frontend
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose the port the application will run on
+RUN chmod +x /app/start.sh
+
+# Switch to non-root user
+USER appuser
+
 EXPOSE 5001
 
-# Comando para rodar o frontend
-CMD ["python", "frontend.py"]
+CMD ["/app/start.sh"]
