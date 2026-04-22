@@ -1,8 +1,13 @@
 # Usando a imagem Python base
 FROM python:3.9-slim
 
-# Instalar net-tools para o comando netstat
-RUN apt-get update && apt-get install -y net-tools wget unzip
+# Instalar build tools (needed for gevent) + net-tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    net-tools \
+    wget \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
 
 # Definir o diretório de trabalho no container
 WORKDIR /app
