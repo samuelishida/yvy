@@ -1,4 +1,4 @@
-# Backend (Flask API) - app_backend.py
+import asyncio
 import datetime
 import ipaddress
 import json
@@ -8,24 +8,22 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 import zipfile
+from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
-from collections import defaultdict, deque
+from multiprocessing import cpu_count
 from secrets import compare_digest
 from threading import Lock
 from urllib.parse import quote_plus
 
-import requests
-import redis
+import httpx
+import redis.asyncio as aioredis
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request, abort
-from flask_pymongo import PyMongo
-from multiprocessing import cpu_count
-from flask_cors import CORS
+from motor.motor_asyncio import AsyncIOMotorClient
+from quart import Quart, request, abort, jsonify
+from quart_cors import cors
 
-# Load .env for local development (ignored in git)
 load_dotenv()
-
 
 BRAZIL_BOUNDS = {
     "min_lat": -34.0,
@@ -161,7 +159,9 @@ def split_into_batches(items, batch_count):
     return [items[index:index + chunk_size] for index in range(0, len(items), chunk_size)]
 
 
-# Trusted proxy networks (comma-separated CIDR list, e.g. 172.16.0.0/12,192.168.0.0/16)
+_TRUSTED_NETWORKS = _parse_trusted_networks if False else None
+
+
 def _parse_trusted_networks():
     raw = os.getenv("TRUSTED_PROXIES", "")
     networks = []
@@ -180,7 +180,6 @@ _TRUSTED_NETWORKS = _parse_trusted_networks()
 
 
 def _is_trusted_proxy(ip_str):
-    """Return True if *ip_str* belongs to one of the trusted CIDR networks."""
     if not _TRUSTED_NETWORKS:
         return False
     try:
@@ -188,22 +187,6 @@ def _is_trusted_proxy(ip_str):
         return any(addr in net for net in _TRUSTED_NETWORKS)
     except ValueError:
         return False
-
-
-def get_client_ip():
-    remote_addr = request.remote_addr or "unknown"
-
-    if not _TRUSTED_NETWORKS:
-        return remote_addr
-
-    if _is_trusted_proxy(remote_addr):
-        forwarded_for = request.headers.get("X-Forwarded-For", "")
-        if forwarded_for:
-            ips = [ip.strip() for ip in forwarded_for.split(",") if ip.strip()]
-            for ip in ips:
-                if not _is_trusted_proxy(ip):
-                    return ip
-    return remote_addr
 
 
 def enforce_api_auth():
@@ -230,28 +213,34 @@ def enforce_api_auth():
                 "event": "api_auth_failed",
                 "path": request.path,
                 "status_code": 401,
-                "remote_addr": get_client_ip(),
+                "remote_addr": request.remote_addr,
             },
         )
         abort(401, description="A valid API key is required.")
 
 
-def enforce_rate_limit():
-    client_ip = get_client_ip()
-    now = time.time()
+async def enforce_rate_limit():
+    client_ip = request.remote_addr or "unknown"
 
+    if _is_trusted_proxy(client_ip) and request.headers.get("X-Forwarded-For"):
+        ips = [ip.strip() for ip in request.headers.get("X-Forwarded-For", "").split(",") if ip.strip()]
+        for ip in ips:
+            if not _is_trusted_proxy(ip):
+                client_ip = ip
+                break
+
+    now = time.time()
     request_count = None
     try:
         key = f"rate_limit:{client_ip}"
         pipe = redis_client.pipeline()
-        pipe.zremrangebyscore(key, 0, now - RATE_LIMIT_WINDOW_SECONDS)
-        pipe.zcard(key)
-        pipe.zadd(key, {str(now): now})
-        pipe.expire(key, RATE_LIMIT_WINDOW_SECONDS)
-        results = pipe.execute()
+        await pipe.zremrangebyscore(key, 0, now - RATE_LIMIT_WINDOW_SECONDS)
+        await pipe.zcard(key)
+        await pipe.zadd(key, {str(now): now})
+        await pipe.expire(key, RATE_LIMIT_WINDOW_SECONDS)
+        results = await pipe.execute()
         request_count = results[1]
     except Exception:
-        # Fallback to in-memory rate limiting if Redis is unavailable
         with _RATE_LIMIT_LOCK:
             window = _RATE_LIMIT_BUCKETS[client_ip]
             while window and window[0] < now - RATE_LIMIT_WINDOW_SECONDS:
@@ -276,24 +265,36 @@ def enforce_rate_limit():
         abort(429, description="Rate limit exceeded. Please retry later.")
 
 
-# Configuração do Flask
-app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": parse_cors_origins()}})
-app.config["MONGO_URI"] = build_mongo_uri()
-mongo = PyMongo(app)
+app = Quart(__name__)
+app = cors(app, allow_origin=parse_cors_origins())
 
-# Initialize Redis for rate limiting
+MONGO_URI = build_mongo_uri()
+MONGO_DATABASE = os.getenv("MONGO_DATABASE", "terrabrasilis_data")
+motor_client = AsyncIOMotorClient(MONGO_URI)
+mongo_db = motor_client[MONGO_DATABASE]
+
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-redis_client = redis.from_url(REDIS_URL, socket_connect_timeout=5, socket_timeout=5)
+redis_client = aioredis.from_url(REDIS_URL, socket_connect_timeout=5, socket_timeout=5)
+
+
+@app.before_serving
+async def startup():
+    pass
+
+
+@app.after_serving
+async def shutdown():
+    motor_client.close()
+    await redis_client.close()
 
 
 @app.before_request
-def start_request_timer():
+async def start_request_timer():
     request._start_time = time.perf_counter()
 
 
 @app.after_request
-def add_security_headers(response):
+async def add_security_headers(response):
     for header_name, header_value in build_security_headers().items():
         response.headers.setdefault(header_name, header_value)
 
@@ -301,13 +302,21 @@ def add_security_headers(response):
     with suppress(Exception):
         duration_ms = round((time.perf_counter() - request._start_time) * 1000, 2)
 
+    remote_addr = request.remote_addr or "unknown"
+    if _is_trusted_proxy(remote_addr) and request.headers.get("X-Forwarded-For"):
+        ips = [ip.strip() for ip in request.headers.get("X-Forwarded-For", "").split(",") if ip.strip()]
+        for ip in ips:
+            if not _is_trusted_proxy(ip):
+                remote_addr = ip
+                break
+
     logger.info(
         "Handled backend request.",
         extra={
             "event": "http_request",
             "path": request.path,
             "status_code": response.status_code,
-            "remote_addr": get_client_ip(),
+            "remote_addr": remote_addr,
             "details": {
                 "method": request.method,
                 "duration_ms": duration_ms,
@@ -317,37 +326,39 @@ def add_security_headers(response):
     return response
 
 
-# Endpoint de saúde para health checks
-@app.route('/health')
-def health():
+@app.route("/health")
+async def health():
     return jsonify({"status": "healthy", "timestamp": datetime.datetime.now(datetime.UTC).isoformat()})
 
 
-# Error handlers
 @app.errorhandler(404)
-def not_found(error):
+async def not_found(error):
     return jsonify({"error": "Not found", "message": str(error)}), 404
 
+
 @app.errorhandler(400)
-def bad_request(error):
+async def bad_request(error):
     return jsonify({"error": "Bad request", "message": str(error)}), 400
 
+
 @app.errorhandler(401)
-def unauthorized(error):
+async def unauthorized(error):
     return jsonify({"error": "Unauthorized", "message": str(error)}), 401
 
+
 @app.errorhandler(429)
-def rate_limited(error):
+async def rate_limited(error):
     return jsonify({"error": "Too many requests", "message": str(error)}), 429
 
+
 @app.errorhandler(503)
-def service_unavailable(error):
+async def service_unavailable(error):
     return jsonify({"error": "Service unavailable", "message": str(error)}), 503
 
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({"error": "Internal server error"}), 500
 
+@app.errorhandler(500)
+async def internal_error(error):
+    return jsonify({"error": "Internal server error"}), 500
 
 
 def download_and_extract_data():
@@ -361,27 +372,28 @@ def download_and_extract_data():
             "Dataset files not found. Downloading archive.",
             extra={"event": "dataset_download_start", "details": {"archive_url": zip_file_url}},
         )
-        response = requests.get(zip_file_url, stream=True, timeout=120)
-        if response.status_code == 200:
-            with open(zip_file_path, "wb") as zip_file:
-                for chunk in response.iter_content(chunk_size=1024):
-                    zip_file.write(chunk)
-            with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
-                zip_ref.extractall("/app")
-            os.remove(zip_file_path)
-            logger.info(
-                "Dataset archive downloaded successfully.",
-                extra={"event": "dataset_download_complete", "details": {"target_dir": "/app"}},
-            )
-        else:
-            logger.error(
-                "Failed to download dataset archive.",
-                extra={
-                    "event": "dataset_download_failed",
-                    "status_code": response.status_code,
-                    "details": {"archive_url": zip_file_url},
-                },
-            )
+        with httpx.Client(timeout=120) as client:
+            with client.stream("GET", zip_file_url) as resp:
+                if resp.status_code == 200:
+                    with open(zip_file_path, "wb") as zip_file:
+                        for chunk in resp.iter_bytes(chunk_size=1024):
+                            zip_file.write(chunk)
+                    with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
+                        zip_ref.extractall("/app")
+                    os.remove(zip_file_path)
+                    logger.info(
+                        "Dataset archive downloaded successfully.",
+                        extra={"event": "dataset_download_complete", "details": {"target_dir": "/app"}},
+                    )
+                else:
+                    logger.error(
+                        "Failed to download dataset archive.",
+                        extra={
+                            "event": "dataset_download_failed",
+                            "status_code": resp.status_code,
+                            "details": {"archive_url": zip_file_url},
+                        },
+                    )
     else:
         logger.info(
             "Dataset files already available locally.",
@@ -389,91 +401,92 @@ def download_and_extract_data():
         )
 
 
-# Função para ler o arquivo QML e extrair a legenda
 def parse_qml(file_path):
     tree = ET.parse(file_path)
     root = tree.getroot()
     color_legend = {}
-    
+
     for entry in root.findall(".//paletteEntry"):
-        value = entry.get('value')
-        color = entry.get('color')
-        label = entry.get('label')
+        value = entry.get("value")
+        color = entry.get("color")
+        label = entry.get("label")
         if value and color and label:
             color_legend[int(value)] = {
-                'color': color,
-                'label': label,
+                "color": color,
+                "label": label,
             }
-    
+
     return color_legend
 
-# Função para ler o arquivo TIF e extrair coordenadas
+
 def parse_tif(file_path):
-    # Import rasterio lazily to avoid requiring it during test imports
-    coordinates = []
     try:
         import rasterio
     except Exception:
         raise
 
+    coordinates = []
     with rasterio.open(file_path) as dataset:
-        band1 = dataset.read(1)  # Lê o primeiro canal
+        band1 = dataset.read(1)
         rows, cols = band1.shape
 
-        for row in range(0, rows, 50):  # Reduzir o salto para aumentar o nível de detalhe
-            for col in range(0, cols, 50):  # Reduzir o salto para aumentar o nível de detalhe
+        for row in range(0, rows, 50):
+            for col in range(0, cols, 50):
                 value = band1[row, col]
-                if value != dataset.nodata:  # Verifica se o valor não é um valor nulo
-                    # Converter a posição do pixel para coordenadas geográficas
+                if value != dataset.nodata:
                     lon, lat = dataset.xy(row, col)
                     coordinates.append({
                         "value": value,
                         "lat": lat,
-                        "lon": lon
+                        "lon": lon,
                     })
 
     return coordinates
 
-# Função para processar cada coordenada e verificar/inserir no MongoDB
+
 def process_coordinate_batch(args):
-    coordinates_batch, color_legend = args
+    from pymongo import UpdateOne
+
+    coordinates_batch, color_legend, mongo_uri, mongo_database = args
+    from pymongo import MongoClient as SyncMongoClient
+
+    client = SyncMongoClient(mongo_uri)
+    db = client[mongo_database]
     batch_data = []
     for coord in coordinates_batch:
-        value = coord['value']
+        value = coord["value"]
         if value in color_legend:
             data = {
-                "name": color_legend[value]['label'],
+                "name": color_legend[value]["label"],
                 "clazz": "Desmatamento",
                 "periods": "N/A",
                 "source": "TerraBrasilis",
-                "color": color_legend[value]['color'],  # Inclui a cor diretamente do color_legend
-                "lat": coord['lat'],
-                "lon": coord['lon'],
-                "timestamp": datetime.datetime.now(datetime.UTC)
+                "color": color_legend[value]["color"],
+                "lat": coord["lat"],
+                "lon": coord["lon"],
+                "timestamp": datetime.datetime.now(datetime.UTC),
             }
             batch_data.append(data)
 
     if batch_data:
-        # Import pymongo lazily to avoid requiring it for tests that mock the DB
-        import pymongo
         operations = []
         for data in batch_data:
             operations.append(
-                pymongo.UpdateOne(
+                UpdateOne(
                     {"name": data["name"], "lat": data["lat"], "lon": data["lon"]},
                     {"$setOnInsert": data},
-                    upsert=True
+                    upsert=True,
                 )
             )
         if operations:
-            mongo.db.deforestation_data.bulk_write(operations, ordered=False)
+            db.deforestation_data.bulk_write(operations, ordered=False)
         logger.info(
             "Batch documents upserted into MongoDB.",
             extra={"event": "mongo_bulk_upsert", "details": {"documents": len(batch_data)}},
         )
+    client.close()
 
 
-# Função para dividir o trabalho entre múltiplos processos
 def insert_data_to_mongo_parallel(color_legend, coordinates):
     num_processes = max(1, cpu_count() // 2 + 2)
     coordinate_batches = split_into_batches(coordinates, num_processes)
@@ -484,73 +497,72 @@ def insert_data_to_mongo_parallel(color_legend, coordinates):
         )
         return
 
-    # Threaded batching avoids forking an inherited Mongo client.
+    mongo_uri = build_mongo_uri()
+    mongo_database = os.getenv("MONGO_DATABASE", "terrabrasilis_data")
     with ThreadPoolExecutor(max_workers=len(coordinate_batches)) as executor:
-        list(executor.map(process_coordinate_batch, [(batch, color_legend) for batch in coordinate_batches]))
+        list(executor.map(process_coordinate_batch, [(batch, color_legend, mongo_uri, mongo_database) for batch in coordinate_batches]))
 
-# Rotas simples
-@app.route('/')
-def home():
+
+@app.route("/")
+async def home():
     return jsonify({"message": "API do backend de desmatamento"})
 
 
-@app.route('/api/news', methods=['GET'])
-def get_news():
-    enforce_rate_limit()
+@app.route("/api/news", methods=["GET"])
+async def get_news():
+    await enforce_rate_limit()
     enforce_api_auth()
 
     try:
-        page = int(request.args.get('page', 1))
-        page_size = int(request.args.get('page_size', 20))
+        page = int(request.args.get("page", 1))
+        page_size = int(request.args.get("page_size", 20))
     except (TypeError, ValueError):
-        return abort(400, description="Invalid 'page' or 'page_size' parameters.")
+        abort(400, description="Invalid 'page' or 'page_size' parameters.")
 
     if page < 1:
-        return abort(400, description="'page' must be >= 1.")
+        abort(400, description="'page' must be >= 1.")
     if page_size < 1 or page_size > 100:
-        return abort(400, description="'page_size' must be between 1 and 100.")
+        abort(400, description="'page_size' must be between 1 and 100.")
 
     from news import get_news as fetch_news, fetch_and_save_news
 
     if page == 1:
-        fetch_and_save_news(mongo)
+        await fetch_and_save_news(mongo_db)
 
-    articles = fetch_news(mongo, page, page_size)
-
+    articles = await fetch_news(mongo_db, page, page_size)
     return jsonify(articles)
 
 
-@app.route('/api/news/refresh', methods=['POST'])
-def refresh_news():
+@app.route("/api/news/refresh", methods=["POST"])
+async def refresh_news():
     if AUTH_REQUIRED:
         enforce_api_auth()
-    enforce_rate_limit()
-    
+    await enforce_rate_limit()
+
     from news import fetch_and_save_news
-    fetch_and_save_news(mongo)
-    
+    await fetch_and_save_news(mongo_db)
+
     return jsonify({"status": "refreshed"})
 
 
-@app.route('/data')
-def get_data():
-    enforce_rate_limit()
+@app.route("/data")
+async def get_data():
+    await enforce_rate_limit()
     enforce_api_auth()
 
     try:
-        ne_lat = float(request.args.get('ne_lat', None))
-        ne_lng = float(request.args.get('ne_lng', None))
-        sw_lat = float(request.args.get('sw_lat', None))
-        sw_lng = float(request.args.get('sw_lng', None))
+        ne_lat = float(request.args.get("ne_lat", None))
+        ne_lng = float(request.args.get("ne_lng", None))
+        sw_lat = float(request.args.get("sw_lat", None))
+        sw_lng = float(request.args.get("sw_lng", None))
     except (TypeError, ValueError):
-        return abort(400, description="Invalid or missing query parameters. Please provide valid 'ne_lat', 'ne_lng', 'sw_lat', and 'sw_lng'.")
+        abort(400, description="Invalid or missing query parameters. Please provide valid 'ne_lat', 'ne_lng', 'sw_lat', and 'sw_lng'.")
 
-    # Validate bounding box
     if ne_lat is None or ne_lng is None or sw_lat is None or sw_lng is None:
-        return abort(400, description="All parameters (ne_lat, ne_lng, sw_lat, sw_lng) are required.")
-    
+        abort(400, description="All parameters (ne_lat, ne_lng, sw_lat, sw_lng) are required.")
+
     if ne_lat <= sw_lat or ne_lng <= sw_lng:
-        return abort(400, description="Invalid bounding box: ne_lat must be > sw_lat and ne_lng must be > sw_lng.")
+        abort(400, description="Invalid bounding box: ne_lat must be > sw_lat and ne_lng must be > sw_lng.")
 
     validate_coordinate("ne_lat", ne_lat, -90.0, 90.0)
     validate_coordinate("sw_lat", sw_lat, -90.0, 90.0)
@@ -565,10 +577,14 @@ def get_data():
 
     query = {
         "lat": {"$lte": ne_lat, "$gte": sw_lat},
-        "lon": {"$lte": ne_lng, "$gte": sw_lng}
+        "lon": {"$lte": ne_lng, "$gte": sw_lng},
     }
 
-    data = mongo.db.deforestation_data.find(query).limit(MAX_RESULTS)
+    cursor = mongo_db.deforestation_data.find(query).limit(MAX_RESULTS)
+    if hasattr(cursor, "to_list"):
+        data = await cursor.to_list(length=MAX_RESULTS)
+    else:
+        data = list(cursor)
     return jsonify([{
         "name": item["name"],
         "lat": item["lat"],
@@ -577,7 +593,7 @@ def get_data():
         "clazz": item.get("clazz", "Desmatamento"),
         "periods": item.get("periods", "N/A"),
         "source": item.get("source", "TerraBrasilis"),
-        "timestamp": item["timestamp"].isoformat()
+        "timestamp": item["timestamp"].isoformat(),
     } for item in data])
 
 
@@ -592,7 +608,5 @@ signal.signal(signal.SIGINT, _shutdown_handler)
 
 
 if __name__ == "__main__":
-    # In development you can enable the local dev server with DEV=1
-    # Heavy ingestion is disabled by default. To run ingestion, use the separate ingest script.
     if os.getenv("DEV", "0") == "1":
-        app.run(host='0.0.0.0', port=5000)
+        app.run(host="0.0.0.0", port=5000)

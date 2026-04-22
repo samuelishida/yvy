@@ -1,6 +1,6 @@
 # Yvy
 
-Aplicativo de observabilidade ambiental para monitorar o desmatamento no Brasil, utilizando **React** (frontend), **Express** (proxy/servidor), **Flask** (backend API), **MongoDB** e **Redis**, com dados do TerraBrasilis (PRODES).
+Aplicativo de observabilidade ambiental para monitorar o desmatamento no Brasil, utilizando **React** (frontend), **Express** (proxy/servidor), **Quart** (backend API async), **MongoDB** (via motor) e **Redis** (via redis.asyncio), com dados do TerraBrasilis (PRODES).
 
 ## Pré-requisitos
 
@@ -72,27 +72,27 @@ db.deforestation_data.countDocuments({})
 ```
 ┌────────────┐       ┌─────────────┐       ┌──────────┐
 │  Navegador │──────▶│   Frontend  │──────▶│  Backend │
-│  :5001     │  HTTP │  (Express + │  API   │  (Flask +│
-│            │◀──────│   React)    │◀──────│  Gunicorn)│
+│  :5001     │  HTTP │  (Express + │  API   │ (Quart +│
+│            │◀──────│   React)    │◀──────│Hypercorn)│
 └────────────┘       └─────────────┘       └────┬─────┘
-                                                  │
-                                           ┌──────┴──────┐
-                                           │             │
-                                        ┌──┴──┐   ┌────┴────┐
-                                        │Mongo│   │  Redis   │
-                                        │ DB  │   │(rate     │
-                                        └─────┘   │ limiting)│
-                                                  └──────────┘
+                                                   │
+                                            ┌──────┴──────┐
+                                            │             │
+                                         ┌──┴──┐   ┌────┴────┐
+                                         │Mongo│   │  Redis   │
+                                         │ DB  │   │(rate     │
+                                         └─────┘   │ limiting)│
+                                                   └──────────┘
 ```
 
 - **Frontend**: Express serve o build React e faz proxy de `/api/*` para o backend, injetando a API key server-side.
-- **Backend**: Flask+Gunicorn com rate limiting via Redis, autenticação por API key, logging estruturado JSON.
-- **MongoDB**: Autenticado (usuários `yvy_app` e `yvy_readonly` criados pelo init script).
-- **Redis**: Compartilha estado de rate limiting entre os workers do Gunicorn.
+- **Backend**: Quart+Hypercorn (async/ASGI) com rate limiting via redis.asyncio, motor (async MongoDB), httpx (async HTTP), autenticação por API key, logging estruturado JSON.
+- **MongoDB**: Autenticado (usuários `yvy_app` e `yvy_readonly` criados pelo init script). Conexão via motor (async).
+- **Redis**: Compartilha estado de rate limiting entre os workers do Hypercorn via redis.asyncio.
 
 ## Testes
 
-Os testes usam `pytest` com `mongomock` (sem dependência de MongoDB real) para o backend.
+Os testes usam `pytest` com `mongomock` (sem dependência de MongoDB real) e `pytest-asyncio` para o test client async do Quart.
 
 ```bash
 python3 -m venv .venv
@@ -135,14 +135,14 @@ O repositório também inclui CI em [`.github/workflows/ci.yml`](.github/workflo
 ```
 yvy/
 ├── backend/
-│   ├── backend.py           # API Flask (rotas, auth, rate limit, logging)
-│   ├── ingest.py            # Script de ingestão de dados TIF/QML
-│   ├── news.py              # Integração NewsAPI para notícias ambientais
+│   ├── backend.py           # API Quart (rotas async, auth, rate limit, logging)
+│   ├── ingest.py            # Script síncrono de ingestão de dados TIF/QML (pymongo)
+│   ├── news.py              # Integração NewsAPI via httpx (async)
 │   ├── requirements.txt     # Dependências de produção
 │   ├── requirements-dev.txt  # Dependências de desenvolvimento/teste
 │   ├── pytest.ini            # Configuração do pytest
-│   ├── Dockerfile            # Imagem Python 3.13 com gunicorn
-│   ├── start.sh              # Entrypoint: dev server ou gunicorn dinâmico
+│   ├── Dockerfile            # Imagem Python 3.13 com hypercorn
+│   ├── start.sh              # Entrypoint: dev server ou hypercorn dinâmico
 │   ├── tests/
 │   │   └── test_api.py       # Suíte de testes da API
 │   ├── .dockerignore
@@ -203,7 +203,7 @@ yvy/
 | `TRUSTED_PROXIES` | `172.16.0.0/12,192.168.0.0/16,10.0.0.0/8` | Proxies confiáveis para X-Forwarded-For |
 | `REDIS_URL` | `redis://redis:6379/0` | URL do Redis para rate limiting |
 | `LOG_LEVEL` | `INFO` | Nível do logging estruturado |
-| `DEV` | `0` | `1` para rodar Flask dev server dentro do container |
+| `DEV` | `0` | `1` para rodar Quart dev server dentro do container |
 | `RUN_INGEST` | `0` | Reservado para ingestão automatizada |
 
 ## Makefile
