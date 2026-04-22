@@ -9,7 +9,11 @@ stop-frontend:
 stop-backend:
 	docker compose stop backend
 
-# Parar todos os serviços
+# Iniciar a aplicação em modo de desenvolvimento com nodemon
+dev:
+	nodemon server.js
+
+# Parar a aplicação
 stop:
 	docker compose down
 

@@ -1,0 +1,19 @@
+
+
+# Configuração do node
+[node]
+service = "node"
+builder = "NODE"
+buildCommand = "cd node && npm run install:prod && npm run build"
+startCommand = "cd node && npm run serve"
+ports = [
+  "8080:8080"
+]
+restart_policy_type = "always"
+resources_limits_cpus = "1.0"
+
+
+# Configuração da Rede
+[network]
+driver = "bridge"
+name = "app-network"

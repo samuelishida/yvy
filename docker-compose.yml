@@ -1,9 +1,11 @@
-version: '3.8'
-
+version: '3'
 services:
-  mongo:
-    image: mongo:latest
-    container_name: mongo
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - '3000:3000'
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-root}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
@@ -96,6 +98,12 @@ services:
           cpus: '12.0'
           memory: 24G
 
-networks:
-  app-network:
-    driver: bridge
+  mongo:
+    image: mongo:6.0
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+
+volumes:
+  mongo-data:
