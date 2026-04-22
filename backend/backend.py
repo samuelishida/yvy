@@ -442,6 +442,38 @@ def insert_data_to_mongo_parallel(color_legend, coordinates):
 def home():
     return jsonify({"message": "API do backend de desmatamento"})
 
+
+@app.route('/api/news', methods=['GET'])
+def get_news():
+    enforce_rate_limit()
+    
+    try:
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 20))
+    except (TypeError, ValueError):
+        page = 1
+        page_size = 20
+    
+    from news import get_news as fetch_news, fetch_and_save_news
+    
+    if page == 1:
+        fetch_and_save_news()
+    
+    articles = fetch_news(page, page_size)
+    
+    return jsonify(articles)
+
+
+@app.route('/api/news/refresh', methods=['POST'])
+def refresh_news():
+    enforce_rate_limit()
+    
+    from news import fetch_and_save_news
+    fetch_and_save_news()
+    
+    return jsonify({"status": "refreshed"})
+
+
 @app.route('/data')
 def get_data():
     enforce_rate_limit()

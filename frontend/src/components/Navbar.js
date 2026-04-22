@@ -38,6 +38,13 @@ export default function Navbar() {
           <span className="nav-icon">🗺️</span> Mapas
         </Link>
         <Link
+          to="/news"
+          className={location.pathname === '/news' ? 'nav-link nav-link--active' : 'nav-link'}
+          onClick={close}
+        >
+          <span className="nav-icon">📰</span> Notícias
+        </Link>
+        <Link
           to="/dashboard"
           className={location.pathname === '/dashboard' ? 'nav-link nav-link--active' : 'nav-link'}
           onClick={close}

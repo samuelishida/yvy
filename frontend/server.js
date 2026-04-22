@@ -17,7 +17,6 @@ app.use(
   createProxyMiddleware({
     target: BACKEND_URL,
     changeOrigin: true,
-    pathRewrite: { '^/api': '' },
     onProxyReq: (proxyReq) => {
       if (API_KEY) proxyReq.setHeader('X-API-Key', API_KEY);
     },

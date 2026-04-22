@@ -14,14 +14,14 @@ const MAPS = [
     label: 'Qualidade do Ar',
     icon: '💨',
     tag: 'WAQI',
-    src: 'https://waqi.info/#/c/-14.636/-58.315/5.1z',
+    src: 'https://waqi.info/#/c/-14.636/-58.315/5.1z?lang=pt',
   },
   {
     id: 'temperature',
     label: 'Temperatura',
     icon: '🌡️',
     tag: 'OpenWeatherMap',
-    src: 'https://openweathermap.org/weathermap?basemap=map&cities=true&layer=temperature&lat=-22.8042&lon=-47.0668&zoom=5',
+    src: 'https://openweathermap.org/weathermap?basemap=map&cities=true&layer=temperature&lat=-22.8042&lon=-47.0668&zoom=5&lang=pt_br',
   },
   {
     id: 'windy',
@@ -49,7 +49,7 @@ const MAPS = [
     label: 'Incêndios NASA',
     icon: '🔥',
     tag: 'NASA FIRMS',
-    src: 'https://firms.modaps.eosdis.nasa.gov/map/',
+    src: 'https://firms.modaps.eosdis.nasa.gov/map/?lang=pt',
   },
 ];
 
@@ -74,32 +74,25 @@ export default function Home() {
             </button>
           ))}
         </div>
-        {activeMap && (
-          <div className="active-label">
-            <span>{activeMap.icon}</span>
-            <span>{activeMap.label}</span>
-            {activeMap.tag && <span className="active-label__tag">{activeMap.tag}</span>}
-          </div>
-        )}
       </div>
 
-      {/* Map iframe panel */}
-      <div className="map-panel">
-        {MAPS.map((m) => (
-          <iframe
-            key={m.id}
-            src={m.src}
-            title={m.label}
-            className={`map-iframe ${active === m.id ? 'map-iframe--visible' : ''}`}
-            allow="fullscreen"
-            loading="lazy"
-          />
-        ))}
-        <div className="map-overlay-corner">
-          <span className="overlay-dot" />
-          <span className="overlay-text">Dados em tempo real</span>
-        </div>
-      </div>
+       {/* Map iframe panel */}
+       <div className="map-panel">
+         {MAPS.map((m) => (
+           <iframe
+             key={m.id}
+             src={m.src}
+             title={m.label}
+             className={`map-iframe ${active === m.id ? 'map-iframe--visible' : ''}`}
+             allow="fullscreen"
+             loading="lazy"
+           />
+         ))}
+         <div className="map-overlay-corner">
+           <span className="overlay-dot" />
+           <span className="overlay-text">Dados em tempo real</span>
+         </div>
+       </div>
     </div>
   );
 }
