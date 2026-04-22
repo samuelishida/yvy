@@ -36,17 +36,15 @@ services:
     environment:
       BACKEND_URL: ${BACKEND_URL:-http://backend:5000}
       API_KEY: ${API_KEY}
-      DEV: ${DEV:-0}
+      PORT: 5001
     ports:
       - "5001:5001"
-    volumes:
-      - ./frontend:/app
     depends_on:
       backend:
         condition: service_healthy
     restart: always
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:5001/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -55,8 +53,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '4.0'
-          memory: 8G
+          cpus: '2.0'
+          memory: 2G
 
   backend:
     build: ./backend
