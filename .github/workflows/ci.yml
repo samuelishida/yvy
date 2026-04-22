@@ -33,17 +33,16 @@ jobs:
 
       - name: Run backend tests
         run: |
-          pytest -q backend/tests frontend/tests
+          pytest -q backend/tests
 
       - name: Compile Python sources
         run: |
-          python -m py_compile backend/backend.py backend/ingest.py frontend/frontend.py main.py gpw.py
+          python -m py_compile backend/backend.py backend/ingest.py backend/news.py main.py gpw.py
 
       - name: Validate shell scripts
         run: |
           sh -n backup.sh
           sh -n backend/start.sh
-          sh -n frontend/start.sh
 
       - name: Validate Mongo init script syntax
         run: |

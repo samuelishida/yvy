@@ -8,6 +8,19 @@ const PORT = parseInt(process.env.PORT || '5001', 10);
 const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:5000';
 const API_KEY = process.env.API_KEY || '';
 
+// Graceful shutdown
+const server = require('http').createServer(app);
+
+function gracefulShutdown(signal) {
+  console.log(`Received ${signal}. Shutting down gracefully...`);
+  server.close(() => process.exit(0));
+  // Force shutdown after 10s if connections still open
+  setTimeout(() => process.exit(1), 10000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 // Health check (required by docker-compose healthcheck)
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
@@ -32,4 +45,4 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });
 
-app.listen(PORT, () => console.log(`Yvy frontend running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Yvy frontend running on port ${PORT}`));

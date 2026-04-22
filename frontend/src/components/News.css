@@ -69,6 +69,19 @@
   box-shadow: 0 0 12px rgba(0, 180, 216, 0.3);
 }
 
+.news-error {
+  color: #e74c3c;
+  font-size: 0.95rem;
+  text-align: center;
+  padding: 20px;
+  background: rgba(231, 76, 60, 0.1);
+  border: 1px solid rgba(231, 76, 60, 0.3);
+  border-radius: 8px;
+  width: 100%;
+  max-width: 900px;
+  margin: 20px 0;
+}
+
 .news-loading {
   color: #8892a4;
   font-size: 0.9rem;

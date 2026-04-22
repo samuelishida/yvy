@@ -1,5 +1,6 @@
 # Backend (Flask API) - app_backend.py
 import datetime
+import ipaddress
 import json
 import logging
 import os
@@ -15,6 +16,7 @@ from threading import Lock
 from urllib.parse import quote_plus
 
 import requests
+import redis
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, abort
 from flask_pymongo import PyMongo
@@ -159,11 +161,49 @@ def split_into_batches(items, batch_count):
     return [items[index:index + chunk_size] for index in range(0, len(items), chunk_size)]
 
 
+# Trusted proxy networks (comma-separated CIDR list, e.g. 172.16.0.0/12,192.168.0.0/16)
+def _parse_trusted_networks():
+    raw = os.getenv("TRUSTED_PROXIES", "")
+    networks = []
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(item, strict=False))
+        except ValueError:
+            logger.warning("Invalid CIDR in TRUSTED_PROXIES, ignoring: %s", item)
+    return networks
+
+
+_TRUSTED_NETWORKS = _parse_trusted_networks()
+
+
+def _is_trusted_proxy(ip_str):
+    """Return True if *ip_str* belongs to one of the trusted CIDR networks."""
+    if not _TRUSTED_NETWORKS:
+        return False
+    try:
+        addr = ipaddress.ip_address(ip_str)
+        return any(addr in net for net in _TRUSTED_NETWORKS)
+    except ValueError:
+        return False
+
+
 def get_client_ip():
-    forwarded_for = request.headers.get("X-Forwarded-For", "")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    return request.remote_addr or "unknown"
+    remote_addr = request.remote_addr or "unknown"
+
+    if not _TRUSTED_NETWORKS:
+        return remote_addr
+
+    if _is_trusted_proxy(remote_addr):
+        forwarded_for = request.headers.get("X-Forwarded-For", "")
+        if forwarded_for:
+            ips = [ip.strip() for ip in forwarded_for.split(",") if ip.strip()]
+            for ip in ips:
+                if not _is_trusted_proxy(ip):
+                    return ip
+    return remote_addr
 
 
 def enforce_api_auth():
@@ -200,28 +240,40 @@ def enforce_rate_limit():
     client_ip = get_client_ip()
     now = time.time()
 
-    with _RATE_LIMIT_LOCK:
-        bucket = _RATE_LIMIT_BUCKETS[client_ip]
-        while bucket and now - bucket[0] >= RATE_LIMIT_WINDOW_SECONDS:
-            bucket.popleft()
+    request_count = None
+    try:
+        key = f"rate_limit:{client_ip}"
+        pipe = redis_client.pipeline()
+        pipe.zremrangebyscore(key, 0, now - RATE_LIMIT_WINDOW_SECONDS)
+        pipe.zcard(key)
+        pipe.zadd(key, {str(now): now})
+        pipe.expire(key, RATE_LIMIT_WINDOW_SECONDS)
+        results = pipe.execute()
+        request_count = results[1]
+    except Exception:
+        # Fallback to in-memory rate limiting if Redis is unavailable
+        with _RATE_LIMIT_LOCK:
+            window = _RATE_LIMIT_BUCKETS[client_ip]
+            while window and window[0] < now - RATE_LIMIT_WINDOW_SECONDS:
+                window.popleft()
+            request_count = len(window)
+            window.append(now)
 
-        if len(bucket) >= RATE_LIMIT_REQUESTS:
-            logger.warning(
-                "Rate limit exceeded.",
-                extra={
-                    "event": "rate_limit_exceeded",
-                    "path": request.path,
-                    "status_code": 429,
-                    "remote_addr": client_ip,
-                    "details": {
-                        "limit": RATE_LIMIT_REQUESTS,
-                        "window_seconds": RATE_LIMIT_WINDOW_SECONDS,
-                    },
+    if request_count >= RATE_LIMIT_REQUESTS:
+        logger.warning(
+            "Rate limit exceeded.",
+            extra={
+                "event": "rate_limit_exceeded",
+                "path": request.path,
+                "status_code": 429,
+                "remote_addr": client_ip,
+                "details": {
+                    "limit": RATE_LIMIT_REQUESTS,
+                    "window_seconds": RATE_LIMIT_WINDOW_SECONDS,
                 },
-            )
-            abort(429, description="Rate limit exceeded. Please retry later.")
-
-        bucket.append(now)
+            },
+        )
+        abort(429, description="Rate limit exceeded. Please retry later.")
 
 
 # Configuração do Flask
@@ -229,6 +281,10 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": parse_cors_origins()}})
 app.config["MONGO_URI"] = build_mongo_uri()
 mongo = PyMongo(app)
+
+# Initialize Redis for rate limiting
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+redis_client = redis.from_url(REDIS_URL, socket_connect_timeout=5, socket_timeout=5)
 
 
 @app.before_request
@@ -293,31 +349,25 @@ def internal_error(error):
     return jsonify({"error": "Internal server error"}), 500
 
 
-# Função para baixar e extrair a base de dados do TerraBrasilis, se não estiver presente
+
 def download_and_extract_data():
     tif_file_path = "/app/prodes_brasil_2023.tif"
     qml_file_path = "/app/prodes_brasil_2023.qml"
     zip_file_url = "https://terrabrasilis.dpi.inpe.br/download/dataset/brasil-prodes/raster/prodes_brasil_2023.zip"
     zip_file_path = "/app/prodes_brasil_2023.zip"
 
-    # Verifica se os arquivos TIF e QML já estão presentes
     if not (os.path.isfile(tif_file_path) and os.path.isfile(qml_file_path)):
         logger.info(
             "Dataset files not found. Downloading archive.",
             extra={"event": "dataset_download_start", "details": {"archive_url": zip_file_url}},
         )
-        # Fazer o download do arquivo ZIP
         response = requests.get(zip_file_url, stream=True, timeout=120)
         if response.status_code == 200:
             with open(zip_file_path, "wb") as zip_file:
                 for chunk in response.iter_content(chunk_size=1024):
                     zip_file.write(chunk)
-
-            # Extrair o arquivo ZIP
             with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
                 zip_ref.extractall("/app")
-
-            # Remover o arquivo ZIP
             os.remove(zip_file_path)
             logger.info(
                 "Dataset archive downloaded successfully.",
@@ -337,6 +387,7 @@ def download_and_extract_data():
             "Dataset files already available locally.",
             extra={"event": "dataset_already_present", "details": {"target_dir": "/app"}},
         )
+
 
 # Função para ler o arquivo QML e extrair a legenda
 def parse_qml(file_path):
@@ -398,7 +449,7 @@ def process_coordinate_batch(args):
                 "color": color_legend[value]['color'],  # Inclui a cor diretamente do color_legend
                 "lat": coord['lat'],
                 "lon": coord['lon'],
-                "timestamp": datetime.datetime.now()
+                "timestamp": datetime.datetime.now(datetime.UTC)
             }
             batch_data.append(data)
 
@@ -446,30 +497,37 @@ def home():
 @app.route('/api/news', methods=['GET'])
 def get_news():
     enforce_rate_limit()
-    
+    enforce_api_auth()
+
     try:
         page = int(request.args.get('page', 1))
         page_size = int(request.args.get('page_size', 20))
     except (TypeError, ValueError):
-        page = 1
-        page_size = 20
-    
+        return abort(400, description="Invalid 'page' or 'page_size' parameters.")
+
+    if page < 1:
+        return abort(400, description="'page' must be >= 1.")
+    if page_size < 1 or page_size > 100:
+        return abort(400, description="'page_size' must be between 1 and 100.")
+
     from news import get_news as fetch_news, fetch_and_save_news
-    
+
     if page == 1:
-        fetch_and_save_news()
-    
-    articles = fetch_news(page, page_size)
-    
+        fetch_and_save_news(mongo)
+
+    articles = fetch_news(mongo, page, page_size)
+
     return jsonify(articles)
 
 
 @app.route('/api/news/refresh', methods=['POST'])
 def refresh_news():
+    if AUTH_REQUIRED:
+        enforce_api_auth()
     enforce_rate_limit()
     
     from news import fetch_and_save_news
-    fetch_and_save_news()
+    fetch_and_save_news(mongo)
     
     return jsonify({"status": "refreshed"})
 
@@ -521,6 +579,16 @@ def get_data():
         "source": item.get("source", "TerraBrasilis"),
         "timestamp": item["timestamp"].isoformat()
     } for item in data])
+
+
+def _shutdown_handler(signum, frame):
+    logger.info("Received shutdown signal (%s). Exiting gracefully...", signum, extra={"event": "shutdown_signal", "details": {"signal": signum}})
+    sys.exit(0)
+
+
+import signal
+signal.signal(signal.SIGTERM, _shutdown_handler)
+signal.signal(signal.SIGINT, _shutdown_handler)
 
 
 if __name__ == "__main__":

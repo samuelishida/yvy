@@ -196,6 +196,47 @@ class TestDataSecurity:
         assert second.status_code == 429
 
 
+class TestNews:
+    def test_get_news_without_auth_when_required_returns_401(self, api):
+        bk.AUTH_REQUIRED = True
+        resp = api.get('/api/news')
+        assert resp.status_code == 401
+
+    def test_get_news_with_valid_api_key_returns_200(self, api):
+        bk.AUTH_REQUIRED = True
+        resp = api.get(
+            '/api/news',
+            headers={'X-API-Key': 'test-api-key'},
+        )
+        assert resp.status_code == 200
+        assert resp.content_type.startswith('application/json')
+
+    def test_refresh_news_without_auth_when_required_returns_401(self, api):
+        bk.AUTH_REQUIRED = True
+        resp = api.post('/api/news/refresh')
+        assert resp.status_code == 401
+
+    def test_refresh_news_with_valid_api_key_returns_200(self, api):
+        bk.AUTH_REQUIRED = True
+        resp = api.post(
+            '/api/news/refresh',
+            headers={'X-API-Key': 'test-api-key'},
+        )
+        assert resp.status_code == 200
+
+    def test_get_news_invalid_page_returns_400(self, api):
+        resp = api.get('/api/news?page=abc')
+        assert resp.status_code == 400
+
+    def test_get_news_negative_page_returns_400(self, api):
+        resp = api.get('/api/news?page=-1')
+        assert resp.status_code == 400
+
+    def test_get_news_large_page_size_returns_400(self, api):
+        resp = api.get('/api/news?page_size=200')
+        assert resp.status_code == 400
+
+
 class TestBatchingHelpers:
     def test_split_into_batches_handles_small_input(self):
         batches = bk.split_into_batches([1, 2], 8)
