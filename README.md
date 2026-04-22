@@ -1,11 +1,10 @@
 # Yvy
 
-Aplicativo de observabilidade ambiental para monitorar o desmatamento no Brasil, utilizando Flask, Leaflet, MongoDB e dados do TerraBrasilis (PRODES).
+Aplicativo de observabilidade ambiental para monitorar o desmatamento no Brasil, utilizando **React** (frontend), **Flask** (backend), **MongoDB** e dados do TerraBrasilis (PRODES).
 
 ## Pré-requisitos
 
 - Docker e Docker Compose
-- Python 3.13+ (apenas para rodar testes localmente)
 - Git
 
 ## Instalação e execução
@@ -40,9 +39,8 @@ docker-compose exec backend python ingest.py
 
 ## Uso
 
-- `/` — Página inicial
-- `/dashboard` — Visualização tabular dos dados de desmatamento
-- `/map` — Mapa interativo (Leaflet) com sobreposição dos dados
+- `/` — **Home** com selector de mapas (Desmatamento, Qualidade do Ar, Temperatura, Tempestades, Florestas Globais, Nível do Mar, Incêndios NASA)
+- `/dashboard` — **Dashboard** com estatísticas e gráfico de distribuição por categoria
 - `/health` — Endpoint de health check do frontend e do backend
 
 ### Autenticação da API
@@ -112,7 +110,7 @@ O repositório também inclui CI em [`.github/workflows/ci.yml`](/media/samuel/S
 ```
 yvy/
 ├── backend/
-│   ├── backend.py          # API Flask (rotas /  e /data)
+│   ├── backend.py          # API Flask (rotas / e /data)
 │   ├── ingest.py           # Script de ingestão de dados TIF
 │   ├── requirements.txt    # Dependências de produção
 │   ├── requirements-dev.txt# Dependências de desenvolvimento/teste
@@ -121,10 +119,24 @@ yvy/
 │   └── tests/
 │       └── test_api.py     # Suite de testes da API
 ├── frontend/
-│   ├── frontend.py         # Servidor Flask (templates Jinja2)
-│   ├── templates/          # HTML (index, dashboard, map)
-│   ├── static/             # CSS e JavaScript
-│   └── Dockerfile
+│   ├── Dockerfile          # Multi-stage: build React + Express server
+│   ├── package.json        # Dependências Node.js
+│   ├── package-lock.json   # Lockfile para builds consistentes
+│   ├── server.js           # Express server com proxy para backend
+│   ├── .dockerignore       # Otimiza build context
+│   ├── public/             # HTML base
+│   └── src/
+│       ├── index.js        # Entry point React
+│       ├── index.css       # Estilos globais
+│       ├── App.js          # Rotas e layout
+│       ├── App.css         # Estilos do app
+│       └── components/
+│           ├── Navbar.js   # Navegação
+│           ├── Navbar.css
+│           ├── Home.js     # Selector de mapas
+│           ├── Home.css
+│           ├── Dashboard.js# Estatísticas e gráfico
+│           └── Dashboard.css
 ├── .env.example            # Variáveis de ambiente (template)
 ├── .env.dev.example        # Template local/desenvolvimento
 ├── .env.prod.example       # Template produção
