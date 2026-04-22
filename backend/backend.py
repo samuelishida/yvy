@@ -84,7 +84,7 @@ def build_security_headers():
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY",
         "Referrer-Policy": "strict-origin-when-cross-origin",
-        "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+        "Permissions-Policy": "geolocation=(), microphone=(), camera=(), bluetooth=()",
         "Content-Security-Policy": (
             "default-src 'self'; "
             "img-src 'self' data: https://tile.openstreetmap.org https://*.tile.openstreetmap.org; "

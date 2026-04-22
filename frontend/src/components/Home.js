@@ -79,14 +79,21 @@ export default function Home() {
        {/* Map iframe panel */}
        <div className="map-panel">
          {MAPS.map((m) => (
-           <iframe
-             key={m.id}
-             src={m.src}
-             title={m.label}
-             className={`map-iframe ${active === m.id ? 'map-iframe--visible' : ''}`}
-             allow="fullscreen"
-             loading="lazy"
-           />
+            <iframe
+              key={m.id}
+              src={m.src}
+              title={m.label}
+              className={`map-iframe ${active === m.id ? 'map-iframe--visible' : ''}`}
+              allow="fullscreen"
+              loading="lazy"
+              sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                // Suppress cross-origin iframe JS errors in console
+                e.preventDefault();
+                return false;
+              }}
+            />
          ))}
          <div className="map-overlay-corner">
            <span className="overlay-dot" />
