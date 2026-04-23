@@ -1,22 +1,20 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useI18n } from '../i18n';
 import './Dashboard.css';
 
-// Brazil bounding box for the /data query
 const BBOX = { ne_lat: 5.5, ne_lng: -34.0, sw_lat: -34.0, sw_lng: -74.0 };
 
-// Human-readable labels for known PRODES color classes
-const CLASS_LABELS = {
-  d: 'Desmatamento',
-  r: 'Regeneração',
-  f: 'Floresta',
-  h: 'Hidrografia',
-  n: 'Não floresta',
-};
-
-function classLabel(clazz) {
-  if (!clazz) return 'Desconhecido';
+function classLabel(clazz, t) {
+  if (!clazz) return t('home.unknown');
   const key = clazz.toLowerCase().charAt(0);
-  return CLASS_LABELS[key] || clazz;
+  const map = {
+    d: t('home.deforestation'),
+    r: t('home.regeneration'),
+    f: t('home.forest'),
+    h: t('home.hydrography'),
+    n: t('home.nonForest'),
+  };
+  return map[key] || clazz;
 }
 
 function StatCard({ icon, label, value, sub, accent }) {
@@ -35,6 +33,7 @@ function StatCard({ icon, label, value, sub, accent }) {
 }
 
 export default function Dashboard() {
+  const { t } = useI18n();
   const [records, setRecords] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -62,7 +61,7 @@ export default function Dashboard() {
     const byColor = {};
 
     records.forEach(({ clazz, color }) => {
-      const label = classLabel(clazz);
+      const label = classLabel(clazz, t);
       byClazz[label] = (byClazz[label] || { count: 0, color: color || '#888' });
       byClazz[label].count += 1;
       if (color) byColor[color] = (byColor[color] || 0) + 1;
@@ -80,29 +79,25 @@ export default function Dashboard() {
       sorted,
       maxCount,
     };
-  }, [records]);
+  }, [records, t]);
 
   return (
     <div className="dashboard">
-      {/* Header */}
       <div className="dash-header">
         <div className="dash-header__left">
-          <h1 className="dash-title">Dashboard de Desmatamento</h1>
-          <p className="dash-sub">
-            Dados PRODES · INPE — Cobertura florestal do Brasil
-          </p>
+          <h1 className="dash-title">{t('dashboard.title')}</h1>
+          <p className="dash-sub">{t('dashboard.subtitle')}</p>
         </div>
         <div className="dash-header__badge">
           <span className="badge-dot" />
-          <span>MongoDB · Ao vivo</span>
+          <span>{t('dashboard.mongoLive')}</span>
         </div>
       </div>
 
-      {/* Loading / Error */}
       {loading && (
         <div className="dash-status">
           <div className="spinner" />
-          <span>Carregando dados do banco...</span>
+          <span>{t('dashboard.loading')}</span>
         </div>
       )}
 
@@ -110,10 +105,10 @@ export default function Dashboard() {
         <div className="dash-error">
           <span className="dash-error__icon">⚠️</span>
           <div>
-            <strong>Erro ao conectar ao backend</strong>
+            <strong>{t('dashboard.connectionError')}</strong>
             <p>{error}</p>
             <p className="dash-error__hint">
-              Verifique se o backend está rodando e os dados foram ingeridos com{' '}
+              {t('dashboard.errorHint')}{' '}
               <code>docker compose exec backend python ingest.py</code>
             </p>
           </div>
@@ -123,52 +118,47 @@ export default function Dashboard() {
       {stats && stats.total === 0 && (
         <div className="dash-empty">
           <span className="dash-empty__icon">🗂️</span>
-          <h3>Nenhum dado encontrado</h3>
-          <p>
-            O banco está vazio. Execute o script de ingestão para carregar os
-            dados PRODES:
-          </p>
+          <h3>{t('dashboard.noData')}</h3>
+          <p>{t('dashboard.noDataHint')}</p>
           <code>docker compose exec backend python ingest.py</code>
         </div>
       )}
 
       {stats && stats.total > 0 && (
         <>
-          {/* Stat cards */}
           <div className="stat-grid">
             <StatCard
               icon="📍"
-              label="Registros carregados"
+              label={t('dashboard.recordsLoaded')}
               value={stats.total.toLocaleString('pt-BR')}
               accent="#00b4d8"
             />
             <StatCard
               icon="🎨"
-              label="Categorias distintas"
+              label={t('dashboard.distinctCategories')}
               value={stats.categories}
               accent="#9f7aea"
             />
             <StatCard
               icon="📌"
-              label="Categoria dominante"
+              label={t('dashboard.dominantCategory')}
               value={stats.topCategory}
               sub={`(${stats.topCount.toLocaleString('pt-BR')})`}
               accent={stats.topColor}
             />
             <StatCard
               icon="🛰️"
-              label="Fonte dos dados"
+              label={t('dashboard.dataSource')}
               value="PRODES / INPE"
               accent="#38a169"
             />
           </div>
 
-          {/* Bar chart */}
           <div className="chart-card">
             <div className="chart-card__header">
-              <h2>Distribuição por Categoria</h2>
+              <h2>{t('dashboard.distributionByCategory')}</h2>
               <span className="chart-card__total">
-                {stats.total.toLocaleString('pt-BR')} pontos
+                {stats.total.toLocaleString('pt-BR')} {t('dashboard.points')}
               </span>
             </div>
             <div className="bar-chart">
@@ -199,17 +189,16 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Embedded TerraBrasilis map */}
           <div className="map-card">
             <div className="map-card__header">
-              <h2>Mapa de Desmatamento — TerraBrasilis</h2>
+              <h2>{t('dashboard.deforestationMap')}</h2>
               <a
                 href="https://terrabrasilis.dpi.inpe.br/app/map/deforestation?hl=pt_br"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="map-card__ext"
               >
-                ↗ Abrir em tela cheia
+                {t('dashboard.openFullScreen')}
               </a>
             </div>
             <iframe

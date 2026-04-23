@@ -681,6 +681,7 @@ async def get_news():
     try:
         page = int(request.args.get("page", 1))
         page_size = int(request.args.get("page_size", 20))
+        lang = request.args.get("lang", "pt").strip().lower()
     except (TypeError, ValueError):
         abort(400, description="Invalid 'page' or 'page_size' parameters.")
 
@@ -688,13 +689,15 @@ async def get_news():
         abort(400, description="'page' must be >= 1.")
     if page_size < 1 or page_size > 100:
         abort(400, description="'page_size' must be between 1 and 100.")
+    if lang not in ("pt", "en"):
+        lang = "pt"
 
     from news import get_news as fetch_news, fetch_and_save_news
 
     if page == 1:
         await fetch_and_save_news(mongo_db)
 
-    articles = await fetch_news(mongo_db, page, page_size)
+    articles = await fetch_news(mongo_db, page, page_size, lang=lang)
     return jsonify(articles)
 
 

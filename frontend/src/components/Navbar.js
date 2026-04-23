@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useI18n } from '../i18n';
 import './Navbar.css';
 
 export default function Navbar() {
   const location = useLocation();
   const [open, setOpen] = useState(false);
+  const { lang, switchLang, t } = useI18n();
 
   const close = () => setOpen(false);
 
@@ -14,9 +16,48 @@ export default function Navbar() {
         <span className="brand-leaf">🌿</span>
         <div className="brand-text">
           <span className="brand-name">Yvy</span>
-          <span className="brand-sub">Environmental Observability · Brazil</span>
+          <span className="brand-sub">{t('nav.brandSub')}</span>
         </div>
       </div>
+
+      <div className={`nav-links ${open ? 'nav-links--open' : ''}`}>
+        <Link
+          to="/"
+          className={location.pathname === '/' ? 'nav-link nav-link--active' : 'nav-link'}
+          onClick={close}
+        >
+          <span className="nav-icon">🏠</span> {t('nav.home')}
+        </Link>
+        <Link
+          to="/news"
+          className={location.pathname === '/news' ? 'nav-link nav-link--active' : 'nav-link'}
+          onClick={close}
+        >
+          <span className="nav-icon">📰</span> {t('nav.news')}
+        </Link>
+        <Link
+          to="/dashboard"
+          className={location.pathname === '/dashboard' ? 'nav-link nav-link--active' : 'nav-link'}
+          onClick={close}
+        >
+          <span className="nav-icon">📊</span> {t('nav.dashboard')}
+        </Link>
+        <Link
+          to="/mapas-tematicos"
+          className={location.pathname === '/mapas-tematicos' ? 'nav-link nav-link--active' : 'nav-link'}
+          onClick={close}
+        >
+          <span className="nav-icon">🗺️</span> {t('nav.thematicMaps')}
+        </Link>
+      </div>
+
+      <button
+        className="lang-toggle"
+        onClick={() => switchLang(lang === 'pt' ? 'en' : 'pt')}
+        title={lang === 'pt' ? 'Switch to English' : 'Mudar para Português'}
+      >
+        {lang === 'pt' ? 'PT' : 'EN'}
+      </button>
 
       <button
         className="hamburger"
@@ -28,39 +69,6 @@ export default function Navbar() {
         <span className={open ? 'line line--mid open' : 'line line--mid'} />
         <span className={open ? 'line line--bot open' : 'line line--bot'} />
       </button>
-
-      <div className={`nav-links ${open ? 'nav-links--open' : ''}`}>
-        <Link
-          to="/"
-          className={location.pathname === '/' ? 'nav-link nav-link--active' : 'nav-link'}
-          onClick={close}
-        >
-          <span className="nav-icon">🏠</span> Home
-        </Link>
-        <Link
-          to="/news"
-          className={location.pathname === '/news' ? 'nav-link nav-link--active' : 'nav-link'}
-          onClick={close}
-        >
-          <span className="nav-icon">📰</span> Notícias
-        </Link>
-        <Link
-          to="/dashboard"
-          className={location.pathname === '/dashboard' ? 'nav-link nav-link--active' : 'nav-link'}
-          onClick={close}
-        >
-          <span className="nav-icon">📊</span> Dashboard
-        </Link>
-        <Link
-          to="/mapas-tematicos"
-          className={location.pathname === '/mapas-tematicos' ? 'nav-link nav-link--active' : 'nav-link'}
-          onClick={close}
-        >
-          <span className="nav-icon">🗺️</span> Mapas Temáticos
-        </Link>
-      </div>
-
-
     </nav>
   );
 }

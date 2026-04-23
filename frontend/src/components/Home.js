@@ -1,18 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
-
+import { useI18n } from '../i18n';
 import 'leaflet/dist/leaflet.css';
 import '../Home.css';
 
 const BBOX = { ne_lat: 5.5, ne_lng: -34.0, sw_lat: -34.0, sw_lng: -74.0 };
-
-const CLASS_LABELS = {
-  d: 'Desmatamento',
-  r: 'Regeneração',
-  f: 'Floresta',
-  h: 'Hidrografia',
-  n: 'Não floresta',
-};
 
 const FIRE_STYLES = {
   nominal: { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.85, radius: 5 },
@@ -20,10 +12,17 @@ const FIRE_STYLES = {
   low: { color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 0.4, radius: 3 },
 };
 
-function classLabel(clazz) {
-  if (!clazz) return 'Desconhecido';
+function classLabel(clazz, t) {
+  if (!clazz) return t('home.unknown');
   const key = clazz.toLowerCase().charAt(0);
-  return CLASS_LABELS[key] || clazz;
+  const map = {
+    d: t('home.deforestation'),
+    r: t('home.regeneration'),
+    f: t('home.forest'),
+    h: t('home.hydrography'),
+    n: t('home.nonForest'),
+  };
+  return map[key] || clazz;
 }
 
 function fireStyle(confidence) {
@@ -52,6 +51,7 @@ function WidgetCard({ title, value, sub, icon, accent, children }) {
 }
 
 function FiresWidget({ fires, lastSync }) {
+  const { t } = useI18n();
   const last3 = useMemo(() => {
     if (!fires || !fires.length) return 0;
     const threeDaysAgo = new Date();
@@ -63,22 +63,22 @@ function FiresWidget({ fires, lastSync }) {
     <div className="fires-widget">
       <div className="fires-widget__header">
         <span className="widget-card__icon">🔥</span>
-        <h3 className="widget-card__title">Queimadas Recentes</h3>
+        <h3 className="widget-card__title">{t('home.recentFires')}</h3>
       </div>
       <div className="fires-widget__stats">
         <div className="fires-stat">
           <span className="fires-stat__value">{last3.toLocaleString('pt-BR')}</span>
-          <span className="fires-stat__label">Últimos 3 dias</span>
+          <span className="fires-stat__label">{t('home.last3Days')}</span>
         </div>
         <div className="fires-stat">
           <span className="fires-stat__value">{(fires?.length || 0).toLocaleString('pt-BR')}</span>
-          <span className="fires-stat__label">Total no mapa</span>
+          <span className="fires-stat__label">{t('home.totalOnMap')}</span>
         </div>
       </div>
       {lastSync && (
         <div className="fires-widget__sync">
           <span className="badge-dot" />
-          <span>Sync: {new Date(lastSync).toLocaleDateString('pt-BR')}</span>
+          <span>{t('home.sync')}: {new Date(lastSync).toLocaleDateString('pt-BR')}</span>
         </div>
       )}
       <a
@@ -87,7 +87,7 @@ function FiresWidget({ fires, lastSync }) {
         rel="noopener noreferrer"
         className="fires-widget__link"
       >
-        ↗ Ver no FIRMS
+        {t('home.viewOnFirms')}
       </a>
     </div>
   );
@@ -105,6 +105,7 @@ function LayerToggle({ label, icon, active, onChange, color }) {
 }
 
 export default function Home() {
+  const { t } = useI18n();
   const [records, setRecords] = useState(null);
   const [fires, setFires] = useState(null);
   const [firesLastSync, setFiresLastSync] = useState(null);
@@ -163,7 +164,6 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
-
   const mapCenter = [-14.235, -51.925];
   const mapZoom = 4;
 
@@ -174,17 +174,17 @@ export default function Home() {
           <div className="map-card-large">
             <div className="map-card-large__header">
               <div className="map-card-large__header-left">
-                <h2>Mapa de Desmatamento &amp; Queimadas</h2>
+                <h2>{t('home.mapTitle')}</h2>
                 <div className="layer-toggles">
                   <LayerToggle
-                    label="PRODES"
+                    label={t('home.prodes')}
                     icon="🌳"
                     active={showDeforest}
                     onChange={setShowDeforest}
                     color="#00b4d8"
                   />
                   <LayerToggle
-                    label="Queimadas FIRMS"
+                    label={t('home.firmsFire')}
                     icon="🔥"
                     active={showFires}
                     onChange={setShowFires}
@@ -195,7 +195,7 @@ export default function Home() {
               <div className="map-card-large__badges">
                 <span className="map-badge">
                   <span className="badge-dot" />
-                  PRODES · INPE
+                  {t('home.prodesSource')}
                 </span>
                 {firesLastSync && (
                   <span className="map-badge map-badge--fire">
@@ -206,8 +206,8 @@ export default function Home() {
               </div>
             </div>
             <div className="map-card-large__body">
-              {loading && <div className="map-loading">Carregando mapa...</div>}
-              {error && <div className="map-error">Erro: {error}</div>}
+              {loading && <div className="map-loading">{t('home.loading')}</div>}
+              {error && <div className="map-error">{t('home.error')}: {error}</div>}
               {!loading && !error && (
                 <MapContainer center={mapCenter} zoom={mapZoom} scrollWheelZoom={true} className="leaflet-map">
                   <TileLayer
@@ -222,9 +222,9 @@ export default function Home() {
                       radius={3}
                     >
                       <Popup>
-                        <strong>{classLabel(record.clazz)}</strong>
+                        <strong>{classLabel(record.clazz, t)}</strong>
                         <br />
-                        Fonte: PRODES/INPE
+                        {t('home.source')}: PRODES/INPE
                         <br />
                         Lat: {record.lat.toFixed(4)}, Lng: {record.lon.toFixed(4)}
                       </Popup>
@@ -240,17 +240,17 @@ export default function Home() {
                         radius={style.radius}
                       >
                         <Popup>
-                          <strong>🔥 Foco de Calor</strong>
+                          <strong>{t('home.heatFocus')}</strong>
                           <br />
-                          Confiança: {fire.confidence}
+                          {t('home.confidence')}: {fire.confidence}
                           <br />
-                          Data: {fire.acq_date} {fire.acq_time}
+                          {t('home.date')}: {fire.acq_date} {fire.acq_time}
                           <br />
-                          Satélite: {fire.satellite}
+                          {t('home.satellite')}: {fire.satellite}
                           <br />
-                          Temp. brilho: {fire.bright_ti4}K
+                          {t('home.brightnessTemp')}: {fire.bright_ti4}K
                           <br />
-                          Fonte: NASA FIRMS
+                          {t('home.sourceNasa')}
                         </Popup>
                       </CircleMarker>
                     );
@@ -263,7 +263,7 @@ export default function Home() {
 
         <div className="home-grid__sidebar">
           <WidgetCard
-            title="Air Quality"
+            title={t('home.airQuality')}
             value={airQuality ? airQuality.aqi : '--'}
             sub={airQuality ? `PM2.5: ${airQuality.pm25}` : ''}
             icon="💨"
@@ -277,16 +277,16 @@ export default function Home() {
           </WidgetCard>
 
           <WidgetCard
-            title="Temperatura"
+            title={t('home.temperature')}
             value={temperature ? `${temperature.temp.toFixed(1)}°` : '--'}
-            sub={temperature ? `Sensação: ${temperature.feels_like.toFixed(1)}°` : ''}
+            sub={temperature ? `${t('home.feelsLike')}: ${temperature.feels_like.toFixed(1)}°` : ''}
             icon="🌡️"
             accent="#f97316"
           >
             {temperature && (
               <div className="temp-details">
                 {temperature.humidity != null && (
-                  <span className="temp-humidity">Umidade: {temperature.humidity}%</span>
+                  <span className="temp-humidity">{t('home.humidity')}: {temperature.humidity}%</span>
                 )}
                 <div className="temp-slider">
                   <div className="temp-indicator" style={{ left: `${Math.min(100, Math.max(0, ((temperature.temp + 10) / 50) * 100))}%` }} />

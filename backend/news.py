@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 NEWS_API_KEY = os.getenv("NEWS_API_KEY", "").strip()
 NEWS_API_BASE_URL = "https://newsapi.org/v2"
+MYMEMORY_API_URL = "https://api.mymemory.translated.net/get"
 
 
 async def has_recent_news(db):
@@ -70,7 +71,7 @@ async def fetch_and_save_news(db):
         return []
 
 
-async def get_news(db, page=1, page_size=20):
+async def get_news(db, page=1, page_size=20, lang="pt"):
     try:
         skip = (page - 1) * page_size
         cursor = db.news.find().sort("publishedAt", -1).skip(skip).limit(page_size)
@@ -79,10 +80,93 @@ async def get_news(db, page=1, page_size=20):
         for article in articles:
             article["_id"] = str(article["_id"])
 
+        if lang == "en":
+            articles = await translate_articles(db, articles)
+
         return articles
     except Exception as e:
         logger.error("Error fetching news from DB: %s", e)
         return []
+
+
+async def translate_articles(db, articles):
+    texts_to_translate = []
+    for article in articles:
+        title = (article.get("title") or "").strip()
+        desc = (article.get("description") or "").strip()
+        texts_to_translate.append(title)
+        texts_to_translate.append(desc)
+
+    translations = await batch_translate(db, texts_to_translate, "pt", "en")
+
+    for i, article in enumerate(articles):
+        t_title = translations.get(i * 2, "")
+        t_desc = translations.get(i * 2 + 1, "")
+        if t_title:
+            article["title_en"] = t_title
+        if t_desc:
+            article["description_en"] = t_desc
+
+    return articles
+
+
+async def batch_translate(db, texts, source_lang, target_lang):
+    results = {}
+    untranslated_indices = []
+
+    for i, text in enumerate(texts):
+        if not text:
+            results[i] = ""
+            continue
+
+        cached = await db.news_translations.find_one({
+            "source_lang": source_lang,
+            "target_lang": target_lang,
+            "source_text_hash": _hash_text(text),
+        })
+
+        if cached:
+            results[i] = cached["translated_text"]
+        else:
+            untranslated_indices.append(i)
+
+    if untranslated_indices:
+        async with httpx.AsyncClient(timeout=15) as client:
+            for i in untranslated_indices:
+                text = texts[i]
+                try:
+                    resp = await client.get(MYMEMORY_API_URL, params={
+                        "q": text[:500],
+                        "langpair": f"{source_lang}|{target_lang}",
+                    })
+                    data = resp.json()
+                    translated = data.get("responseData", {}).get("translatedText", "")
+                    if translated and translated.lower() != text.lower():
+                        results[i] = translated
+                        await db.news_translations.update_one(
+                            {"source_text_hash": _hash_text(text), "source_lang": source_lang, "target_lang": target_lang},
+                            {"$set": {
+                                "source_text": text,
+                                "translated_text": translated,
+                                "source_lang": source_lang,
+                                "target_lang": target_lang,
+                                "source_text_hash": _hash_text(text),
+                                "created_at": datetime.now(timezone.utc),
+                            }},
+                            upsert=True,
+                        )
+                    else:
+                        results[i] = text
+                except Exception as e:
+                    logger.warning("Translation failed for text %d: %s", i, e)
+                    results[i] = text
+
+    return results
+
+
+def _hash_text(text):
+    import hashlib
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def extract_title_from_url(url):

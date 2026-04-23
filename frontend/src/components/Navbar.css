@@ -116,6 +116,31 @@
   text-transform: uppercase;
 }
 
+/* Language toggle */
+.lang-toggle {
+  background: rgba(0, 180, 216, 0.12);
+  border: 1px solid rgba(0, 180, 216, 0.3);
+  color: #00b4d8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+.lang-toggle:hover {
+  background: rgba(0, 180, 216, 0.22);
+  border-color: #00b4d8;
+}
+
+.lang-toggle:active {
+  background: rgba(0, 180, 216, 0.3);
+}
+
 /* Hamburger */
 .hamburger {
   display: none;
