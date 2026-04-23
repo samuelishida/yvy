@@ -128,10 +128,13 @@ def build_mongo_uri():
     root_password = os.getenv("MONGO_ROOT_PASSWORD", "").strip()
 
     if app_username and app_password:
-        return (
+        auth_source = os.getenv("MONGO_DATABASE", "terrabrasilis_data")
+        uri = (
             f"mongodb://{quote_plus(app_username)}:{quote_plus(app_password)}"
-            f"@{host}:{port}/{database}?authSource={database}"
+            f"@{host}:{port}/{database}?authSource={auth_source}"
         )
+        logger.info("Building MongoDB URI with app user.", extra={"event": "mongo_uri_build", "details": {"host": host, "port": port, "database": database, "auth_source": auth_source}})
+        return uri
 
     if root_username and root_password:
         return (
@@ -279,22 +282,31 @@ app = cors(app, allow_origin=parse_cors_origins())
 
 MONGO_URI = build_mongo_uri()
 MONGO_DATABASE = os.getenv("MONGO_DATABASE", "terrabrasilis_data")
-motor_client = AsyncIOMotorClient(MONGO_URI)
-mongo_db = motor_client[MONGO_DATABASE]
+
+motor_client: AsyncIOMotorClient | None = None
+mongo_db = None
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-redis_client = aioredis.from_url(REDIS_URL, socket_connect_timeout=5, socket_timeout=5)
+redis_client: aioredis.Redis | None = None
 
 
 @app.before_serving
 async def startup():
+    global motor_client, mongo_db, redis_client
+    motor_client = AsyncIOMotorClient(MONGO_URI, serverSelectionTimeoutMS=10000)
+    await motor_client.admin.command('ping')
+    mongo_db = motor_client[MONGO_DATABASE]
+    logger.info("MongoDB connection verified.", extra={"event": "mongo_connect_ok"})
+    redis_client = aioredis.from_url(REDIS_URL, socket_connect_timeout=5, socket_timeout=5)
     asyncio.get_event_loop().create_task(_fires_sync_loop())
 
 
 @app.after_serving
 async def shutdown():
-    motor_client.close()
-    await redis_client.close()
+    if motor_client:
+        motor_client.close()
+    if redis_client:
+        await redis_client.close()
 
 
 async def _fetch_firms_data():
@@ -763,6 +775,12 @@ async def get_temperature():
             return jsonify({"temp": None})
     except Exception:
         return jsonify({"temp": None})
+
+
+@app.errorhandler(Exception)
+async def handle_exception(error):
+    logger.error("Unhandled exception.", extra={"event": "unhandled_exception", "details": {"error": str(error)}}, exc_info=True)
+    return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/data")

@@ -160,6 +160,7 @@ cython_debug/
 
 # Node modules
 node_modules/
+frontend/node_modules/
 
 # IDE-specific files
 .vscode/

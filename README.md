@@ -86,8 +86,8 @@ db.deforestation_data.countDocuments({})
 ```
 
 - **Frontend**: Express serve o build React e faz proxy de `/api/*` para o backend, injetando a API key server-side.
-- **Backend**: Quart+Hypercorn (async/ASGI) com rate limiting via redis.asyncio, motor (async MongoDB), httpx (async HTTP), autenticação por API key, logging estruturado JSON.
-- **MongoDB**: Autenticado (usuários `yvy_app` e `yvy_readonly` criados pelo init script). Conexão via motor (async).
+- **Backend**: Quart+Hypercorn (async/ASGI) com rate limiting via redis.asyncio, motor (async MongoDB), httpx (async HTTP), autenticação por API key, logging estruturado JSON. Clientes Motor e Redis inicializados em `@app.before_serving` para compatibilidade com múltiplos workers Hypercorn.
+- **MongoDB**: Autenticado (usuários `yvy_app` e `yvy_readonly` criados pelo init script). Credenciais passadas ao container mongo via docker-compose. Reconexão automática se senhas rotacionadas. Conexão via motor (async).
 - **Redis**: Compartilha estado de rate limiting entre os workers do Hypercorn via redis.asyncio.
 
 ## Testes
