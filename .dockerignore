@@ -55,6 +55,7 @@ prodes_brasil_2023.*
 
 # Node.js
 node_modules/
+frontend/node_modules/
 build/
 
 # Logs
