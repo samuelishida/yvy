@@ -1,6 +1,8 @@
 import asyncio
+import csv
 import datetime
 import ipaddress
+import io
 import json
 import logging
 import os
@@ -17,6 +19,7 @@ from threading import Lock
 from urllib.parse import quote_plus
 
 import httpx
+import pymongo
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -36,6 +39,12 @@ RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "60"))
 RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 AUTH_REQUIRED = os.getenv("AUTH_REQUIRED", "1") == "1"
 API_KEY = os.getenv("API_KEY", "").strip()
+FIRMS_MAP_KEY = os.getenv("FIRMS_MAP_KEY", "").strip()
+FIRMS_SYNC_INTERVAL_HOURS = int(os.getenv("FIRMS_SYNC_INTERVAL_HOURS", "24"))
+FIRMS_DAY_RANGE = int(os.getenv("FIRMS_DAY_RANGE", "3"))
+FIRMS_BBOX = "-74,-34,-34,5.5"
+FIRMS_SOURCE = os.getenv("FIRMS_SOURCE", "VIIRS_SNPP_NRT")
+FIRE_TTL_DAYS = int(os.getenv("FIRE_TTL_DAYS", "90"))
 _RATE_LIMIT_BUCKETS = defaultdict(deque)
 _RATE_LIMIT_LOCK = Lock()
 
@@ -279,13 +288,169 @@ redis_client = aioredis.from_url(REDIS_URL, socket_connect_timeout=5, socket_tim
 
 @app.before_serving
 async def startup():
-    pass
+    asyncio.get_event_loop().create_task(_fires_sync_loop())
 
 
 @app.after_serving
 async def shutdown():
     motor_client.close()
     await redis_client.close()
+
+
+async def _fetch_firms_data():
+    if not FIRMS_MAP_KEY:
+        logger.warning("FIRMS_MAP_KEY not configured, skipping fire data sync.", extra={"event": "firms_skip_no_key"})
+        return 0
+
+    url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/{FIRMS_MAP_KEY}/{FIRMS_SOURCE}/{FIRMS_BBOX}/{FIRMS_DAY_RANGE}"
+    logger.info("Fetching FIRMS fire data.", extra={"event": "firms_fetch_start", "details": {"url": url}})
+
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                logger.error("FIRMS API returned non-200.", extra={"event": "firms_fetch_failed", "status_code": resp.status_code})
+                return 0
+
+            text = resp.text
+    except Exception as exc:
+        logger.error("FIRMS fetch exception.", extra={"event": "firms_fetch_error", "details": {"error": str(exc)}})
+        return 0
+
+    reader = csv.DictReader(io.StringIO(text))
+    operations = []
+    count = 0
+    for row in reader:
+        try:
+            lat = float(row.get("latitude", 0))
+            lon = float(row.get("longitude", 0))
+            confidence = row.get("confidence", "low").strip().lower()
+            acq_date = row.get("acq_date", "")
+            acq_time = row.get("acq_time", "")
+            satellite = row.get("satellite", "")
+            bright_ti4 = float(row.get("bright_ti4", 0) or 0)
+        except (ValueError, TypeError):
+            continue
+
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            continue
+
+        doc = {
+            "lat": lat,
+            "lon": lon,
+            "confidence": confidence,
+            "acq_date": acq_date,
+            "acq_time": acq_time,
+            "satellite": satellite,
+            "bright_ti4": bright_ti4,
+            "source": "NASA_FIRMS_VIIRS_SNPP",
+            "ingested_at": datetime.datetime.now(datetime.UTC),
+        }
+        operations.append(
+            pymongo.UpdateOne(
+                {"lat": lat, "lon": lon, "acq_date": acq_date},
+                {"$setOnInsert": doc},
+                upsert=True,
+            )
+        )
+        count += 1
+
+    if operations:
+        from pymongo import UpdateOne as _UO
+        batch_size = 500
+        for i in range(0, len(operations), batch_size):
+            batch = operations[i:i + batch_size]
+            await mongo_db.fire_data.bulk_write(batch, ordered=False)
+
+    try:
+        await redis_client.set("fires:last_sync", datetime.datetime.now(datetime.UTC).isoformat())
+    except Exception:
+        pass
+
+    logger.info("FIRMS sync complete.", extra={"event": "firms_sync_complete", "details": {"records": count}})
+    return count
+
+
+async def _fires_sync_loop():
+    await asyncio.sleep(10)
+
+    while True:
+        try:
+            should_sync = True
+            try:
+                last_sync_str = await redis_client.get("fires:last_sync")
+                if last_sync_str:
+                    last_sync = datetime.datetime.fromisoformat(last_sync_str.decode())
+                    elapsed_hours = (datetime.datetime.now(datetime.UTC) - last_sync).total_seconds() / 3600
+                    if elapsed_hours < FIRMS_SYNC_INTERVAL_HOURS:
+                        should_sync = False
+                        logger.info("FIRMS sync not due yet.", extra={"event": "firms_sync_skip", "details": {"hours_since_last": round(elapsed_hours, 1)}})
+            except Exception:
+                pass
+
+            if should_sync:
+                await _fetch_firms_data()
+
+            await asyncio.sleep(FIRMS_SYNC_INTERVAL_HOURS * 3600)
+        except Exception as exc:
+            logger.error("FIRMS sync loop error.", extra={"event": "firms_sync_loop_error", "details": {"error": str(exc)}})
+            await asyncio.sleep(3600)
+
+
+@app.route("/api/fires")
+async def get_fires():
+    await enforce_rate_limit()
+    enforce_api_auth()
+
+    try:
+        ne_lat = float(request.args.get("ne_lat", 5.5))
+        ne_lng = float(request.args.get("ne_lng", -34.0))
+        sw_lat = float(request.args.get("sw_lat", -34.0))
+        sw_lng = float(request.args.get("sw_lng", -74.0))
+    except (TypeError, ValueError):
+        abort(400, description="Invalid query parameters for /api/fires.")
+
+    query = {
+        "lat": {"$lte": ne_lat, "$gte": sw_lat},
+        "lon": {"$lte": ne_lng, "$gte": sw_lng},
+    }
+
+    cursor = mongo_db.fire_data.find(query).limit(MAX_RESULTS)
+    if hasattr(cursor, "to_list"):
+        data = await cursor.to_list(length=MAX_RESULTS)
+    else:
+        data = list(cursor)
+
+    last_sync = None
+    try:
+        last_sync_raw = await redis_client.get("fires:last_sync")
+        if last_sync_raw:
+            last_sync = last_sync_raw.decode() if isinstance(last_sync_raw, bytes) else last_sync_raw
+    except Exception:
+        pass
+
+    return jsonify({
+        "fires": [{
+            "lat": item["lat"],
+            "lon": item["lon"],
+            "confidence": item["confidence"],
+            "acq_date": item["acq_date"],
+            "acq_time": item.get("acq_time", ""),
+            "satellite": item.get("satellite", ""),
+            "bright_ti4": item.get("bright_ti4", 0),
+        } for item in data],
+        "count": len(data),
+        "last_sync": last_sync,
+    })
+
+
+@app.route("/api/fires/sync", methods=["POST"])
+async def sync_fires():
+    enforce_api_auth()
+    await enforce_rate_limit()
+
+    count = await _fetch_firms_data()
+    return jsonify({"status": "synced", "records": count})
 
 
 @app.before_request
@@ -545,7 +710,55 @@ async def refresh_news():
     return jsonify({"status": "refreshed"})
 
 
-@app.route("/data")
+WAQI_TOKEN = os.getenv("WAQI_TOKEN", "demo")
+OPENWEATHER_APPID = os.getenv("OPENWEATHER_APPID", "")
+
+
+@app.route("/api/weather/air-quality")
+async def get_air_quality():
+    await enforce_rate_limit()
+    station = request.args.get("station", "brasilia")
+    url = f"https://api.waqi.info/feed/{station}/?token={WAQI_TOKEN}"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url)
+            data = resp.json()
+            if data.get("status") == "ok":
+                d = data["data"]
+                return jsonify({
+                    "aqi": d.get("aqi"),
+                    "pm25": d.get("iaqi", {}).get("pm25", {}).get("v"),
+                    "humidity": d.get("iaqi", {}).get("h", {}).get("v"),
+                })
+            return jsonify({"aqi": None})
+    except Exception:
+        return jsonify({"aqi": None})
+
+
+@app.route("/api/weather/temperature")
+async def get_temperature():
+    await enforce_rate_limit()
+    lat = request.args.get("lat", "-14.235")
+    lon = request.args.get("lon", "-51.925")
+    if not OPENWEATHER_APPID:
+        return jsonify({"temp": None})
+    url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={OPENWEATHER_APPID}&units=metric"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url)
+            data = resp.json()
+            if data.get("main"):
+                return jsonify({
+                    "temp": data["main"].get("temp"),
+                    "feels_like": data["main"].get("feels_like"),
+                    "city": data.get("name", ""),
+                })
+            return jsonify({"temp": None})
+    except Exception:
+        return jsonify({"temp": None})
+
+
+@app.route("/api/data")
 async def get_data():
     await enforce_rate_limit()
     enforce_api_auth()

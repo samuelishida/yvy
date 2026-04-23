@@ -35,7 +35,7 @@ export default function Navbar() {
           className={location.pathname === '/' ? 'nav-link nav-link--active' : 'nav-link'}
           onClick={close}
         >
-          <span className="nav-icon">🗺️</span> Mapas
+          <span className="nav-icon">🏠</span> Home
         </Link>
         <Link
           to="/news"
@@ -50,6 +50,13 @@ export default function Navbar() {
           onClick={close}
         >
           <span className="nav-icon">📊</span> Dashboard
+        </Link>
+        <Link
+          to="/mapas-tematicos"
+          className={location.pathname === '/mapas-tematicos' ? 'nav-link nav-link--active' : 'nav-link'}
+          onClick={close}
+        >
+          <span className="nav-icon">🗺️</span> Mapas Temáticos
         </Link>
       </div>
 
