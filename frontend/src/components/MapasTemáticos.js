@@ -3,6 +3,13 @@ import './MapasTemáticos.css';
 
 const MAPS = [
   {
+    id: 'forest',
+    label: 'Florestas Globais',
+    icon: '🌲',
+    tag: 'Global Forest Watch',
+    src: 'https://www.globalforestwatch.org/map/?lang=pt_BR&map=eyJjZW50ZXIiOnsibGF0IjotMTQuODM5NDU2MDI0MjIzNDQsImxuZyI6LTU3LjMxMDExNzE1MDUyODc2fSwiem9vbSI6NC4xOTIyMzU2Njc2Njc4MDh9',
+  },
+  {
     id: 'deforestation',
     label: 'Desmatamento',
     icon: '🌳',
@@ -29,13 +36,6 @@ const MAPS = [
     icon: '🌩️',
     tag: 'Windy',
     src: 'https://embed.windy.com/embed2.html?lat=-22.952&lon=-43.212&detailLat=-22.952&detailLon=-43.212&width=650&height=450&zoom=5&level=surface&overlay=wind&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=true&type=map&location=coordinates&detail=true&metricWind=default&metricTemp=default&radarRange=-1',
-  },
-  {
-    id: 'forest',
-    label: 'Florestas Globais',
-    icon: '🌲',
-    tag: 'Global Forest Watch',
-    src: 'https://www.globalforestwatch.org/map/?lang=pt_BR&map=eyJjZW50ZXIiOnsibGF0IjotMTQuODM5NDU2MDI0MjIzNDQsImxuZyI6LTU3LjMxMDExNzE1MDUyODc2fSwiem9vbSI6NC4xOTIyMzU2Njc2Njc4MDh9',
   },
   {
     id: 'sea-level',
@@ -87,11 +87,7 @@ export default function MapasTemáticos() {
               }}
             />
          ))}
-         <div className="map-overlay-corner">
-           <span className="overlay-dot" />
-           <span className="overlay-text">Dados em tempo real</span>
-         </div>
-       </div>
+        </div>
     </div>
   );
 }

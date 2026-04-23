@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+
 import 'leaflet/dist/leaflet.css';
 import '../Home.css';
 
@@ -163,26 +163,6 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
-  const stats = useMemo(() => {
-    if (!records) return null;
-    const byClazz = {};
-
-    records.forEach(({ clazz, color }) => {
-      const label = classLabel(clazz);
-      byClazz[label] = (byClazz[label] || { count: 0, color: color || '#888' });
-      byClazz[label].count += 1;
-    });
-
-    const sorted = Object.entries(byClazz).sort((a, b) => b[1].count - a[1].count);
-    const total = records.length;
-
-    return {
-      total,
-      categories: sorted.length,
-      sorted,
-      pieData: sorted.map(([name, { count, color }]) => ({ name, value: count, color })),
-    };
-  }, [records]);
 
   const mapCenter = [-14.235, -51.925];
   const mapZoom = 4;
@@ -190,7 +170,6 @@ export default function Home() {
   return (
     <div className="home-new">
       <div className="home-header">
-        <h1 className="home-title">Environmental Observability Brazil</h1>
         <p className="home-subtitle">Monitoramento ambiental em tempo real</p>
       </div>
 
@@ -321,74 +300,6 @@ export default function Home() {
           </WidgetCard>
 
           <FiresWidget fires={fires} lastSync={firesLastSync} />
-        </div>
-
-        <div className="home-grid__bottom">
-          <div className="chart-card">
-            <div className="chart-card__header">
-              <h2>Distribuição por Categoria</h2>
-              <span className="chart-total">{stats?.total.toLocaleString('pt-BR') || 0} pontos</span>
-            </div>
-            <div className="chart-body">
-              <ResponsiveContainer width="100%" height={250}>
-                <PieChart>
-                  <Pie
-                    data={stats?.pieData || []}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={2}
-                    dataKey="value"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  >
-                    {(stats?.pieData || []).map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="chart-card">
-            <div className="chart-card__header">
-              <h2>Air Quality Details</h2>
-            </div>
-            <div className="chart-body">
-              <div className="aqi-cards">
-                <div className="aqi-circle" style={{ borderColor: '#4ade80' }}>
-                  <span className="aqi-value">{airQuality?.aqi || '--'}</span>
-                  <span className="aqi-label">AQI</span>
-                </div>
-                <div className="aqi-circle" style={{ borderColor: '#f97316' }}>
-                  <span className="aqi-value">{airQuality?.pm25 || '--'}</span>
-                  <span className="aqi-label">PM2.5</span>
-                </div>
-                <div className="aqi-circle" style={{ borderColor: '#00b4d8' }}>
-                  <span className="aqi-value">{airQuality?.humidity || '--'}</span>
-                  <span className="aqi-label">Humidity</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="chart-card">
-            <div className="chart-card__header">
-              <h2>Categorias - Detalhado</h2>
-            </div>
-            <div className="chart-body">
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={stats?.sorted.slice(0, 5).map(([name, { count }]) => ({ name, count })) || []}>
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#00b4d8" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
         </div>
       </div>
     </div>

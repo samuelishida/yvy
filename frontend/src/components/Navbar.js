@@ -60,10 +60,7 @@ export default function Navbar() {
         </Link>
       </div>
 
-      <div className="navbar-badge">
-        <span className="badge-dot" />
-        <span className="badge-text">Ao vivo</span>
-      </div>
+
     </nav>
   );
 }
