@@ -68,7 +68,6 @@ services:
       FIRMS_MAP_KEY: ${FIRMS_MAP_KEY:-}
       FIRMS_SYNC_INTERVAL_HOURS: ${FIRMS_SYNC_INTERVAL_HOURS:-24}
       WAQI_TOKEN: ${WAQI_TOKEN:-demo}
-      OPENWEATHER_APPID: ${OPENWEATHER_APPID:-}
     expose:
       - "5000"
     # WARNING: The bind-mount below is for development only.

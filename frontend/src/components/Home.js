@@ -157,7 +157,7 @@ export default function Home() {
       .then((r) => r.json())
       .then((d) => {
         if (d.temp != null) {
-          setTemperature({ temp: d.temp, feels_like: d.feels_like, city: d.city });
+          setTemperature({ temp: d.temp, feels_like: d.feels_like, humidity: d.humidity, city: d.city });
         }
       })
       .catch(() => {});
@@ -302,15 +302,20 @@ export default function Home() {
           </WidgetCard>
 
           <WidgetCard
-            title="Temperature"
+            title="Temperatura"
             value={temperature ? `${temperature.temp.toFixed(1)}°` : '--'}
             sub={temperature ? `Sensação: ${temperature.feels_like.toFixed(1)}°` : ''}
             icon="🌡️"
             accent="#f97316"
           >
             {temperature && (
-              <div className="temp-slider">
-                <div className="temp-indicator" style={{ left: `${Math.min(100, Math.max(0, ((temperature.temp + 10) / 50) * 100))}%` }} />
+              <div className="temp-details">
+                {temperature.humidity != null && (
+                  <span className="temp-humidity">Umidade: {temperature.humidity}%</span>
+                )}
+                <div className="temp-slider">
+                  <div className="temp-indicator" style={{ left: `${Math.min(100, Math.max(0, ((temperature.temp + 10) / 50) * 100))}%` }} />
+                </div>
               </div>
             )}
           </WidgetCard>

@@ -711,7 +711,6 @@ async def refresh_news():
 
 
 WAQI_TOKEN = os.getenv("WAQI_TOKEN", "demo")
-OPENWEATHER_APPID = os.getenv("OPENWEATHER_APPID", "")
 
 
 @app.route("/api/weather/air-quality")
@@ -740,18 +739,23 @@ async def get_temperature():
     await enforce_rate_limit()
     lat = request.args.get("lat", "-14.235")
     lon = request.args.get("lon", "-51.925")
-    if not OPENWEATHER_APPID:
-        return jsonify({"temp": None})
-    url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={OPENWEATHER_APPID}&units=metric"
+    url = (
+        f"https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}&longitude={lon}"
+        f"&current=temperature_2m,relative_humidity_2m,apparent_temperature"
+        f"&timezone=America/Sao_Paulo"
+    )
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(url)
             data = resp.json()
-            if data.get("main"):
+            current = data.get("current", {})
+            if current:
                 return jsonify({
-                    "temp": data["main"].get("temp"),
-                    "feels_like": data["main"].get("feels_like"),
-                    "city": data.get("name", ""),
+                    "temp": current.get("temperature_2m"),
+                    "feels_like": current.get("apparent_temperature"),
+                    "humidity": current.get("relative_humidity_2m"),
+                    "city": "Brasil",
                 })
             return jsonify({"temp": None})
     except Exception:

@@ -41,7 +41,10 @@ const News = () => {
   }, [page]);
 
   const handleScroll = useCallback(() => {
-    if (window.innerHeight + document.documentElement.scrollTop !== document.documentElement.offsetHeight || loading || !hasMore) {
+    const navbarHeight = 62;
+    const scrollBottom = window.innerHeight + document.documentElement.scrollTop;
+    const pageHeight = document.documentElement.offsetHeight;
+    if (scrollBottom + navbarHeight < pageHeight || loading || !hasMore) {
       return;
     }
     setPage((prevPage) => prevPage + 1);
