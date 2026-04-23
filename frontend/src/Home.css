@@ -12,17 +12,6 @@
   }
 }
 
-.home-header {
-  margin-bottom: 1rem;
-}
-
-.home-subtitle {
-  font-size: 1rem;
-  color: #aaa;
-  margin: 0;
-  font-weight: 400;
-}
-
 .home-grid {
   display: flex;
   flex-direction: column;

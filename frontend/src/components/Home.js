@@ -169,10 +169,6 @@ export default function Home() {
 
   return (
     <div className="home-new">
-      <div className="home-header">
-        <p className="home-subtitle">Monitoramento ambiental em tempo real</p>
-      </div>
-
       <div className="home-grid">
         <div className="home-grid__main">
           <div className="map-card-large">
