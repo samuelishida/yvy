@@ -206,6 +206,8 @@ export default function Dashboard() {
               title="TerraBrasilis Deforestation Map"
               className="dash-iframe"
               allow="fullscreen"
+              sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+              referrerPolicy="no-referrer"
             />
           </div>
         </>

@@ -72,19 +72,15 @@ export default function MapasTemáticos() {
       <div className="map-panel">
         {MAPS.map((m) => (
            <iframe
-             key={m.id}
-             src={m.src}
-             title={t(m.labelKey)}
-             className={`map-iframe ${active === m.id ? 'map-iframe--visible' : ''}`}
-             allow="fullscreen"
-             loading="lazy"
-             sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-             referrerPolicy="no-referrer"
-             onError={(e) => {
-               e.preventDefault();
-               return false;
-             }}
-           />
+              key={m.id}
+              src={m.src}
+              title={t(m.labelKey)}
+              className={`map-iframe ${active === m.id ? 'map-iframe--visible' : ''}`}
+              allow="fullscreen"
+              loading="lazy"
+              sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+              referrerPolicy="no-referrer"
+            />
         ))}
       </div>
     </div>

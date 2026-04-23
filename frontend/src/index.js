@@ -15,6 +15,11 @@ const SUPPRESSED_PATTERNS = [
   /autheticate-title/i,
   /aria-hidden/i,
   /RetiredVersion/i,
+  /terrabrasilis/i,
+  /ss3-static-prod/i,
+  /storyblok/i,
+  /L\.Mixin\.Events/i,
+  /429.*Too Many Requests/i,
 ];
 
 const originalError = console.error;
@@ -23,6 +28,24 @@ console.error = (...args) => {
   if (SUPPRESSED_PATTERNS.some((p) => p.test(msg))) return;
   originalError.apply(console, args);
 };
+
+const isCrossOriginNoise = (msg) => {
+  if (!msg || typeof msg !== 'string') return false;
+  return SUPPRESSED_PATTERNS.some((p) => p.test(msg));
+};
+
+window.addEventListener('error', (e) => {
+  if (isCrossOriginNoise(e.message || String(e.error) || '')) {
+    e.preventDefault();
+  }
+});
+
+window.addEventListener('unhandledrejection', (e) => {
+  const reason = String(e.reason || '');
+  if (isCrossOriginNoise(reason)) {
+    e.preventDefault();
+  }
+});
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
