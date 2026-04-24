@@ -1,0 +1,10 @@
+# Copie para terraform.tfvars e preencha com seus valores OCI
+# Obtenha em: Identity -> Tenancy Details / Users -> API Keys
+
+tenancy_ocid         = "ocid1.tenancy.oc1..xxxxxxxx"
+user_ocid            = "ocid1.user.oc1..xxxxxxxx"
+fingerprint          = "aa:bb:cc:dd:ee:ff:00:11"
+private_key_path     = "~/.oci/oci_api_key.pem"
+region               = "sa-saopaulo-1"
+compartment_ocid     = "ocid1.tenancy.oc1..xxxxxxxx" # ou compartment específico
+ssh_public_key_path  = "~/.ssh/id_rsa.pub"

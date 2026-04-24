@@ -731,10 +731,17 @@ WAQI_TOKEN = os.getenv("WAQI_TOKEN", "demo")
 @app.route("/api/weather/air-quality")
 async def get_air_quality():
     await enforce_rate_limit()
-    station = request.args.get("station", "brasilia")
-    url = f"https://api.waqi.info/feed/{station}/?token={WAQI_TOKEN}"
+    lat = request.args.get("lat")
+    lon = request.args.get("lon")
+    station = request.args.get("station", "")
+    if not station and lat and lon:
+        station = f"@{lat},{lon}"
+    elif not station:
+        station = "brasilia"
+    fallback = "brasilia"
     try:
         async with httpx.AsyncClient(timeout=10) as client:
+            url = f"https://api.waqi.info/feed/{station}/?token={WAQI_TOKEN}"
             resp = await client.get(url)
             data = resp.json()
             if data.get("status") == "ok":
@@ -744,6 +751,18 @@ async def get_air_quality():
                     "pm25": d.get("iaqi", {}).get("pm25", {}).get("v"),
                     "humidity": d.get("iaqi", {}).get("h", {}).get("v"),
                 })
+            if station != fallback:
+                resp2 = await client.get(
+                    f"https://api.waqi.info/feed/{fallback}/?token={WAQI_TOKEN}"
+                )
+                data2 = resp2.json()
+                if data2.get("status") == "ok":
+                    d = data2["data"]
+                    return jsonify({
+                        "aqi": d.get("aqi"),
+                        "pm25": d.get("iaqi", {}).get("pm25", {}).get("v"),
+                        "humidity": d.get("iaqi", {}).get("h", {}).get("v"),
+                    })
             return jsonify({"aqi": None})
     except Exception:
         return jsonify({"aqi": None})

@@ -38,7 +38,7 @@ docker compose exec backend python ingest.py
 
 ## Uso
 
-- `/` — **Home** com seletor de mapas (Desmatamento, Qualidade do Ar, Temperatura, Tempestades, Florestas Globais, Nível do Mar, Incêndios NASA)
+- `/` — **Home** com dashboard Bento Grid: mapa interativo de desmatamento/queimadas (Leaflet), widgets de Qualidade do Ar, Umidade, Temperatura e Queimadas Recentes com geolocalização automática
 - `/dashboard` — **Dashboard** com estatísticas e gráfico de distribuição por categoria
 - `/news` — **Feed de notícias** ambientais (via NewsAPI)
 - `/health` — Endpoint de health check do frontend e do backend
@@ -85,7 +85,7 @@ db.deforestation_data.countDocuments({})
                                                    └──────────┘
 ```
 
-- **Frontend**: Express serve o build React e faz proxy de `/api/*` para o backend, injetando a API key server-side.
+- **Frontend**: Express serve o build React e faz proxy de `/api/*` para o backend, injetando a API key server-side. UI em estilo Bento Grid com glassmorphism (Tailwind CSS), cards com `bg-slate-900/50 backdrop-blur-md rounded-3xl`. Mapa interativo Leaflet com camadas PRODES e FIRMS. Widgets com gauges SVG circulares (Qualidade do Ar, Umidade) e dados meteorológicos geolocalizados via `navigator.geolocation`. Ícones Lucide React.
 - **Backend**: Quart+Hypercorn (async/ASGI) com rate limiting via redis.asyncio, motor (async MongoDB), httpx (async HTTP), autenticação por API key, logging estruturado JSON. Clientes Motor e Redis inicializados em `@app.before_serving` para compatibilidade com múltiplos workers Hypercorn.
 - **MongoDB**: Autenticado (usuários `yvy_app` e `yvy_readonly` criados pelo init script). Credenciais passadas ao container mongo via docker-compose. Reconexão automática se senhas rotacionadas. Conexão via motor (async).
 - **Redis**: Compartilha estado de rate limiting entre os workers do Hypercorn via redis.asyncio.
@@ -130,6 +130,56 @@ O repositório também inclui CI em [`.github/workflows/ci.yml`](.github/workflo
 | Pipeline de CI | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
 | Script de backup | [backup.sh](backup.sh) |
 
+## 🚀 Deploy na OCI Always Free (Gratuito)
+
+O Yvy pode ser hospedado gratuitamente e para sempre na **Oracle Cloud Infrastructure (OCI) Always Free** usando **Terraform** + **Ansible**.
+
+### Arquitetura de deploy
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│   GitHub Push   │────▶│   GitHub Actions │────▶│   OCI Always    │
+│     to main     │     │  Terraform +     │     │   Free VM ARM   │
+│                 │     │  Ansible         │     │  4 OCPU / 24 GB │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+                              │                           │
+                              ▼                           ▼
+                        ┌──────────┐               ┌──────────┐
+                        │  VCN +   │               │ Docker   │
+                        │ Security │               │ Compose  │
+                        │  List    │               │  + App   │
+                        └──────────┘               └──────────┘
+```
+
+### Deploy automático (GitHub Actions)
+
+1. Configure os [secrets do GitHub](.github/workflows/GITHUB_SECRETS.md)
+2. Push na `main` dispara o workflow [`.github/workflows/deploy-oci.yml`](.github/workflows/deploy-oci.yml)
+3. O workflow executa:
+   - **Terraform**: Cria VM ARM, VCN, Security List
+   - **Ansible**: Clona repo, sobe containers, health checks
+4. Acesse: `http://<IP_OCI>:5001`
+
+### Deploy manual (local)
+
+```bash
+# 1. Configure credenciais OCI
+cd infra
+cp terraform.tfvars.example terraform.tfvars
+# Edite terraform.tfvars com seus valores OCI
+
+# 2. Execute o script de deploy
+cd ../scripts
+bash deploy-local.sh
+```
+
+### Documentação completa
+
+- [Guia de deploy OCI](infra/README.md) — passo a passo detalhado
+- [Secrets do GitHub](.github/workflows/GITHUB_SECRETS.md) — como configurar
+- [Infraestrutura Terraform](infra/) — código da infra
+- [Playbook Ansible](ansible/playbook.yml) — provisionamento da app
+
 ## Estrutura do Projeto
 
 ```
@@ -155,13 +205,13 @@ yvy/
 │   ├── public/                # HTML base
 │   └── src/
 │       ├── index.js           # Entry point React
-│       ├── index.css          # Estilos globais
+│       ├── index.css          # Estilos globais + Tailwind directives
 │       ├── App.js             # Rotas e layout
 │       ├── App.css            # Estilos do app
 │       ├── setupProxy.js      # Proxy dev para backend local
 │       └── components/
+│           ├── Home.js        # Home Bento Grid (mapa + widgets meteorológicos)
 │           ├── Navbar.js/css  # Navegação
-│           ├── Home.js/css    # Seletor de mapas
 │           ├── Dashboard.js/css # Estatísticas e gráfico
 │           └── News.js/css    # Feed de notícias ambientais
 ├── main.py                    # Integrações: OpenWeatherMap, WAQI, NASA EarthData, IQAir
@@ -205,6 +255,10 @@ yvy/
 | `LOG_LEVEL` | `INFO` | Nível do logging estruturado |
 | `DEV` | `0` | `1` para rodar Quart dev server dentro do container |
 | `RUN_INGEST` | `0` | Reservado para ingestão automatizada |
+
+### Endpoints meteorológicos
+
+Os endpoints `/api/weather/air-quality` e `/api/weather/temperature` aceitam parâmetros `lat` e `lon` via query string para dados geolocalizados. O frontend detecta automaticamente a localização do usuário via `navigator.geolocation` (fallback: Brasília `-14.235, -51.925`). O endpoint de qualidade do AR tenta `@lat,lon` no WAQI; se falhar, faz fallback para a estação `brasilia`.
 
 ## Makefile
 

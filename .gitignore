@@ -1,6 +1,18 @@
 *.tif
 mongo_data/
 .env
+
+# Infraestrutura / Secrets
+infra/terraform.tfvars
+infra/terraform.tfstate
+infra/terraform.tfstate.*
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/oci_api_key.pem
+infra/oci_ssh_key*
+ansible/inventory.ini
+ansible/*.retry
+scripts/oci_api_key.pem
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
