@@ -55,7 +55,7 @@ function GaugeCircle({ value, max = 100, size = 120, strokeWidth = 10, color = '
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-bold text-white leading-none">{centerText ?? value}</span>
+          <span className={`font-bold text-white leading-none ${String(centerText ?? value).length > 3 ? 'text-base' : 'text-xl'}`}>{centerText ?? value}</span>
         </div>
       </div>
       {label && <span className="text-xs text-slate-400">{label}</span>}
@@ -182,7 +182,7 @@ function MetricsRow({ airQuality, temperature, t }) {
       </div>
       <div className="w-px h-10 sm:h-16 bg-white/10" />
       <div className="flex flex-col items-center gap-1 sm:gap-3">
-        <GaugeCircle value={humVal} max={100} size={52} strokeWidth={5} color="#3b82f6" centerText={humVal ? `${humVal}` : '--'} />
+        <GaugeCircle value={humVal} max={100} size={52} strokeWidth={5} color="#3b82f6" centerText={humVal ? `${humVal}%` : '--'} />
         <div className="text-center">
           <p className="text-[9px] sm:text-sm font-semibold text-white">{t('home.humidity')}</p>
           <p className="text-[8px] sm:text-xs text-slate-400">{temperature?.city || ''}</p>
