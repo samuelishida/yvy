@@ -47,3 +47,24 @@ def test_dashboard_renders_when_backend_unavailable(client, monkeypatch):
     response = client.get("/dashboard")
     assert response.status_code == 200
     assert b"Dados de Desmatamento" in response.data
+
+
+def test_map_renders_bootstrapped_points(client, monkeypatch):
+    monkeypatch.setattr(
+        fe,
+        "fetch_backend_data",
+        lambda *_args, **_kwargs: [
+            {
+                "name": "Ponto de teste",
+                "lat": -15.5,
+                "lon": -47.5,
+                "color": "#ff9600",
+                "clazz": "Desmatamento",
+                "source": "TerraBrasilis",
+                "timestamp": "2023-01-01T00:00:00",
+            }
+        ],
+    )
+    response = client.get("/map")
+    assert response.status_code == 200
+    assert b"Ponto de teste" in response.data

@@ -22,9 +22,16 @@
     </style>
 </head>
 <body>
+    {% if map_error %}
+    <div style="position: absolute; top: 12px; left: 12px; z-index: 1000; background: rgba(255,255,255,0.92); padding: 10px 14px; border-radius: 8px; font-family: sans-serif;">
+        {{ map_error }}
+    </div>
+    {% endif %}
     <div id="map"></div>
 
 <script>
+    const initialData = {{ initial_data|default([], true)|tojson }};
+
     // Inicializa o mapa com visualização centrada no Brasil
     var map = L.map('map', {
         zoomControl: true  // Inclui o controle de zoom no mapa
@@ -40,6 +47,78 @@
     var heatLayer = L.heatLayer([], { radius: 20, blur: 15, maxZoom: 10 }).addTo(map);
     map.addLayer(markers);
 
+    function getDisplayColor(item) {
+        if (item.display_color) {
+            return item.display_color;
+        }
+
+        if (!item.timestamp) {
+            return item.color || '#308703';
+        }
+
+        const year = new Date(item.timestamp).getFullYear();
+        if (year >= 2020) {
+            return 'orange';
+        }
+        if (year >= 2010) {
+            return 'yellow';
+        }
+        if (year >= 2000) {
+            return 'green';
+        }
+        return 'darkgreen';
+    }
+
+    function getHeatWeight(item) {
+        if (typeof item.heat_weight === 'number') {
+            return item.heat_weight;
+        }
+
+        if (!item.timestamp) {
+            return 0.5;
+        }
+
+        const year = new Date(item.timestamp).getFullYear();
+        if (year >= 2020) {
+            return 0.8;
+        }
+        if (year >= 2010) {
+            return 0.6;
+        }
+        if (year >= 2000) {
+            return 0.4;
+        }
+        return 0.2;
+    }
+
+    function renderData(data) {
+        let heatData = [];
+        markers.clearLayers();
+
+        data.forEach(item => {
+            const markerColor = getDisplayColor(item);
+            const heatWeight = getHeatWeight(item);
+            heatData.push([item.lat, item.lon, heatWeight]);
+
+            let marker = L.circleMarker([item.lat, item.lon], {
+                radius: 6,
+                color: markerColor,
+                fillColor: markerColor,
+                fillOpacity: 0.6
+            }).bindPopup(
+                `<b>${item.name}</b><br>` +
+                `Classe: ${item.clazz || 'Desmatamento'}<br>` +
+                `Fonte: ${item.source || 'TerraBrasilis'}<br>` +
+                `Coordenadas: ${item.lat}, ${item.lon}<br>` +
+                `Timestamp: ${item.timestamp || 'N/A'}`
+            );
+
+            markers.addLayer(marker);
+        });
+
+        heatLayer.setLatLngs(heatData);
+    }
+
     // Função para carregar dados dinamicamente conforme a área do mapa
     function loadMapData(bounds) {
         const ne = bounds.getNorthEast();
@@ -48,25 +127,7 @@
         // Chama o proxy do frontend para manter a chave de API fora do browser
         fetch(`/api/data?ne_lat=${ne.lat}&ne_lng=${ne.lng}&sw_lat=${sw.lat}&sw_lng=${sw.lng}`)
             .then(response => response.json())
-            .then(data => {
-                let heatData = [];
-                markers.clearLayers();
-
-                data.forEach(item => {
-                    heatData.push([item.lat, item.lon, 0.5]); // O terceiro valor é a intensidade
-
-                    // Cria um círculo no mapa para cada ponto de desmatamento
-                    let marker = L.circleMarker([item.lat, item.lon], {
-                        radius: 6,
-                        color: item.color,
-                        fillColor: item.color,
-                        fillOpacity: 0.6
-                    }).bindPopup(`<b>${item.name}</b><br>Coordenadas: ${item.lat}, ${item.lon}`);
-
-                    markers.addLayer(marker);
-                });
-                heatLayer.setLatLngs(heatData);
-            })
+            .then(data => renderData(data))
             .catch(error => console.error('Erro ao buscar os dados:', error));
     }
 
@@ -76,8 +137,11 @@
         loadMapData(bounds);
     });
 
-    // Carrega dados iniciais
-    loadMapData(map.getBounds());
+    if (initialData.length > 0) {
+        renderData(initialData);
+    } else {
+        loadMapData(map.getBounds());
+    }
 
     // Ajusta o tamanho do mapa ao redimensionar a janela do navegador
     window.addEventListener('resize', function () {
@@ -90,9 +154,10 @@
     legend.onAdd = function (map) {
         var div = L.DomUtil.create('div', 'info legend');
         var labels = [
-            {color: '#308703', label: 'Vegetação Nativa'},
-            {color: '#ffff00', label: 'Desmatamento até 2000'},
-            {color: '#ff9600', label: 'Desmatamento Recente'}
+            {color: 'darkgreen', label: 'Antes de 2000'},
+            {color: 'green', label: '2000 a 2009'},
+            {color: 'yellow', label: '2010 a 2019'},
+            {color: 'orange', label: '2020 ou mais recente'}
         ];
 
         labels.forEach(item => {

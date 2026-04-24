@@ -22,9 +22,13 @@ function upsertUser(username, password, roles) {
     return;
   }
 
-  if (db.getUser(username)) {
-    print(`User ${username} already exists.`);
-    return;
+  try {
+    if (db.getUser(username)) {
+      print(`User ${username} already exists, dropping and recreating.`);
+      db.dropUser(username);
+    }
+  } catch (e) {
+    print(`User ${username} does not exist, will create.`);
   }
 
   db.createUser({

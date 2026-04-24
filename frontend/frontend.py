@@ -21,6 +21,12 @@ DEFAULT_DASHBOARD_BOUNDS = {
     "sw_lat": -34.0,
     "sw_lng": -74.0,
 }
+DEFAULT_MAP_BOUNDS = {
+    "ne_lat": -15.0,
+    "ne_lng": -47.0,
+    "sw_lat": -16.0,
+    "sw_lng": -48.0,
+}
 API_KEY = os.getenv("API_KEY", "").strip()
 
 
@@ -99,6 +105,38 @@ def fetch_backend_data(params):
     )
     response.raise_for_status()
     return response.json()
+
+
+def enrich_map_point(item):
+    timestamp = item.get("timestamp")
+    display_color = item.get("color", "#308703")
+    heat_weight = 0.5
+
+    if timestamp:
+        try:
+            year = datetime.datetime.fromisoformat(timestamp).year
+            if year >= 2020:
+                display_color = "orange"
+                heat_weight = 0.8
+            elif 2010 <= year < 2020:
+                display_color = "yellow"
+                heat_weight = 0.6
+            elif 2000 <= year < 2010:
+                display_color = "green"
+                heat_weight = 0.4
+            else:
+                display_color = "darkgreen"
+                heat_weight = 0.2
+        except ValueError:
+            logger.warning(
+                "Invalid timestamp received for map point.",
+                extra={"event": "map_point_invalid_timestamp", "details": {"timestamp": timestamp}},
+            )
+
+    enriched = dict(item)
+    enriched["display_color"] = display_color
+    enriched["heat_weight"] = heat_weight
+    return enriched
 
 
 # Configuração do Flask
@@ -196,7 +234,19 @@ def proxy_data():
 
 @app.route('/map')
 def map_view():
-    return render_template('map.html')
+    initial_data = []
+    map_error = None
+
+    try:
+        initial_data = [enrich_map_point(item) for item in fetch_backend_data(DEFAULT_MAP_BOUNDS)]
+    except requests.exceptions.RequestException as error:
+        logger.warning(
+            "Failed to fetch initial map data from backend.",
+            extra={"event": "map_fetch_failed", "details": {"error": str(error)}},
+        )
+        map_error = "Nao foi possivel carregar os dados iniciais do mapa."
+
+    return render_template('map.html', initial_data=initial_data, map_error=map_error)
 
 
 @app.errorhandler(404)

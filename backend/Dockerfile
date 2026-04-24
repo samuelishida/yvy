@@ -13,6 +13,7 @@ WORKDIR /app
 COPY requirements.txt ./
 COPY backend.py ./
 COPY ingest.py ./ingest.py
+COPY news.py ./news.py
 COPY start.sh ./start.sh
 
 # Install Python deps (includes gunicorn)

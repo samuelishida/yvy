@@ -1,190 +1,275 @@
-Let me read the key files directly to do a thorough analysis. 
+# Yvy Runbook
 
-Read [](file:///media/samuel/PNY%201TB/Code/Yvy/backend/Dockerfile)
+## Environments
 
-Read [](file:///media/samuel/PNY%201TB/Code/Yvy/frontend/Dockerfile)
+- Development: copy `.env.dev.example` to `.env` and run `docker-compose up --build`
+- Production: copy `.env.prod.example` to `.env`, replace every placeholder secret, then run `docker-compose up --build -d`
 
-Read [](file:///media/samuel/PNY%201TB/Code/Yvy/backend/backend.py#1-1), lines 1 to 100
+## Health checks
 
-Read [](file:///media/samuel/PNY%201TB/Code/Yvy/backend/ingest.py)
+- Backend: `curl -f http://localhost:5000/health`
+- Frontend: `curl -f http://localhost:5001/health`
+- MongoDB: `docker-compose exec mongo mongosh --eval "db.adminCommand('ping')"`
 
-Read [](file:///media/samuel/PNY%201TB/Code/Yvy/frontend/frontend.py)
+## Backups
 
-Read [](file:///media/samuel/PNY%201TB/Code/Yvy/.gitignore)
+- Run `./backup.sh`
+- Store the resulting archive from `mongo_backups/` in offsite storage
+- Test restores regularly with a disposable MongoDB instance before relying on the backup set
 
-Read [](file:///media/samuel/PNY%201TB/Code/Yvy/backend/requirements.txt)
+## Restore procedure
 
-Read [](file:///media/samuel/PNY%201TB/Code/Yvy/docker-compose.yml)
+1. Stop writers to the database.
+2. Pick the backup archive to restore.
+3. Run `gunzip -c mongo_backups/<backup>.gz | docker-compose exec -T mongo mongorestore --authenticationDatabase admin --username "$MONGO_ROOT_USERNAME" --password "$MONGO_ROOT_PASSWORD" --archive --gzip --drop`
+4. Validate with `docker-compose exec mongo mongosh "$MONGO_DATABASE" --eval "db.deforestation_data.countDocuments({})"`
 
-Read [](file:///media/samuel/PNY%201TB/Code/Yvy/frontend/templates)
+## Deploy / rollback
 
-Read [](file:///media/samuel/PNY%201TB/Code/Yvy/frontend/static)
+1. Run the CI checks locally or via GitHub Actions.
+2. Update `.env` with the target environment values.
+3. Run `docker-compose up --build -d`.
+4. Verify `/health` on frontend and backend.
+5. Roll back by redeploying the previous image or git revision and re-running the health checks.
 
-Read [](file:///media/samuel/PNY%201TB/Code/Yvy/.env.example)
 
-Read [](file:///media/samuel/PNY%201TB/Code/Yvy/frontend/requirements.txt)
+# Yvy
 
-Read [](file:///media/samuel/PNY%201TB/Code/Yvy/backend/requirements.txt)
+Aplicativo de observabilidade ambiental para monitorar o desmatamento no Brasil, utilizando **React** (frontend), **Express** (proxy/servidor), **Flask** (backend API), **MongoDB** e **Redis**, com dados do TerraBrasilis (PRODES).
 
-Read [](file:///media/samuel/PNY%201TB/Code/Yvy/mongo-init.js)
+## Pré-requisitos
 
-Here's a comprehensive production-readiness analysis:
+- Docker e Docker Compose (v2)
+- Git
 
----
+## Instalação e execução
 
-## Production Readiness Analysis — Yvy
+1. Clone o repositório:
+   ```bash
+   git clone https://github.com/samuelishida/yvy.git
+   cd yvy
+   ```
 
-### 🔴 Critical
+2. Configure as variáveis de ambiente:
+   ```bash
+   cp .env.dev.example .env
+   # Para produção, use .env.prod.example como base
+   ```
 
-**1. Hardcoded credentials everywhere**
-- docker-compose.yml: `MONGO_INITDB_ROOT_PASSWORD: example` — default password in compose
-- .env.example: `MONGO_URI=mongodb://root:example@mongo:27017/...` — leaks credentials in a committed file
-- mongo-init.js: creates user with password `example`
-- Backend backend.py line 28: fallback `mongodb://root:example@mongo:27017/terrabrasilis_data`
-- **Impact**: Any repo clone gets full DB access. Immediate data breach risk.
+3. Suba todos os serviços:
+   ```bash
+   docker compose up --build
+   ```
 
-**2. No health checks**
-- docker-compose.yml has zero `healthcheck` directives on any service
-- No `/health` endpoint in backend or frontend
-- **Impact**: No way to detect if a service is alive; orchestrators can't restart failed containers.
+O frontend estará disponível em `http://localhost:5001`. A API do backend **não é exposta publicamente** — todo acesso passa pelo proxy Express, que injeta a API key server-side. O MongoDB e o Redis ficam acessíveis apenas dentro da rede Docker.
 
-**3. No backup strategy**
-- `mongo_data` is a bind mount but there's no backup cron, no snapshot strategy
-- No `mongodump` or cloud backup configured
-- **Impact**: Data loss on disk failure.
+### Ingestão de dados
 
-**4. No authentication on the API**
-- `/data` endpoint has zero auth — anyone can query all deforestation data
-- CORS is set to `*` (wildcard)
-- **Impact**: Open data exposure, potential abuse/scraping.
+A ingestão dos dados do TerraBrasilis não é executada automaticamente na inicialização. Para processar os arquivos TIF e popular o MongoDB, execute:
 
----
+```bash
+docker compose exec backend python ingest.py
+```
 
-### 🟠 High
+## Uso
 
-**5. Dockerfile issues**
-- Both Dockerfiles use `python:3.9-slim` — EOL since Oct 2025, no longer receives security patches
-- No `.dockerignore` — `mongo_data/`, `.env`, .venv, `__pycache__/` all get baked into images
-- Backend Dockerfile installs `build-essential` and `wget` in production image (attack surface)
-- No non-root user — containers run as root
-- Frontend Dockerfile installs `build-essential` unnecessarily
+- `/` — **Home** com seletor de mapas (Desmatamento, Qualidade do Ar, Temperatura, Tempestades, Florestas Globais, Nível do Mar, Incêndios NASA)
+- `/dashboard` — **Dashboard** com estatísticas e gráfico de distribuição por categoria
+- `/news` — **Feed de notícias** ambientais (via NewsAPI)
+- `/health` — Endpoint de health check do frontend e do backend
 
-**6. No input validation on `/data` endpoint**
-- backend.py reads `ne_lat`, `ne_lng`, `sw_lat`, `sw_lng` from query params with no bounds checking
-- No validation that `ne_lat > sw_lat` or `ne_lng > sw_lng`
-- No rate limiting — a single request can fetch the entire dataset
-- **Impact**: Denial of service, resource exhaustion, invalid queries.
+### Autenticação da API
 
-**7. No logging strategy**
-- No structured logging (JSON), no log rotation
-- No log aggregation (ELK, Loki, CloudWatch)
-- `print()` statements used throughout backend.py and ingest.py
-- **Impact**: Impossible to debug production issues or audit activity.
+Quando `AUTH_REQUIRED=1`, o backend exige uma chave de API no endpoint `/data`. O proxy Express no frontend injeta `X-API-Key` server-side, sem expor a chave ao navegador. Para chamadas diretas:
 
-**8. No CI/CD pipeline**
-- No GitHub Actions, GitLab CI, or any automated test/lint/deploy pipeline
-- Tests exist but are never run automatically
-- **Impact**: No quality gate; regressions slip to production.
+```bash
+curl "http://localhost:5000/data?ne_lat=-10&ne_lng=-34&sw_lat=-34&sw_lng=-74" \
+  -H "X-API-Key: $API_KEY"
+```
 
-**9. No environment parity**
-- Only one environment (dev via docker-compose)
-- No `.env.dev`, `.env.prod`, or staging environment
-- `DEV=0` in .env.example but no mechanism to actually switch modes
-- **Impact**: "Works on my machine" — config drift between environments.
+> Em produção, o backend não é exposto em porta pública — use `docker compose exec` ou `make mongo-access` para acesso direto.
 
-**10. No graceful shutdown / signal handling**
-- No `SIGTERM` handling in Flask apps
-- No `--timeout` on gunicorn workers
-- No `--graceful-timeout` configured
-- **Impact**: Data corruption on container restart, dropped connections.
+### Acessando o MongoDB diretamente
 
----
+```bash
+make mongo-access
+```
 
-### 🟡 Medium
+Dentro do shell do MongoDB:
+```js
+show dbs
+use terrabrasilis_data
+db.deforestation_data.countDocuments({})
+```
 
-**11. No database indexing**
-- mongo-init.js creates a user but no indexes on `deforestation_data`
-- Bounding box queries will do full collection scans
-- **Impact**: Query performance degrades linearly with data growth.
+## Arquitetura
 
-**12. No API documentation**
-- No OpenAPI/Swagger spec
-- No `--help` or docstrings on endpoints
-- **Impact**: Consumers can't discover the API; no auto-generated SDKs.
+```
+┌────────────┐       ┌─────────────┐       ┌──────────┐
+│  Navegador │──────▶│   Frontend  │──────▶│  Backend │
+│  :5001     │  HTTP │  (Express + │  API   │  (Flask +│
+│            │◀──────│   React)    │◀──────│  Gunicorn)│
+└────────────┘       └─────────────┘       └────┬─────┘
+                                                  │
+                                           ┌──────┴──────┐
+                                           │             │
+                                        ┌──┴──┐   ┌────┴────┐
+                                        │Mongo│   │  Redis   │
+                                        │ DB  │   │(rate     │
+                                        └─────┘   │ limiting)│
+                                                  └──────────┘
+```
 
-**13. No error pages / user-facing error handling**
-- Frontend has no custom error pages (404, 500)
-- No `@app.errorhandler` decorators
-- **Impact**: Raw Flask error pages leak stack traces in production.
+- **Frontend**: Express serve o build React e faz proxy de `/api/*` para o backend, injetando a API key server-side.
+- **Backend**: Flask+Gunicorn com rate limiting via Redis, autenticação por API key, logging estruturado JSON.
+- **MongoDB**: Autenticado (usuários `yvy_app` e `yvy_readonly` criados pelo init script).
+- **Redis**: Compartilha estado de rate limiting entre os workers do Gunicorn.
 
-**14. No security headers**
-- No `X-Content-Type-Options`, `X-Frame-Options`, `Content-Security-Policy`
-- No `Strict-Transport-Security` (no HTTPS at all)
-- **Impact**: XSS, clickjacking, MITM vulnerabilities.
+## Testes
 
-**15. No monitoring / metrics**
-- No Prometheus metrics, no request counting, no latency tracking
-- No Grafana dashboards
-- **Impact**: No visibility into system health or performance trends.
+Os testes usam `pytest` com `mongomock` (sem dependência de MongoDB real) para o backend.
 
-**16. No deployment documentation / runbook**
-- No `DEPLOY.md` or `RUNBOOK.md`
-- No rollback procedures documented
-- No database migration strategy
-- **Impact**: Onboarding new engineers is guesswork; incidents take longer to resolve.
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r backend/requirements-dev.txt
+cd backend && ../.venv/bin/pytest -v
+```
 
-**17. Frontend static files directory is empty**
-- `frontend/static/` exists but is empty
-- No CSS, JS, or images served
-- **Impact**: Frontend is incomplete — templates likely reference missing assets.
+O repositório também inclui CI em [`.github/workflows/ci.yml`](.github/workflows/ci.yml), que valida:
 
-**18. Dependency pinning**
-- requirements.txt uses `>=` for Flask, `folium`, `rasterio` — no upper bounds
-- `requests==2.25.1` in frontend is 4+ years old with known CVEs
-- No requirements.txt for frontend (uses `folium` which is also in backend)
-- **Impact**: Unpredictable builds, supply chain risk.
+- Suíte de testes do backend (`pytest`)
+- Compilação de todos os fontes Python (`py_compile`)
+- Sintaxe dos scripts shell (`sh -n`)
+- Sintaxe do `mongo-init.js` (`node -c`)
 
----
+## Segurança
 
-### 🟢 Low
+- **MongoDB autenticado**: Usuários `yvy_app` (read/write) e `yvy_readonly` criados automaticamente via `mongo-init.js`
+- **Backend não exposto publicamente**: Usa `expose` em vez de `ports` no docker-compose
+- **API key nunca exposta ao navegador**: O proxy Express injeta `X-API-Key` server-side
+- **Rate limiting via Redis**: Compartilhado entre workers, com allowlist de proxies confiáveis (`TRUSTED_PROXIES`)
+- **Headers de segurança**: CSP, X-Frame-Options, nosniff aplicados no frontend e backend
+- **Nunca commitar `.env`** — use os templates `.env.dev.example`, `.env.prod.example` ou `.env.example`
+- **Substitua os placeholders** por segredos fortes gerados com `python -c "import secrets; print(secrets.token_urlsafe(24))"`
+- **Backup automático**: execute `./backup.sh` manualmente ou agende com cron
 
-**19. No `.dockerignore` files**
-- Both `backend/` and `frontend/` lack `.dockerignore`
-- `mongo_data/`, `.env`, .venv, `__pycache__/` get copied into images
-- **Impact**: Bloated images, credential leaks, slower builds.
+## Operação
 
-**20. No resource limits on frontend**
-- Frontend has `cpus: '4.0'` and `memory: 8G` — excessive for a Flask app serving HTML
-- Backend has `cpus: '12.0'` and `memory: '24G'` — also excessive
-- **Impact**: Wasted resources, no protection against runaway processes.
+| Item | Link |
+|------|------|
+| Runbook operacional | [RUNBOOK.md](RUNBOOK.md) |
+| Resumo de hardening | [PRODUCTION_READY_SUMMARY.md](PRODUCTION_READY_SUMMARY.md) |
+| Template de desenvolvimento | [`.env.dev.example`](.env.dev.example) |
+| Template de produção | [`.env.prod.example`](.env.prod.example) |
+| Pipeline de CI | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
+| Script de backup | [backup.sh](backup.sh) |
 
-**21. No database connection pooling**
-- `Flask-PyMongo` creates a new connection per request in some configurations
-- No `maxPoolSize` or `minPoolSize` configured
-- **Impact**: Connection exhaustion under load.
+## Estrutura do Projeto
 
-**22. No data retention policy**
-- No TTL indexes or cleanup jobs for old deforestation data
-- **Impact**: Unbounded database growth.
+```
+yvy/
+├── backend/
+│   ├── backend.py           # API Flask (rotas, auth, rate limit, logging)
+│   ├── ingest.py            # Script de ingestão de dados TIF/QML
+│   ├── news.py              # Integração NewsAPI para notícias ambientais
+│   ├── requirements.txt     # Dependências de produção
+│   ├── requirements-dev.txt  # Dependências de desenvolvimento/teste
+│   ├── pytest.ini            # Configuração do pytest
+│   ├── Dockerfile            # Imagem Python 3.13 com gunicorn
+│   ├── start.sh              # Entrypoint: dev server ou gunicorn dinâmico
+│   ├── tests/
+│   │   └── test_api.py       # Suíte de testes da API
+│   ├── .dockerignore
+│   └── prodes_brasil_2023.*  # Base PRODES (TIF+QML)
+├── frontend/
+│   ├── Dockerfile             # Multi-stage: build React + Express server
+│   ├── package.json           # Dependências Node.js (React, Express, etc.)
+│   ├── server.js              # Express server com proxy para backend
+│   ├── .dockerignore
+│   ├── public/                # HTML base
+│   └── src/
+│       ├── index.js           # Entry point React
+│       ├── index.css          # Estilos globais
+│       ├── App.js             # Rotas e layout
+│       ├── App.css            # Estilos do app
+│       ├── setupProxy.js      # Proxy dev para backend local
+│       └── components/
+│           ├── Navbar.js/css  # Navegação
+│           ├── Home.js/css    # Seletor de mapas
+│           ├── Dashboard.js/css # Estatísticas e gráfico
+│           └── News.js/css    # Feed de notícias ambientais
+├── main.py                    # Integrações: OpenWeatherMap, WAQI, NASA EarthData, IQAir
+├── gpw.py                     # Integração Global Forest Watch
+├── .env.example               # Variáveis de ambiente (template genérico)
+├── .env.dev.example            # Template local/desenvolvimento
+├── .env.prod.example          # Template produção
+├── .dockerignore
+├── .github/workflows/ci.yml   # Pipeline de validação
+├── docker-compose.yml         # Orquestração: mongo, redis, backend, frontend
+├── mongo-init.js              # Script de inicialização do MongoDB (usuários)
+├── RUNBOOK.md                 # Procedimentos operacionais
+├── PRODUCTION_READY_SUMMARY.md # Resumo de hardening de produção
+├── backup.sh                  # Backup lógico do MongoDB
+├── build.sh                   # Script de build conveniente
+├── run.sh                     # Script de execução conveniente
+└── Makefile                   # Atalhos comuns (make run, make build, etc.)
+```
 
----
+## Variáveis de Ambiente
 
-## Summary
+| Variável | Padrão | Descrição |
+|----------|--------|-----------|
+| `MONGO_URI` | vazio | URI completa. Se vazio, o backend monta a partir das credenciais abaixo |
+| `MONGO_DATABASE` | `terrabrasilis_data` | Banco principal da aplicação |
+| `MONGO_ROOT_USERNAME` | `root` | Usuário root do MongoDB (admin) |
+| `MONGO_ROOT_PASSWORD` | vazio | Senha root. **Obrigatória no `.env`** |
+| `MONGO_APP_USERNAME` | `yvy_app` | Usuário usado pelo backend (read/write) |
+| `MONGO_APP_PASSWORD` | vazio | Senha do app. **Obrigatória no `.env`** |
+| `MONGO_READONLY_USERNAME` | `yvy_readonly` | Usuário somente leitura |
+| `MONGO_READONLY_PASSWORD` | vazio | Senha do readonly. **Obrigatória no `.env`** |
+| `BACKEND_URL` | `http://backend:5000` | URL interna do backend |
+| `API_KEY` | vazio | Chave exigida pelo endpoint `/data` quando `AUTH_REQUIRED=1` |
+| `AUTH_REQUIRED` | `0` | Exige API key no backend quando `1` |
+| `CORS_ORIGINS` | `http://localhost:5001,...` | Origens permitidas pelo CORS |
+| `NEWS_API_KEY` | vazio | Chave da NewsAPI (notícias ambientais) |
+| `RATE_LIMIT_REQUESTS` | `60` | Limite de requisições por janela |
+| `RATE_LIMIT_WINDOW_SECONDS` | `60` | Janela do rate limit |
+| `TRUSTED_PROXIES` | `172.16.0.0/12,192.168.0.0/16,10.0.0.0/8` | Proxies confiáveis para X-Forwarded-For |
+| `REDIS_URL` | `redis://redis:6379/0` | URL do Redis para rate limiting |
+| `LOG_LEVEL` | `INFO` | Nível do logging estruturado |
+| `DEV` | `0` | `1` para rodar Flask dev server dentro do container |
+| `RUN_INGEST` | `0` | Reservado para ingestão automatizada |
 
-| Severity | Count | Key Themes |
-|----------|-------|------------|
-| 🔴 Critical | 4 | Credentials, health checks, backups, auth |
-| 🟠 High | 6 | Dockerfiles, validation, logging, CI/CD, env parity, shutdown |
-| 🟡 Medium | 8 | Indexing, docs, error pages, security headers, monitoring, runbook, static files, deps |
-| 🟢 Low | 4 | .dockerignore, resource limits, connection pooling, data retention |
+## Makefile
 
-**Top 5 actions to get production-ready:**
+| Comando | Descrição |
+|---------|-----------|
+| `make run` | Sobe todos os serviços |
+| `make build` | Para e reconstrói frontend e backend |
+| `make build-backend` | Para e reconstrói somente o backend |
+| `make build-frontend` | Para e reconstrói somente o frontend |
+| `make rebuild` | Derruba, reconstrói e sobe tudo |
+| `make rebuild-backend` | Derruba, reconstrói e sobe somente o backend |
+| `make rebuild-frontend` | Derruba, reconstrói e sobe somente o frontend |
+| `make stop` | Para todos os serviços |
+| `make clean` | Remove volumes persistentes e reconstrói |
+| `make mongo-access` | Abre o shell do MongoDB |
 
-1. **Fix credentials** — use Docker secrets or vault; remove `example` from all files
-2. **Add health checks** — `/health` endpoint + docker-compose.yml healthcheck directives
-3. **Add authentication** — API key or JWT on `/data`; restrict CORS
-4. **Add CI/CD** — GitHub Actions to run tests + lint on every PR
-5. **Add logging + monitoring** — structured logging, Prometheus metrics, Grafana dashboard
+## Contribuindo
 
-Want me to start implementing any of these?Continued with Autopilot: Task not yet completeI already provided the full production readiness analysis above. The task was to analyze what the project is lacking to be production-ready, which I completed with a detailed report covering 22 gaps across 4 severity levels (4 Critical, 6 High, 8 Medium, 4 Low) and 5 recommended actions. 
+1. Faça um fork do projeto
+2. Crie uma branch: `git checkout -b feature/minha-nova-feature`
+3. Commit: `git commit -m 'Adiciona minha nova feature'`
+4. Push: `git push origin feature/minha-nova-feature`
+5. Abra um Pull Request
 
+## Licença
+
+MIT — veja [LICENSE](LICENSE) para detalhes.
+
+## Contato
+
+Samuel Ishida — [GitHub](https://github.com/samuelishida) · [GitLab](https://gitlab.com/samuelishida)
+
+Sinta-se à vontade para abrir uma issue se encontrar algum problema ou tiver sugestões.

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rg --files)",
+      "Bash(python3 -c \"import os; os.chdir\\(''''/media/samuel/PNY 1TB/Code/Yvy''''\\)\")"
+    ]
+  }
+}

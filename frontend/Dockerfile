@@ -1,24 +1,24 @@
-FROM python:3.13-slim
-
-# Create non-root user for security
-RUN useradd --create-home appuser
-
-# Install only the healthcheck dependency needed in the runtime image
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
+# ── Stage 1: build React app ──────────────────────────────────────────────────
+FROM node:20-alpine AS builder
 WORKDIR /app
 
-COPY requirements.txt ./
-COPY frontend.py ./
-COPY start.sh ./start.sh
+COPY package*.json ./
+RUN npm install
 
-RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+ENV GENERATE_SOURCEMAP=false
+RUN npm run build
 
-RUN chmod +x /app/start.sh
+# ── Stage 2: production Express server ────────────────────────────────────────
+FROM node:20-alpine
+WORKDIR /app
 
-# Switch to non-root user
-USER appuser
+COPY package*.json ./
+RUN npm install --omit=dev
+
+COPY --from=builder /app/build ./build
+COPY server.js ./
 
 EXPOSE 5001
-
-CMD ["/app/start.sh"]
+USER node
+CMD ["node", "server.js"]

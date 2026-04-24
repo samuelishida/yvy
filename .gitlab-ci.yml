@@ -1,0 +1,22 @@
+stages:
+  - test
+
+python-tests:
+  stage: test
+  image: python:3.13
+  before_script:
+    - python -m pip install --upgrade pip
+    - pip install -r backend/requirements-dev.txt
+    - pip install -r backend/requirements.txt
+  script:
+    - pytest -q backend/tests frontend/tests
+    - python -m py_compile backend/backend.py backend/ingest.py frontend/frontend.py main.py gpw.py
+
+shell-and-js-validation:
+  stage: test
+  image: node:20
+  script:
+    - node -c mongo-init.js
+    - sh -n backup.sh
+    - sh -n backend/start.sh
+    - sh -n frontend/start.sh

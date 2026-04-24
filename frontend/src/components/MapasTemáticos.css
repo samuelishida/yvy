@@ -1,0 +1,202 @@
+.home {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 62px);
+  overflow: hidden;
+}
+
+/* ── Selector bar ─────────────────────────────────────── */
+.selector-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: linear-gradient(180deg, rgba(10, 18, 32, 0.98) 0%, rgba(5, 11, 24, 0.95) 100%);
+  border-bottom: 1px solid rgba(0, 180, 216, 0.12);
+  flex-shrink: 0;
+}
+
+.selector-scroll {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  margin: -4px 0;
+  justify-content: center;
+}
+.selector-scroll::-webkit-scrollbar { display: none; }
+
+.map-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid rgba(0, 180, 216, 0.2);
+  border-radius: 22px;
+  background: transparent;
+  color: #6b7a96;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+  flex: 1 1 auto;
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.map-btn__icon { 
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+.map-btn__label { 
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.map-btn__tag {
+  font-size: 0.65rem;
+  color: #4a5568;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 1px 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+/* Wider screens: more spacing */
+@media (min-width: 768px) {
+  .selector-bar {
+    gap: 12px;
+    padding: 10px 20px;
+  }
+  
+  .map-btn {
+    flex: 0 1 auto;
+    padding: 7px 14px;
+    font-size: 0.82rem;
+  }
+  
+  .map-btn__icon { font-size: 1rem; }
+}
+
+.map-btn:hover {
+  color: #e2e8f0;
+  border-color: rgba(0, 180, 216, 0.45);
+  background: rgba(0, 180, 216, 0.06);
+}
+
+.map-btn--active {
+  color: #00b4d8;
+  border-color: #00b4d8;
+  background: rgba(0, 180, 216, 0.15);
+  box-shadow: 0 0 16px rgba(0, 180, 216, 0.35), inset 0 0 8px rgba(0, 180, 216, 0.08);
+  font-weight: 600;
+}
+
+.map-btn__icon { font-size: 1rem; }
+.map-btn__label { font-weight: 500; }
+.map-btn__tag {
+  font-size: 0.68rem;
+  color: #4a5568;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 1px 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  display: none; /* hide on smaller screens by default */
+}
+
+@media (min-width: 900px) {
+  .map-btn__tag { display: inline; }
+}
+
+/* Active map label (right side of selector bar) */
+.active-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: #00b4d8;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.active-label__tag {
+  font-size: 0.7rem;
+  color: #4a5568;
+  background: rgba(0, 180, 216, 0.06);
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 180, 216, 0.15);
+}
+
+@media (max-width: 640px) {
+  .active-label { display: none; }
+  .selector-bar { padding: 8px 12px; }
+}
+
+/* ── Map panel ────────────────────────────────────────── */
+.map-panel {
+  flex: 1;
+  position: relative;
+  background: #030710;
+  overflow: hidden;
+}
+
+.map-iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+
+.map-iframe--visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Corner badge */
+.map-overlay-corner {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: rgba(5, 11, 24, 0.82);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(0, 180, 216, 0.2);
+  border-radius: 20px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+
+
+.overlay-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #38a169;
+  animation: pulse 2s infinite;
+}
+
+.overlay-text {
+  font-size: 0.7rem;
+  color: #8892a4;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 500;
+}

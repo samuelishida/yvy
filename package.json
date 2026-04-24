@@ -1,0 +1,53 @@
+{
+  "name": "yvy",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "axios": "^0.27.2",
+    "dotenv": "^16.0.3",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "mongoose": "^6.6.5",
+    "newsapi": "^2.4.1",
+    "querystring-es3": "^0.2.1",
+    "node-cron": "^3.0.2",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "react-router-dom": "^6.3.0",
+    "react-scripts": "^5.0.0"
+  },
+  "devDependencies": {
+    "@babel/plugin-proposal-private-property-in-object": "^7.18.6",
+    "concurrently": "^7.5.0",
+    "nodemon": "^2.0.20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "server": "nodemon server.js",
+    "serve": "node server.js",
+    "client": "react-scripts start",
+    "build": "react-scripts build",
+    "heroku-postbuild": "npm run build",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
