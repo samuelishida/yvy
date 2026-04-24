@@ -1,0 +1,98 @@
+---
+- name: Deploy Yvy na OCI
+  hosts: yvy
+  become: yes
+  vars:
+    app_dir: /opt/yvy
+    repo_url: https://github.com/samuelishida/yvy.git
+
+  tasks:
+    - name: Garantir que Docker está rodando
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Clonar repositório Yvy
+      ansible.builtin.git:
+        repo: "{{ repo_url }}"
+        dest: "{{ app_dir }}"
+        version: main
+        force: yes
+      become_user: ubuntu
+
+    - name: Gerar secrets se .env não existir
+      ansible.builtin.command:
+        cmd: bash scripts/generate-secrets.sh
+        chdir: "{{ app_dir }}"
+      become_user: ubuntu
+      args:
+        creates: "{{ app_dir }}/.env"
+
+    - name: Template docker-compose.prod.yml
+      ansible.builtin.template:
+        src: docker-compose.prod.yml.j2
+        dest: "{{ app_dir }}/docker-compose.prod.yml"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+
+    - name: Docker Compose pull
+      ansible.builtin.command:
+        cmd: docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+        chdir: "{{ app_dir }}"
+      become_user: ubuntu
+
+    - name: Docker Compose up
+      ansible.builtin.command:
+        cmd: docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+        chdir: "{{ app_dir }}"
+      become_user: ubuntu
+
+    - name: Aguardar backend ficar saudável
+      ansible.builtin.uri:
+        url: http://localhost:5000/health
+        status_code: 200
+      register: backend_health
+      until: backend_health.status == 200
+      retries: 30
+      delay: 5
+
+    - name: Executar ingestão de dados (se banco vazio)
+      ansible.builtin.command:
+        cmd: docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend python ingest.py
+        chdir: "{{ app_dir }}"
+      become_user: ubuntu
+      register: ingest_result
+      changed_when: "'already populated' not in ingest_result.stdout"
+      ignore_errors: yes
+
+    - name: Configurar cron de backup
+      ansible.builtin.cron:
+        name: "Yvy MongoDB backup"
+        minute: "0"
+        hour: "3"
+        job: "cd {{ app_dir }} && bash backup.sh >> {{ app_dir }}/backup.log 2>&1"
+        user: ubuntu
+
+    - name: Configurar cron de prune Docker
+      ansible.builtin.cron:
+        name: "Docker system prune"
+        minute: "0"
+        hour: "4"
+        weekday: "0"
+        job: "docker system prune -f"
+        user: root
+
+    - name: Verificar health do frontend
+      ansible.builtin.uri:
+        url: http://localhost:5001/health
+        status_code: 200
+      register: frontend_health
+      until: frontend_health.status == 200
+      retries: 10
+      delay: 3
+
+    - name: Mostrar URL de acesso
+      ansible.builtin.debug:
+        msg: "Yvy disponível em: http://{{ ansible_host }}:5001"
