@@ -322,7 +322,7 @@ async def _fetch_firms_data():
             "satellite": satellite,
             "bright_ti4": bright_ti4,
             "source": "NASA_FIRMS_VIIRS_SNPP",
-            "ingested_at": datetime.datetime.now(datetime.UTC).isoformat(),
+            "ingested_at": datetime.datetime.now(timezone.utc).isoformat(),
         })
         count += 1
 
@@ -330,7 +330,7 @@ async def _fetch_firms_data():
         await db_sqlite.bulk_upsert_fires(docs)
 
     try:
-        await redis_client.set("fires:last_sync", datetime.datetime.now(datetime.UTC).isoformat())
+        await redis_client.set("fires:last_sync", datetime.datetime.now(timezone.utc).isoformat())
     except Exception:
         pass
 
