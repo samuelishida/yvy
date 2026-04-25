@@ -35,6 +35,56 @@ async def has_recent_news():
     return await db_sqlite.has_recent_news(minutes=15)
 
 
+# ---------------------------------------------------------------------------
+# MyMemory warning detection
+# ---------------------------------------------------------------------------
+
+_MYMEMORY_WARN_FRAGMENTS = (
+    "MYMEMORY WARNING",
+    "YOU USED ALL AVAILABLE FREE TRANSLATIONS",
+    "NEXT AVAILABLE IN",
+    "VISIT HTTPS://MYMEMORY.TRANSLATED.NET",
+)
+
+
+def _is_mymemory_warning(text: str) -> bool:
+    """Return True if text is the MyMemory quota-exhaustion warning instead of a real translation."""
+    if not text or len(text) < 200:
+        return False
+    text_upper = text.upper()
+    return all(fragment in text_upper for fragment in _MYMEMORY_WARN_FRAGMENTS[:2])
+
+
+def _clear_bad_en(article: dict) -> None:
+    """Null out title_en/description_en when they contain MyMemory warning text."""
+    if article.get("title_en") and _is_mymemory_warning(article["title_en"]):
+        logger.warning("Detected MyMemory warning in title_en (%s). Clearing.", article.get("url", ""))
+        article["title_en"] = None
+        article["title_en_bad"] = True  # marker so caller knows to re-translate
+    if article.get("description_en") and _is_mymemory_warning(article["description_en"]):
+        logger.warning("Detected MyMemory warning in description_en (%s). Clearing.", article.get("url", ""))
+        article["description_en"] = None
+        article["description_en_bad"] = True
+
+
+async def _wipe_bad_en_from_db(urls_with_bad_title: list[str], urls_with_bad_desc: list[str]) -> None:
+    """Clear corrupted MyMemory warning strings from DB so next fetch re-translates via fallbacks."""
+    if not urls_with_bad_title and not urls_with_bad_desc:
+        return
+    try:
+        async with db_sqlite._get_conn() as conn:
+            if urls_with_bad_title:
+                placeholders = ",".join("?" for _ in urls_with_bad_title)
+                await conn.execute(f"UPDATE news SET title_en = NULL WHERE url IN ({placeholders})", urls_with_bad_title)
+            if urls_with_bad_desc:
+                placeholders = ",".join("?" for _ in urls_with_bad_desc)
+                await conn.execute(f"UPDATE news SET description_en = NULL WHERE url IN ({placeholders})", urls_with_bad_desc)
+            await conn.commit()
+            logger.info("Cleared corrupted MyMemory translations from %d / %d rows.", len(urls_with_bad_title), len(urls_with_bad_desc))
+    except Exception as e:
+        logger.error("Failed to clear bad EN fields from DB: %s", e)
+
+
 async def _get_cached_translations(urls: list[str]) -> dict[str, dict]:
     """Lookup existing DB translations for URLs. Returns {url: {title_en, description_en}}."""
     if not urls:
@@ -53,6 +103,10 @@ async def _get_cached_translations(urls: list[str]) -> dict[str, dict]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Translation chain
+# ---------------------------------------------------------------------------
+
 class TranslatorChain:
     """Multi-provider translation chain: MyMemory -> LibreTranslate -> Google Translate."""
 
@@ -60,23 +114,18 @@ class TranslatorChain:
         self._mymemory_quota_exhausted = False
 
     async def translate(self, text: str, source_lang: str, target_lang: str) -> str:
-        """Try MyMemory first, then LibreTranslate, then Google Translate free endpoint.
-        Returns translated text or empty string if all fail."""
         if not text:
             return ""
 
-        # 1) MyMemory (skip if we already know quota is exhausted)
         if not self._mymemory_quota_exhausted:
             result = await self._try_mymemory(text, source_lang, target_lang)
-            if result:
+            if result and not _is_mymemory_warning(result):
                 return result
 
-        # 2) LibreTranslate (public instance, no key)
         result = await self._try_libre(text, source_lang, target_lang)
         if result:
             return result
 
-        # 3) Google Translate free endpoint (gtx)
         result = await self._try_google(text, source_lang, target_lang)
         if result:
             return result
@@ -94,13 +143,14 @@ class TranslatorChain:
             status = data.get("responseStatus")
             translation = data.get("responseData", {}).get("translatedText", "")
 
-            # Detect quota-exhaustion in any form
             if status != 200 or not translation:
                 return None
-            if "YOU USED ALL AVAILABLE FREE TRANSLATIONS" in translation.upper():
+
+            if _is_mymemory_warning(translation):
                 self._mymemory_quota_exhausted = True
-                logger.warning("MyMemory daily quota exhausted. Switching to fallback translators.")
+                logger.warning("MyMemory quota exhausted (warning text detected). Switching to fallbacks.")
                 return None
+
             if translation.lower() == text.lower():
                 return None
             return translation
@@ -158,6 +208,10 @@ class TranslatorChain:
         return None
 
 
+# ---------------------------------------------------------------------------
+# Fetch + save
+# ---------------------------------------------------------------------------
+
 async def fetch_and_save_news():
     if not NEWS_API_KEY:
         logger.warning("NEWS_API_KEY not configured. Skipping news fetch.")
@@ -190,17 +244,40 @@ async def fetch_and_save_news():
 
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-        # Pre-check DB for cached translations to avoid redundant MyMemory calls
+        # Normalize API articles to consistent dict keys
+        for a in articles:
+            a["title"] = (a.get("title") or "").strip()
+            a["description"] = (a.get("description") or "").strip()
+
+        # --- Look for existing DB rows for these URLs ---
         urls = [a.get("url", "") for a in articles]
         cached = await _get_cached_translations(urls)
 
-        # Build list of texts that actually need translation
+        # --- Scan existing DB rows for corrupted MyMemory warnings ---
+        # If any have bad title_en/description_en, clear them so they get re-translated now.
+        existing_bad_title_urls = []
+        existing_bad_desc_urls = []
+        for url, vals in cached.items():
+            te = vals.get("title_en", "") or ""
+            de = vals.get("description_en", "") or ""
+            if _is_mymemory_warning(te):
+                existing_bad_title_urls.append(url)
+            if _is_mymemory_warning(de):
+                existing_bad_desc_urls.append(url)
+        if existing_bad_title_urls or existing_bad_desc_urls:
+            logger.warning("Found %d titles + %d descriptions with MyMemory warnings in DB. Clearing for re-translation.",
+                           len(existing_bad_title_urls), len(existing_bad_desc_urls))
+            await _wipe_bad_en_from_db(existing_bad_title_urls, existing_bad_desc_urls)
+            # Refresh the cache after clearing
+            cached = await _get_cached_translations(urls)
+
+        # --- Build list of texts that still need translation ---
         texts_to_translate = []
         translate_map = []  # [(article_index, field)]
         for i, article in enumerate(articles):
             cached_en = cached.get(article.get("url", ""), {})
-            title = (article.get("title") or "").strip()
-            description = (article.get("description") or "").strip()
+            title = article.get("title", "")
+            description = article.get("description", "")
 
             if cached_en.get("title_en"):
                 article["title_en"] = cached_en["title_en"]
@@ -218,7 +295,7 @@ async def fetch_and_save_news():
             translations = await batch_translate(texts_to_translate, "pt", "en")
             for idx, (article_i, field) in enumerate(translate_map):
                 val = translations.get(idx, "")
-                if val:
+                if val and not _is_mymemory_warning(val):
                     articles[article_i][f"{field}_en"] = val
 
         processed = []
@@ -241,23 +318,48 @@ async def fetch_and_save_news():
         return []
 
 
+# ---------------------------------------------------------------------------
+# Read
+# ---------------------------------------------------------------------------
+
 async def get_news(page=1, page_size=20, lang="pt"):
     try:
         articles = await db_sqlite.get_news_page(page, page_size)
 
+        bad_title_urls = []
+        bad_desc_urls = []
+
         for article in articles:
             article["_id"] = str(hash(article.get("url", "")))
+            _clear_bad_en(article)
+
+            # If EN was bad, also collect for async DB wipe
+            if article.pop("title_en_bad", False):
+                bad_title_urls.append(article["url"])
+            if article.pop("description_en_bad", False):
+                bad_desc_urls.append(article["url"])
+
             if lang == "en":
                 if article.get("title_en"):
                     article["title"] = article["title_en"]
                 if article.get("description_en"):
                     article["description"] = article["description_en"]
 
+        if bad_title_urls or bad_desc_urls:
+            # Fire-and-forget: clean DB in background so next sync re-translates
+            asyncio.get_event_loop().create_task(
+                _wipe_bad_en_from_db(bad_title_urls, bad_desc_urls)
+            )
+
         return articles
     except Exception as e:
         logger.error("Error fetching news from DB: %s", e)
         return []
 
+
+# ---------------------------------------------------------------------------
+# Translation batch
+# ---------------------------------------------------------------------------
 
 async def batch_translate(texts, source_lang, target_lang):
     """Translate a batch of texts using TranslatorChain with concurrency throttling."""
