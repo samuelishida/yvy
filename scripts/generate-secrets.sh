@@ -16,15 +16,6 @@ generate_secret() {
 }
 
 cat > "$ENV_FILE" <<EOF
-MONGO_URI=
-MONGO_DATABASE=terrabrasilis_data
-MONGO_ROOT_USERNAME=root
-MONGO_ROOT_PASSWORD=$(generate_secret 32)
-MONGO_APP_USERNAME=yvy_app
-MONGO_APP_PASSWORD=$(generate_secret 32)
-MONGO_READONLY_USERNAME=yvy_readonly
-MONGO_READONLY_PASSWORD=$(generate_secret 32)
-BACKEND_URL=http://backend:5000
 API_KEY=$(generate_secret 48)
 AUTH_REQUIRED=1
 CORS_ORIGINS=http://localhost:5001
@@ -33,7 +24,14 @@ RATE_LIMIT_WINDOW_SECONDS=60
 LOG_LEVEL=INFO
 DEV=0
 RUN_INGEST=0
+NEWS_API_KEY=
+FIRMS_MAP_KEY=
+WAQI_TOKEN=demo
+SQLITE_PATH=/opt/yvy/backend/data/yvy.db
+REDIS_URL=redis://localhost:6379/0
+BACKEND_URL=http://127.0.0.1:5000
 EOF
 
 echo ".env gerado em $ENV_FILE"
 echo "⚠️  IMPORTANTE: Edite CORS_ORIGINS com o IP/domínio público da sua VM!"
+echo "⚠️  Adicione NEWS_API_KEY e FIRMS_MAP_KEY para funcionalidade completa."

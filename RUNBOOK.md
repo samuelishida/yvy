@@ -2,32 +2,32 @@
 
 ## Environments
 
-- Development: copy `.env.dev.example` to `.env` and run `docker-compose up --build`
-- Production: copy `.env.prod.example` to `.env`, replace every placeholder secret, then run `docker-compose up --build -d`
+- Development: copy `.env.example` to `.env`, run `make setup`, then `make run`
+- Production (baremetal OCI): deploy via Terraform + Ansible e valide os serviços `yvy-backend` e `yvy-frontend`
 
 ## Health checks
 
 - Backend: `curl -f http://localhost:5000/health`
 - Frontend: `curl -f http://localhost:5001/health`
-- MongoDB: `docker-compose exec mongo mongosh --eval "db.adminCommand('ping')"`
+- SQLite: `sqlite3 backend/data/yvy.db ".tables"`
 
 ## Backups
 
 - Run `./backup.sh`
-- Store the resulting archive from `mongo_backups/` in offsite storage
-- Test restores regularly with a disposable MongoDB instance before relying on the backup set
+- Store the resulting archive from `sqlite_backups/` in offsite storage
+- Test restores regularly in a disposable environment before relying on the backup set
 
 ## Restore procedure
 
 1. Stop writers to the database.
 2. Pick the backup archive to restore.
-3. Run `gunzip -c mongo_backups/<backup>.gz | docker-compose exec -T mongo mongorestore --authenticationDatabase admin --username "$MONGO_ROOT_USERNAME" --password "$MONGO_ROOT_PASSWORD" --archive --gzip --drop`
-4. Validate with `docker-compose exec mongo mongosh "$MONGO_DATABASE" --eval "db.deforestation_data.countDocuments({})"`
+3. Run `gunzip -c sqlite_backups/<backup>.sqlite3.gz > backend/data/yvy.db`
+4. Validate with `sqlite3 backend/data/yvy.db "SELECT COUNT(*) FROM deforestation_data;"`
 
 ## Deploy / rollback
 
 1. Run the CI checks locally or via GitHub Actions.
 2. Update `.env` with the target environment values.
-3. Run `docker-compose up --build -d`.
+3. Deploy with Terraform + Ansible (`bash scripts/deploy-local.sh`) or restart services (`sudo systemctl restart yvy-backend yvy-frontend`).
 4. Verify `/health` on frontend and backend.
-5. Roll back by redeploying the previous image or git revision and re-running the health checks.
+5. Roll back by checking out the previous git revision, rerunning `scripts/setup-local.sh`, and restarting os serviços.

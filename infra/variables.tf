@@ -45,3 +45,9 @@ variable "environment" {
   type        = string
   default     = "production"
 }
+
+variable "deploy_runtime" {
+  description = "Runtime da aplicacao na VM OCI"
+  type        = string
+  default     = "baremetal"
+}

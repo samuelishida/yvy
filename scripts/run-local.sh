@@ -5,12 +5,41 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# Local runner defaults to DEV mode to avoid serving stale production builds.
+: "${YVY_LOCAL_DEV:=1}"
+export YVY_LOCAL_DEV
+
+BACKEND_PID=""
+FRONTEND_PID=""
+CLEANED_UP=0
+
+cleanup() {
+    if [ "$CLEANED_UP" -eq 1 ]; then
+        return
+    fi
+    CLEANED_UP=1
+    trap - INT TERM EXIT
+    echo ""
+    echo "Shutting down..."
+    if [ -n "$BACKEND_PID" ]; then
+        kill "$BACKEND_PID" 2>/dev/null || true
+    fi
+    if [ -n "$FRONTEND_PID" ]; then
+        kill "$FRONTEND_PID" 2>/dev/null || true
+    fi
+    pkill -f "[h]ypercorn backend:app" 2>/dev/null || true
+    pkill -f "[p]ython backend.py" 2>/dev/null || true
+    pkill -f "[r]eact-scripts start" 2>/dev/null || true
+    pkill -f "[n]ode server.js" 2>/dev/null || true
+}
+
 echo "=== Yvy Local Runner ==="
 echo "Starting backend + frontend..."
+echo "Mode: local-dev (YVY_LOCAL_DEV=$YVY_LOCAL_DEV)"
 echo ""
 
 # Trap to kill both processes on exit
-trap 'echo ""; echo "Shutting down..."; kill 0 2>/dev/null; exit 0' INT TERM EXIT
+trap cleanup INT TERM EXIT
 
 # Start backend in background
 "$SCRIPT_DIR/run-backend.sh" &

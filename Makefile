@@ -1,87 +1,29 @@
-# Define os alvos (targets)
-.PHONY: build-frontend build-backend build-both rebuild-frontend rebuild-backend rebuild clean stop-frontend stop-backend stop run run-frontend run-backend sqlite-access local-setup local-run local-backend local-frontend local-test local-stop
+.PHONY: setup run backend frontend stop test sqlite-access
 
-# Parar o frontend
-stop-frontend:
-	docker-compose stop frontend
-
-# Parar o backend
-stop-backend:
-	docker-compose stop backend
-
-# Iniciar a aplicação em modo de desenvolvimento com nodemon
-dev:
-	nodemon server.js
-
-# Parar a aplicação
-stop:
-	docker-compose down
-
-# Construir apenas o frontend
-build-frontend: stop-frontend
-	docker-compose build frontend
-	docker-compose up -d frontend
-
-# Construir apenas o backend
-build-backend: stop-backend
-	docker-compose build backend
-	docker-compose up -d backend
-
-# Construir ambos (frontend e backend)
-build: stop-frontend stop-backend
-	docker-compose build frontend backend
-
-# Reconstruir apenas o frontend (derruba e reconstrói)
-rebuild-frontend: stop-frontend
-	docker-compose rm -f frontend
-	docker-compose build frontend
-
-# Reconstruir apenas o backend (derruba e reconstrói)
-rebuild-backend: stop-backend
-	docker-compose rm -f backend
-	docker-compose build backend
-
-# Reconstruir todos os serviços (frontend, backend, etc.)
-rebuild: stop
-	docker-compose build
-	docker-compose up
-
-# Remover todos os volumes e reconstruir tudo
-clean:
-	docker-compose down -v
-	docker-compose build
-
-# Executar todos os serviços
-run:
-	docker-compose up
-run-frontend:
-	docker-compose up -d frontend
-run-backend:
-	docker-compose up -d backend
-
-# Acessar o SQLite
-sqlite-access:
-	docker-compose exec backend sh -lc 'sqlite3 /app/data/yvy.db ".tables"'
-
-# ─── Local Development (no Docker) ───────────────────────────────────────────
-
-local-setup:
+setup:
 	bash scripts/setup-local.sh
 
-local-run:
+run:
 	bash scripts/run-local.sh
 
-local-backend:
+backend:
 	bash scripts/run-backend.sh
 
-local-frontend:
+frontend:
 	bash scripts/run-frontend.sh
 
-local-test:
+test:
 	cd backend && $(shell [ -f venv/bin/python ] && echo venv/bin/python || echo $$HOME/.local/share/yvy-venv/bin/python) test_sqlite_manual.py
 
-local-stop:
-	@echo "Killing all local processes..."
-	@pkill -9 -f "hypercorn|python backend|node server|react-scripts" 2>/dev/null || true
-	@sleep 2
+sqlite-access:
+	@sqlite3 backend/data/yvy.db ".tables"
+
+stop:
+	@echo "Killing local Yvy processes..."
+	@pkill -f "[h]ypercorn backend:app" 2>/dev/null || true
+	@pkill -f "[p]ython backend.py" 2>/dev/null || true
+	@pkill -f "[n]ode server.js" 2>/dev/null || true
+	@pkill -f "[r]eact-scripts start" 2>/dev/null || true
+	@if command -v lsof >/dev/null 2>&1; then pids=$$(lsof -tiTCP:5000 -sTCP:LISTEN 2>/dev/null || true); [ -z "$$pids" ] || kill $$pids 2>/dev/null || true; fi
+	@if command -v lsof >/dev/null 2>&1; then pids=$$(lsof -tiTCP:5001 -sTCP:LISTEN 2>/dev/null || true); [ -z "$$pids" ] || kill $$pids 2>/dev/null || true; fi
 	@echo "Local processes stopped."

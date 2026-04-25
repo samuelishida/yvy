@@ -124,7 +124,7 @@ resource "oci_core_security_list" "yvy_security_list" {
 }
 
 # ---------------------------------------------------------------------------
-# VM Always Free — ARM Ampere A1
+# VM Always Free — Micro (VM.Standard.E2.1.Micro)
 # Fallback: tenta AD-2 se AD-1 estiver sem capacidade
 # ---------------------------------------------------------------------------
 locals {
@@ -140,7 +140,7 @@ resource "oci_core_instance" "yvy_server" {
   source_details {
     source_type             = "image"
     source_id               = data.oci_core_images.ubuntu.images[0].id
-    boot_volume_size_in_gbs = 100
+    boot_volume_size_in_gbs = 50
   }
 
   create_vnic_details {
@@ -159,6 +159,7 @@ resource "oci_core_instance" "yvy_server" {
   freeform_tags = {
     Project     = var.project_name
     Environment = var.environment
+    Runtime     = var.deploy_runtime
     ManagedBy   = "terraform"
   }
 }

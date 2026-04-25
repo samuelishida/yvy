@@ -1,28 +1,24 @@
 #cloud-config
 package_update: true
 packages:
-  - apt-transport-https
-  - ca-certificates
-  - curl
-  - gnupg
-  - lsb-release
   - git
+  - curl
+  - ca-certificates
+  - python3
+  - python3-venv
+  - python3-pip
+  - nodejs
+  - npm
+  - redis-server
+  - sqlite3
   - jq
   - htop
   - ncdu
   - ufw
 
 runcmd:
-  # Instalar Docker
-  - install -m 0755 -d /etc/apt/keyrings
-  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-  - chmod a+r /etc/apt/keyrings/docker.gpg
-  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-  - apt-get update
-  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-  - usermod -aG docker ubuntu
-  - systemctl enable docker
-  - systemctl start docker
+  - systemctl enable redis-server
+  - systemctl start redis-server
 
   # Configurar UFW
   - ufw default deny incoming
@@ -37,4 +33,4 @@ runcmd:
   - mkdir -p /opt/yvy
   - chown ubuntu:ubuntu /opt/yvy
 
-final_message: "Yvy server setup complete. Docker ready."
+final_message: "Yvy server setup complete. Baremetal runtime ready."

@@ -109,7 +109,7 @@ export default function Dashboard() {
             <p>{error}</p>
             <p className="dash-error__hint">
               {t('dashboard.errorHint')}{' '}
-              <code>docker compose exec backend python ingest.py</code>
+              <code>cd backend && python ingest_sqlite.py</code>
             </p>
           </div>
         </div>
@@ -120,7 +120,7 @@ export default function Dashboard() {
           <span className="dash-empty__icon">🗂️</span>
           <h3>{t('dashboard.noData')}</h3>
           <p>{t('dashboard.noDataHint')}</p>
-          <code>docker compose exec backend python ingest.py</code>
+          <code>cd backend && python ingest_sqlite.py</code>
         </div>
       )}
 

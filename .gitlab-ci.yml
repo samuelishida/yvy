@@ -9,14 +9,12 @@ python-tests:
     - pip install -r backend/requirements-dev.txt
     - pip install -r backend/requirements.txt
   script:
-    - pytest -q backend/tests frontend/tests
-    - python -m py_compile backend/backend.py backend/ingest.py frontend/frontend.py main.py gpw.py
+    - pytest -q backend/tests
+    - python -m py_compile backend/backend.py backend/db_sqlite.py backend/ingest_sqlite.py backend/news_sqlite.py main.py gpw.py
 
 shell-and-js-validation:
   stage: test
   image: node:20
   script:
-    - node -c mongo-init.js
     - sh -n backup.sh
-    - sh -n backend/start.sh
-    - sh -n frontend/start.sh
+    - sh -n scripts/setup-local.sh

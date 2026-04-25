@@ -5,7 +5,7 @@ const path = require('path');
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '5001', 10);
-const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:5000';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:5000';
 const API_KEY = process.env.API_KEY || '';
 
 // Graceful shutdown
@@ -21,7 +21,7 @@ function gracefulShutdown(signal) {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-// Health check (required by docker-compose healthcheck)
+// Health check endpoint
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 // Proxy /api/* → backend, injecting API key server-side (never exposed to browser)

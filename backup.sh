@@ -1,53 +1,34 @@
 #!/bin/sh
-# Backup script for Yvy MongoDB
-# Prefers docker-compose exec, with a local mongodump fallback when Docker is unavailable.
+# Backup script for Yvy SQLite
 
 set -eu
 
-BACKUP_DIR="${BACKUP_DIR:-./mongo_backups}"
+BACKUP_DIR="${BACKUP_DIR:-./sqlite_backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
-DB_NAME="${MONGO_DATABASE:-terrabrasilis_data}"
-USERNAME="${MONGO_ROOT_USERNAME:-root}"
-PASSWORD="${MONGO_ROOT_PASSWORD:-}"
-MONGO_HOST="${MONGO_HOST:-localhost}"
-MONGO_PORT="${MONGO_PORT:-27017}"
+SQLITE_PATH="${SQLITE_PATH:-./backend/data/yvy.db}"
 
-if [ -z "$PASSWORD" ]; then
-  echo "MONGO_ROOT_PASSWORD must be set before running backups." >&2
+if [ ! -f "$SQLITE_PATH" ]; then
+  echo "SQLite database not found at: $SQLITE_PATH" >&2
   exit 1
 fi
 
 mkdir -p "$BACKUP_DIR"
 
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
-BACKUP_FILE="$BACKUP_DIR/backup_$TIMESTAMP.gz"
+BACKUP_FILE="$BACKUP_DIR/yvy_${TIMESTAMP}.sqlite3"
+ARCHIVE_FILE="$BACKUP_FILE.gz"
 
-echo "Creating MongoDB backup at $BACKUP_FILE..."
+echo "Creating SQLite backup from $SQLITE_PATH..."
 
-if command -v docker-compose >/dev/null 2>&1; then
-  docker-compose exec -T mongo sh -lc \
-    "mongodump --authenticationDatabase admin --username \"$USERNAME\" --password \"$PASSWORD\" --db \"$DB_NAME\" --archive --gzip" \
-    > "$BACKUP_FILE"
-elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-  docker compose exec -T mongo sh -lc \
-    "mongodump --authenticationDatabase admin --username \"$USERNAME\" --password \"$PASSWORD\" --db \"$DB_NAME\" --archive --gzip" \
-    > "$BACKUP_FILE"
-elif command -v mongodump >/dev/null 2>&1; then
-  mongodump \
-    --host "$MONGO_HOST" \
-    --port "$MONGO_PORT" \
-    --authenticationDatabase admin \
-    --username "$USERNAME" \
-    --password "$PASSWORD" \
-    --db "$DB_NAME" \
-    --archive="$BACKUP_FILE" \
-    --gzip
+if command -v sqlite3 >/dev/null 2>&1; then
+  sqlite3 "$SQLITE_PATH" ".backup '$BACKUP_FILE'"
 else
-  echo "Neither docker compose nor mongodump is available on PATH." >&2
-  exit 1
+  cp "$SQLITE_PATH" "$BACKUP_FILE"
 fi
 
-echo "Backup created: $BACKUP_FILE"
+gzip -f "$BACKUP_FILE"
+
+echo "Backup created: $ARCHIVE_FILE"
 echo "Cleaning up backups older than $RETENTION_DAYS days..."
-find "$BACKUP_DIR" -name "backup_*.gz" -type f -mtime +"$RETENTION_DAYS" -delete
+find "$BACKUP_DIR" -name "yvy_*.sqlite3.gz" -type f -mtime +"$RETENTION_DAYS" -delete
 echo "Cleanup complete."

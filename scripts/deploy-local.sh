@@ -15,7 +15,7 @@ echo -e "${GREEN}🚀 Yvy Deploy Script${NC}"
 echo "========================"
 
 # Verificar dependências
-command -v terraform >/devdev/null 2>&1 || { echo -e "${RED}❌ Terraform não encontrado${NC}"; exit 1; }
+command -v terraform >/dev/null 2>&1 || { echo -e "${RED}❌ Terraform não encontrado${NC}"; exit 1; }
 command -v ansible-playbook >/dev/null 2>&1 || { echo -e "${RED}❌ Ansible não encontrado${NC}"; exit 1; }
 
 # Verificar .env
@@ -67,7 +67,7 @@ read -p "Executar Ansible deploy? [y/N] " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
   ansible-playbook -i inventory.ini playbook.yml
-  echo -e "\n${GREEN}🌐 Yvy disponível em: http://$PUBLIC_IP:5001${NC}"
+  echo -e "\n${GREEN}🌐 Yvy (baremetal) disponível em: http://$PUBLIC_IP:5001${NC}"
 else
   echo -e "${YELLOW}⏭️  Pulando Ansible${NC}"
 fi

@@ -4,6 +4,19 @@ import './News.css';
 
 const PAGE_SIZE = 20;
 
+const normalizeArticles = (payload) => {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+  if (payload && Array.isArray(payload.articles)) {
+    return payload.articles;
+  }
+  if (payload && Array.isArray(payload.data)) {
+    return payload.data;
+  }
+  return [];
+};
+
 const News = () => {
   const { lang, t } = useI18n();
   const [articles, setArticles] = useState([]);
@@ -18,7 +31,16 @@ const News = () => {
         setLoading(true);
         setError(null);
         const response = await fetch(`/api/news?page=${page}&lang=${lang}`);
-        const data = await response.json();
+        const payload = await response.json();
+        const data = normalizeArticles(payload);
+
+        if (!response.ok) {
+          throw new Error(
+            typeof payload?.error === 'string' && payload.error.trim()
+              ? payload.error
+              : t('news.errorLoading')
+          );
+        }
 
         if (page === 1) {
           setArticles(data);
@@ -32,14 +54,15 @@ const News = () => {
 
         setLoading(false);
       } catch (err) {
-        setError(t('news.errorLoading'));
+        setError(err?.message || t('news.errorLoading'));
+        setArticles((prevArticles) => (page === 1 ? [] : prevArticles));
         setLoading(false);
         setHasMore(false);
       }
     };
 
     fetchNews();
-  }, [page, lang]);
+  }, [page, lang, t]);
 
   const handleScroll = useCallback(() => {
     const navbarHeight = 62;
@@ -56,7 +79,7 @@ const News = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
 
-  const handleLangChange = useCallback((newLang) => {
+  const handleLangChange = useCallback(() => {
     setArticles([]);
     setPage(1);
     setHasMore(true);
@@ -64,7 +87,7 @@ const News = () => {
 
   useEffect(() => {
     handleLangChange(lang);
-  }, [lang]);
+  }, [lang, handleLangChange]);
 
   return (
     <div className="news-container">
