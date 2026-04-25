@@ -132,6 +132,10 @@
   height: 100%;
 }
 
+.leaflet-control-zoom {
+  z-index: 400 !important;
+}
+
 .map-loading,
 .map-error {
   position: absolute;
