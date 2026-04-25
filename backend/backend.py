@@ -44,7 +44,13 @@ NEWS_SYNC_INTERVAL_MINUTES = int(os.getenv("NEWS_SYNC_INTERVAL_MINUTES", "15"))
 FIRMS_MAP_KEY = os.getenv("FIRMS_MAP_KEY", "").strip()
 FIRMS_SYNC_INTERVAL_HOURS = int(os.getenv("FIRMS_SYNC_INTERVAL_HOURS", "4"))
 FIRMS_DAY_RANGE = int(os.getenv("FIRMS_DAY_RANGE", "3"))
-FIRMS_BBOX = "-74,-34,-34,5.5"
+FIRMS_BBOX = "-74,-34,-34,5.5"  # Brazil only (legacy)
+GLOBAL_BBOXES = [
+    "-180,-90,-90,90",   # Americas
+    "-90,-90,0,90",      # Atlantic/Africa
+    "0,-90,90,90",       # Europe/Asia/Africa
+    "90,-90,180,90",     # Asia/Pacific
+]
 FIRMS_SOURCE = os.getenv("FIRMS_SOURCE", "VIIRS_SNPP_NRT")
 FIRE_TTL_DAYS = int(os.getenv("FIRE_TTL_DAYS", "90"))
 _RATE_LIMIT_BUCKETS = defaultdict(deque)
@@ -293,67 +299,73 @@ async def shutdown():
             pass
 
 
-async def _fetch_firms_data():
+async def _fetch_firms_data(global_sync: bool = False):
     if not FIRMS_MAP_KEY:
         logger.warning("FIRMS_MAP_KEY not configured, skipping fire data sync.", extra={"event": "firms_skip_no_key"})
         return 0
 
-    url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/{FIRMS_MAP_KEY}/{FIRMS_SOURCE}/{FIRMS_BBOX}/{FIRMS_DAY_RANGE}"
-    logger.info("Fetching FIRMS fire data.", extra={"event": "firms_fetch_start", "details": {"url": url}})
+    bboxes = GLOBAL_BBOXES if global_sync else [FIRMS_BBOX]
+    all_docs = []
+    total_count = 0
 
-    try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.get(url)
-            if resp.status_code != 200:
-                logger.error("FIRMS API returned non-200.", extra={"event": "firms_fetch_failed", "status_code": resp.status_code})
-                return 0
+    for bbox in bboxes:
+        url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/{FIRMS_MAP_KEY}/{FIRMS_SOURCE}/{bbox}/{FIRMS_DAY_RANGE}"
+        logger.info("Fetching FIRMS fire data.", extra={"event": "firms_fetch_start", "details": {"url": url, "global": global_sync}})
 
-            text = resp.text
-    except Exception as exc:
-        logger.error("FIRMS fetch exception.", extra={"event": "firms_fetch_error", "details": {"error": str(exc)}})
-        return 0
-
-    reader = csv.DictReader(io.StringIO(text))
-    docs = []
-    count = 0
-    for row in reader:
         try:
-            lat = float(row.get("latitude", 0))
-            lon = float(row.get("longitude", 0))
-            confidence = row.get("confidence", "low").strip().lower()
-            acq_date = row.get("acq_date", "")
-            acq_time = row.get("acq_time", "")
-            satellite = row.get("satellite", "")
-            bright_ti4 = float(row.get("bright_ti4", 0) or 0)
-        except (ValueError, TypeError):
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.get(url)
+                if resp.status_code != 200:
+                    logger.error("FIRMS API returned non-200.", extra={"event": "firms_fetch_failed", "status_code": resp.status_code})
+                    continue
+
+                text = resp.text
+        except Exception as exc:
+            logger.error("FIRMS fetch exception.", extra={"event": "firms_fetch_error", "details": {"error": str(exc)}})
             continue
 
-        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
-            continue
+        reader = csv.DictReader(io.StringIO(text))
+        docs = []
+        count = 0
+        for row in reader:
+            try:
+                lat = float(row.get("latitude", 0))
+                lon = float(row.get("longitude", 0))
+                confidence = row.get("confidence", "low").strip().lower()
+                acq_date = row.get("acq_date", "")
+                acq_time = row.get("acq_time", "")
+                satellite = row.get("satellite", "")
+                bright_ti4 = float(row.get("bright_ti4", 0) or 0)
+            except (ValueError, TypeError):
+                continue
 
-        docs.append({
-            "lat": lat,
-            "lon": lon,
-            "confidence": confidence,
-            "acq_date": acq_date,
-            "acq_time": acq_time,
-            "satellite": satellite,
-            "bright_ti4": bright_ti4,
-            "source": "NASA_FIRMS_VIIRS_SNPP",
-            "ingested_at": datetime.datetime.now(timezone.utc).isoformat(),
-        })
-        count += 1
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                continue
 
-    if docs:
-        await db_sqlite.bulk_upsert_fires(docs)
+            docs.append({
+                "lat": lat,
+                "lon": lon,
+                "confidence": confidence,
+                "acq_date": acq_date,
+                "acq_time": acq_time,
+                "satellite": satellite,
+                "bright_ti4": bright_ti4,
+                "source": "NASA_FIRMS_VIIRS_SNPP",
+                "ingested_at": datetime.datetime.now(timezone.utc).isoformat(),
+            })
+            count += 1
+
+        if docs:
+            await db_sqlite.bulk_upsert_fires(docs)
+        total_count += count
 
     try:
         await redis_client.set("fires:last_sync", datetime.datetime.now(timezone.utc).isoformat())
     except Exception:
         pass
 
-    logger.info("FIRMS sync complete.", extra={"event": "firms_sync_complete", "details": {"records": count}})
-    return count
+    logger.info("FIRMS sync complete.", extra={"event": "firms_sync_complete", "details": {"records": total_count, "global": global_sync}})
+    return total_count
 
 
 async def _fires_sync_loop():
@@ -459,8 +471,9 @@ async def sync_fires():
     enforce_api_auth()
     await enforce_rate_limit()
 
-    count = await _fetch_firms_data()
-    return jsonify({"status": "synced", "records": count})
+    global_sync = request.args.get("global", "0") == "1"
+    count = await _fetch_firms_data(global_sync=global_sync)
+    return jsonify({"status": "synced", "records": count, "global": global_sync})
 
 
 @app.before_request
