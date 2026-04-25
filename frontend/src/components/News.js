@@ -28,6 +28,7 @@ const News = () => {
 
   useEffect(() => {
     const fetchNews = async () => {
+      let cacheUsed = false;
       try {
         setLoading(true);
         setError(null);
@@ -38,6 +39,7 @@ const News = () => {
           if (cached) {
             setArticles(cached);
             setLoading(false);
+            cacheUsed = true;
           }
         }
 
@@ -67,9 +69,11 @@ const News = () => {
         setLoading(false);
       } catch (err) {
         setError(err?.message || t('news.errorLoading'));
-        setArticles((prevArticles) => (page === 1 ? [] : prevArticles));
+        if (page === 1 && !cacheUsed) {
+          setArticles([]);
+        }
         setLoading(false);
-        setHasMore(false);
+        if (!cacheUsed) setHasMore(false);
       }
     };
 
