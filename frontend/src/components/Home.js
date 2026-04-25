@@ -9,8 +9,6 @@ import { useI18n } from '../i18n';
 import { getCache, setCache } from '../utils/cache';
 import 'leaflet/dist/leaflet.css';
 
-const BBOX = { ne_lat: 5.5, ne_lng: -34.0, sw_lat: -34.0, sw_lng: -74.0 };
-
 const FIRE_STYLES = {
   nominal: { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.85, radius: 5 },
   high: { color: '#f97316', fillColor: '#f97316', fillOpacity: 0.8, radius: 4 },
@@ -77,7 +75,7 @@ function GlassCard({ children, className = '' }) {
 function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, loading, error, t }) {
   const mapCenter = [-14.235, -51.925];
   const mapZoom = 4;
-  const [satellite, setSatellite] = useState(false);
+  const [satellite, setSatellite] = useState(true);
 
   const tileUrl = satellite
     ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
@@ -275,8 +273,7 @@ export default function Home() {
   const [showFires, setShowFires] = useState(true);
 
   useEffect(() => {
-    const params = new URLSearchParams(BBOX).toString();
-    fetch(`/api/data?${params}`)
+    fetch('/api/data')
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
         return r.json();
@@ -296,7 +293,7 @@ export default function Home() {
       setFires(cachedFires.fires || []);
       setFiresLastSync(cachedFires.last_sync || null);
     }
-    fetch(`/api/fires?${params}`)
+    fetch('/api/fires')
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
