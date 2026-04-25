@@ -9,7 +9,7 @@ data "oci_core_images" "ubuntu" {
   compartment_id           = var.compartment_ocid
   operating_system         = "Canonical Ubuntu"
   operating_system_version = "22.04"
-  shape                    = "VM.Standard.A1.Flex"
+  shape                    = "VM.Standard.E2.1.Micro"
   sort_by                  = "TIMECREATED"
   sort_order               = "DESC"
 }
@@ -124,23 +124,18 @@ resource "oci_core_security_list" "yvy_security_list" {
 }
 
 # ---------------------------------------------------------------------------
-# VM Always Free — ARM Ampere A1 (VM.Standard.A1.Flex)
-# Tenta AD-1 primeiro; se sem capacidade, AD-2
+# VM Always Free — Micro (VM.Standard.E2.1.Micro)
+# Fallback: tenta AD-2 se AD-1 estiver sem capacidade
 # ---------------------------------------------------------------------------
 locals {
-  ad_name = data.oci_identity_availability_domains.ads.availability_domains[0].name
+  ad_name = length(data.oci_identity_availability_domains.ads.availability_domains) > 1 ? data.oci_identity_availability_domains.ads.availability_domains[1].name : data.oci_identity_availability_domains.ads.availability_domains[0].name
 }
 
 resource "oci_core_instance" "yvy_server" {
   compartment_id      = var.compartment_ocid
   availability_domain = local.ad_name
   display_name        = "${var.project_name}-server"
-  shape               = "VM.Standard.A1.Flex"
-
-  shape_config {
-    ocpus         = 1
-    memory_in_gbs = 4
-  }
+  shape               = "VM.Standard.E2.1.Micro"
 
   source_details {
     source_type             = "image"
