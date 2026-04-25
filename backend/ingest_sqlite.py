@@ -21,10 +21,11 @@ logger = logging.getLogger("yvy.ingest")
 
 
 def download_and_extract_data():
-    tif_file_path = "/app/prodes_brasil_2023.tif"
-    qml_file_path = "/app/prodes_brasil_2023.qml"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    tif_file_path = os.path.join(script_dir, "prodes_brasil_2023.tif")
+    qml_file_path = os.path.join(script_dir, "prodes_brasil_2023.qml")
     zip_file_url = "https://terrabrasilis.dpi.inpe.br/download/dataset/brasil-prodes/raster/prodes_brasil_2023.zip"
-    zip_file_path = "/app/prodes_brasil_2023.zip"
+    zip_file_path = os.path.join(script_dir, "prodes_brasil_2023.zip")
 
     if not (os.path.isfile(tif_file_path) and os.path.isfile(qml_file_path)):
         logger.info("Dataset files not found. Downloading archive.")
@@ -35,7 +36,7 @@ def download_and_extract_data():
                         for chunk in resp.iter_bytes(chunk_size=1024):
                             zip_file.write(chunk)
                     with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
-                        zip_ref.extractall("/app")
+                        zip_ref.extractall(script_dir)
                     os.remove(zip_file_path)
                     logger.info("Dataset archive downloaded successfully.")
                 else:
@@ -130,8 +131,8 @@ async def main():
     logger.info("Starting ingestion process.", extra={"event": "ingest_start"})
     await db_sqlite.init_db()
     download_and_extract_data()
-    color_legend = parse_qml("/app/prodes_brasil_2023.qml")
-    coordinates = parse_tif("/app/prodes_brasil_2023.tif")
+    color_legend = parse_qml("prodes_brasil_2023.qml")
+    coordinates = parse_tif("prodes_brasil_2023.tif")
 
     existing_count = (await db_sqlite.get_stats())["deforestation"]
     logger.info("Existing deforestation records: %d", existing_count)
