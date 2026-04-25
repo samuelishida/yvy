@@ -1,0 +1,18 @@
+[Unit]
+Description=Yvy Backend Service
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User={{ yvy_user }}
+Group={{ yvy_group }}
+WorkingDirectory={{ app_dir }}
+Environment=HOME=/home/{{ yvy_user }}
+Environment=YVY_LOCAL_DEV=0
+ExecStart=/usr/bin/bash {{ app_dir }}/scripts/run-backend.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
