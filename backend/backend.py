@@ -40,6 +40,7 @@ RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "60"))
 RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 AUTH_REQUIRED = os.getenv("AUTH_REQUIRED", "1") == "1"
 API_KEY = os.getenv("API_KEY", "").strip()
+NEWS_SYNC_INTERVAL_MINUTES = int(os.getenv("NEWS_SYNC_INTERVAL_MINUTES", "15"))
 FIRMS_MAP_KEY = os.getenv("FIRMS_MAP_KEY", "").strip()
 FIRMS_SYNC_INTERVAL_HOURS = int(os.getenv("FIRMS_SYNC_INTERVAL_HOURS", "4"))
 FIRMS_DAY_RANGE = int(os.getenv("FIRMS_DAY_RANGE", "3"))
@@ -48,6 +49,13 @@ FIRMS_SOURCE = os.getenv("FIRMS_SOURCE", "VIIRS_SNPP_NRT")
 FIRE_TTL_DAYS = int(os.getenv("FIRE_TTL_DAYS", "90"))
 _RATE_LIMIT_BUCKETS = defaultdict(deque)
 _RATE_LIMIT_LOCK = Lock()
+
+# In-memory news response cache (_news_cache[key] = (timestamp, articles))
+_news_cache: dict[str, tuple[float, list[dict]]] = {}
+_NEWS_CACHE_TTL_SECONDS = 60 * 5  # 5 minutes server-side
+
+# News sync background task
+_news_sync_task: asyncio.Task | None = None
 
 
 class JsonFormatter(logging.Formatter):
@@ -261,11 +269,12 @@ redis_client: aioredis.Redis | None = None
 
 @app.before_serving
 async def startup():
-    global redis_client
+    global redis_client, _news_sync_task
     await db_sqlite.init_db()
     logger.info("SQLite connection verified.", extra={"event": "sqlite_connect_ok"})
     redis_client = aioredis.from_url(REDIS_URL, socket_connect_timeout=5, socket_timeout=5)
     asyncio.get_event_loop().create_task(_fires_sync_loop())
+    _news_sync_task = asyncio.get_event_loop().create_task(_news_sync_loop())
 
 
 @app.after_serving
@@ -273,6 +282,15 @@ async def shutdown():
     await db_sqlite.close_db()
     if redis_client:
         await redis_client.close()
+    from news_sqlite import close_http_client
+    await close_http_client()
+    global _news_sync_task
+    if _news_sync_task:
+        _news_sync_task.cancel()
+        try:
+            await _news_sync_task
+        except asyncio.CancelledError:
+            pass
 
 
 async def _fetch_firms_data():
@@ -364,6 +382,19 @@ async def _fires_sync_loop():
             await asyncio.sleep(3600)
 
 
+async def _news_sync_loop():
+    from news_sqlite import fetch_and_save_news
+    await asyncio.sleep(15)
+    while True:
+        try:
+            await fetch_and_save_news()
+            _news_cache.clear()
+            logger.info("News sync complete.", extra={"event": "news_sync_complete"})
+        except Exception as exc:
+            logger.error("News sync error.", extra={"event": "news_sync_loop_error", "details": {"error": str(exc)}})
+        await asyncio.sleep(NEWS_SYNC_INTERVAL_MINUTES * 60)
+
+
 @app.route("/api/fires")
 async def get_fires():
     await enforce_rate_limit()
@@ -392,17 +423,11 @@ async def get_fires():
 async def trigger_firms_sync():
     """Manual trigger for FIRMS data sync. Requires API key auth."""
     enforce_api_auth()
+    await enforce_rate_limit()
     
     logger.info("Manual FIRMS sync triggered.", extra={"event": "firms_manual_trigger"})
     count = await _fetch_firms_data()
     
-    return jsonify({
-        "status": "success",
-        "message": f"FIRMS sync completed. {count} records processed.",
-        "records": count,
-        "last_sync": await redis_client.get("fires:last_sync")
-    })
-
     last_sync = None
     try:
         last_sync_raw = await redis_client.get("fires:last_sync")
@@ -410,19 +435,12 @@ async def trigger_firms_sync():
             last_sync = last_sync_raw.decode() if isinstance(last_sync_raw, bytes) else last_sync_raw
     except Exception:
         pass
-
+    
     return jsonify({
-        "fires": [{
-            "lat": item["lat"],
-            "lon": item["lon"],
-            "confidence": item["confidence"],
-            "acq_date": item["acq_date"],
-            "acq_time": item.get("acq_time", ""),
-            "satellite": item.get("satellite", ""),
-            "bright_ti4": item.get("bright_ti4", 0),
-        } for item in data],
-        "count": len(data),
-        "last_sync": last_sync,
+        "status": "success",
+        "message": f"FIRMS sync completed. {count} records processed.",
+        "records": count,
+        "last_sync": last_sync
     })
 
 
@@ -615,13 +633,20 @@ async def get_news():
     if lang not in ("pt", "en"):
         lang = "pt"
 
-    from news_sqlite import get_news as fetch_news, fetch_and_save_news
+    cache_key = f"news_{lang}_{page}_{page_size}"
+    now = time.time()
+    cached = _news_cache.get(cache_key)
+    if cached and now - cached[0] < _NEWS_CACHE_TTL_SECONDS:
+        response = jsonify(cached[1])
+        response.headers["Cache-Control"] = "public, max-age=300"
+        return response
 
-    if page == 1:
-        await fetch_and_save_news()
-
+    from news_sqlite import get_news as fetch_news
     articles = await fetch_news(page, page_size, lang=lang)
-    return jsonify(articles)
+    _news_cache[cache_key] = (now, articles)
+    response = jsonify(articles)
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return response
 
 
 @app.route("/api/news/refresh", methods=["POST"])
@@ -632,6 +657,7 @@ async def refresh_news():
 
     from news_sqlite import fetch_and_save_news
     await fetch_and_save_news()
+    _news_cache.clear()
 
     return jsonify({"status": "refreshed"})
 

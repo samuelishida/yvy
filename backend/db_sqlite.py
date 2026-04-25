@@ -60,7 +60,8 @@ CREATE TABLE IF NOT EXISTS news (
     publishedAt TEXT,
     source_name TEXT,
     urlToImage TEXT,
-    content TEXT
+    content TEXT,
+    ingested_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_fire_lat ON fire_data(lat);
@@ -86,16 +87,17 @@ async def _create_connection() -> aiosqlite.Connection:
 
 
 async def _migrate_news_table() -> None:
-    """Add title_en/description_en columns if missing (SQLite migration)."""
+    """Add missing columns and backfill defaults (SQLite migration)."""
     async with _get_conn() as conn:
+        for col in ("title_en", "description_en", "ingested_at"):
+            try:
+                await conn.execute(f"ALTER TABLE news ADD COLUMN {col} TEXT")
+                logger.info("Migration: added %s to news", col)
+            except Exception:
+                pass
+        # Backfill ingested_at for existing rows so has_recent_news works
         try:
-            await conn.execute("ALTER TABLE news ADD COLUMN title_en TEXT")
-            logger.info("Migration: added title_en to news")
-        except Exception:
-            pass
-        try:
-            await conn.execute("ALTER TABLE news ADD COLUMN description_en TEXT")
-            logger.info("Migration: added description_en to news")
+            await conn.execute("UPDATE news SET ingested_at = publishedAt WHERE ingested_at IS NULL AND publishedAt IS NOT NULL")
         except Exception:
             pass
         await conn.commit()
@@ -297,12 +299,13 @@ async def find_deforestation(
 # News --------------------------------------------------------------------
 
 async def upsert_news(article: dict[str, Any]) -> None:
+    ingested = article.get("ingested_at") or datetime.datetime.now(datetime.timezone.utc).isoformat()
     async with _get_conn() as conn:
         await conn.execute(
             """
             INSERT INTO news (url, title, description, title_en, description_en, publishedAt,
-                              source_name, urlToImage, content)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                              source_name, urlToImage, content, ingested_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(url) DO UPDATE SET
                 title=excluded.title,
                 description=excluded.description,
@@ -311,7 +314,8 @@ async def upsert_news(article: dict[str, Any]) -> None:
                 publishedAt=excluded.publishedAt,
                 source_name=excluded.source_name,
                 urlToImage=excluded.urlToImage,
-                content=excluded.content
+                content=excluded.content,
+                ingested_at=excluded.ingested_at
             """,
             (
                 article.get("url"), article.get("title"),
@@ -319,9 +323,46 @@ async def upsert_news(article: dict[str, Any]) -> None:
                 article.get("description_en"), article.get("publishedAt"),
                 article.get("source", {}).get("name") if isinstance(article.get("source"), dict) else article.get("source"),
                 article.get("urlToImage"), article.get("content"),
+                ingested,
             ),
         )
         await conn.commit()
+
+
+async def bulk_upsert_news(articles: list[dict[str, Any]]) -> int:
+    if not articles:
+        return 0
+    async with _get_conn() as conn:
+        await conn.executemany(
+            """
+            INSERT INTO news (url, title, description, title_en, description_en, publishedAt,
+                              source_name, urlToImage, content, ingested_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(url) DO UPDATE SET
+                title=excluded.title,
+                description=excluded.description,
+                title_en=COALESCE(excluded.title_en, news.title_en),
+                description_en=COALESCE(excluded.description_en, news.description_en),
+                publishedAt=excluded.publishedAt,
+                source_name=excluded.source_name,
+                urlToImage=excluded.urlToImage,
+                content=excluded.content,
+                ingested_at=excluded.ingested_at
+            """,
+            [
+                (
+                    a.get("url"), a.get("title"),
+                    a.get("description"), a.get("title_en"),
+                    a.get("description_en"), a.get("publishedAt"),
+                    a.get("source", {}).get("name") if isinstance(a.get("source"), dict) else a.get("source"),
+                    a.get("urlToImage"), a.get("content"),
+                    a.get("ingested_at") or datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                )
+                for a in articles
+            ],
+        )
+        await conn.commit()
+    return len(articles)
 
 
 async def get_news_page(
@@ -332,7 +373,7 @@ async def get_news_page(
         cursor = await conn.execute(
             """
             SELECT url, title, description, title_en, description_en, publishedAt,
-                   source_name, urlToImage, content
+                   source_name, urlToImage, content, ingested_at
             FROM news
             ORDER BY publishedAt DESC
             LIMIT ? OFFSET ?
@@ -351,6 +392,7 @@ async def get_news_page(
                 "source": {"name": r["source_name"]} if r["source_name"] else {},
                 "urlToImage": r["urlToImage"],
                 "content": r["content"],
+                "ingested_at": r["ingested_at"],
             }
             for r in rows
         ]
@@ -361,7 +403,7 @@ async def has_recent_news(minutes: int = 15) -> bool:
               datetime.timedelta(minutes=minutes)).isoformat()
     async with _get_conn() as conn:
         cursor = await conn.execute(
-            "SELECT COUNT(*) FROM news WHERE publishedAt >= ?", (cutoff,)
+            "SELECT COUNT(*) FROM news WHERE ingested_at >= ?", (cutoff,)
         )
         row = await cursor.fetchone()
         return row[0] > 0

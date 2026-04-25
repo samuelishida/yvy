@@ -43,6 +43,7 @@ Browser :5001 → Express (React build + /api/* proxy + X-API-Key injection)
                       → Quart :5000 (async, hypercorn + asyncio workers)
                             → SQLite (aiosqlite, file-based at SQLITE_PATH)
                             → Redis :6379 (rate limiting, async redis.asyncio)
+                            → NewsAPI + MyMemory (background sync for /api/news)
 ```
 
 - **Express proxy** (`frontend/server.js`) injects `X-API-Key` header server-side so the browser never sees the API key.

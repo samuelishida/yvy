@@ -25,22 +25,26 @@ const News = () => {
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState(null);
+  const cacheKey = `news_${lang}`;
 
   useEffect(() => {
     const fetchNews = async () => {
       let cacheUsed = false;
       try {
-        setLoading(true);
         setError(null);
 
-        // Try cache first for page 1
+        // Try cache first for page 1 (stale-while-revalidate)
         if (page === 1) {
-          const cached = getCache(`news_${lang}`, 15);
+          const cached = getCache(cacheKey, 15);
           if (cached) {
             setArticles(cached);
-            setLoading(false);
             cacheUsed = true;
+            // Still fetch in background to refresh silently
           }
+        }
+
+        if (!cacheUsed || page > 1) {
+          setLoading(true);
         }
 
         const response = await fetch(`/api/news?page=${page}&lang=${lang}`);
@@ -48,6 +52,10 @@ const News = () => {
         const data = normalizeArticles(payload);
 
         if (!response.ok) {
+          if (cacheUsed && page === 1) {
+            // Keep cached data, silently ignore error
+            return;
+          }
           throw new Error(
             typeof payload?.error === 'string' && payload.error.trim()
               ? payload.error
@@ -57,7 +65,7 @@ const News = () => {
 
         if (page === 1) {
           setArticles(data);
-          setCache(`news_${lang}`, data);
+          setCache(cacheKey, data);
         } else {
           setArticles((prevArticles) => [...prevArticles, ...data]);
         }
@@ -65,20 +73,19 @@ const News = () => {
         if (data.length < PAGE_SIZE) {
           setHasMore(false);
         }
-
-        setLoading(false);
       } catch (err) {
-        setError(err?.message || t('news.errorLoading'));
-        if (page === 1 && !cacheUsed) {
-          setArticles([]);
+        if (!cacheUsed) {
+          setError(err?.message || t('news.errorLoading'));
+          if (page === 1) setArticles([]);
+          setHasMore(false);
         }
+      } finally {
         setLoading(false);
-        if (!cacheUsed) setHasMore(false);
       }
     };
 
     fetchNews();
-  }, [page, lang, t]);
+  }, [page, lang, t, cacheKey]);
 
   const handleScroll = useCallback(() => {
     const navbarHeight = 62;
@@ -99,6 +106,7 @@ const News = () => {
     setArticles([]);
     setPage(1);
     setHasMore(true);
+    setError(null);
   }, []);
 
   useEffect(() => {
@@ -107,7 +115,7 @@ const News = () => {
 
   return (
     <div className="news-container">
-      {error && <p className="news-error">{error}</p>}
+      {error && !articles.length && <p className="news-error">{error}</p>}
       {articles.map((article) => (
         <div key={article.url} className="news-article">
           {article.urlToImage && (
