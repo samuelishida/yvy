@@ -214,6 +214,7 @@ async def find_fires(
                    satellite, bright_ti4
             FROM fire_data
             WHERE lat >= ? AND lat <= ? AND lon >= ? AND lon <= ?
+            ORDER BY acq_date DESC, lat, lon
             LIMIT ?
             """,
             (sw_lat, ne_lat, sw_lng, ne_lng, limit),

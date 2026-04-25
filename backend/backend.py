@@ -35,7 +35,7 @@ BRAZIL_BOUNDS = {
     "min_lon": -74.0,
     "max_lon": -34.0,
 }
-MAX_RESULTS = int(os.getenv("MAX_RESULTS_PER_REQUEST", "1000"))
+MAX_RESULTS = int(os.getenv("MAX_RESULTS_PER_REQUEST", "10000"))
 RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "60"))
 RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 AUTH_REQUIRED = os.getenv("AUTH_REQUIRED", "1") == "1"
