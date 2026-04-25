@@ -33,8 +33,25 @@ jobs:
 
       - name: Write OCI API Key
         run: |
-          echo "${{ secrets.OCI_PRIVATE_KEY }}" > infra/oci_api_key.pem
+          printf '%s\n' "${{ secrets.OCI_PRIVATE_KEY }}" > infra/oci_api_key.pem
           chmod 600 infra/oci_api_key.pem
+          # Verify key format
+          head -1 infra/oci_api_key.pem | grep -q 'BEGIN' || {
+            echo "ERROR: Private key format invalid. Ensure secret has literal newlines."
+            exit 1
+          }
+
+      - name: Verify OCI credentials
+        working-directory: ./infra
+        run: |
+          echo "Region: $TF_VAR_region"
+          echo "Tenancy: ${TF_VAR_tenancy_ocid:0:20}..."
+          echo "User: ${TF_VAR_user_ocid:0:20}..."
+          echo "Fingerprint: $TF_VAR_fingerprint"
+          echo "Key file exists: $(test -f oci_api_key.pem && echo yes || echo no)"
+          echo "Key first line: $(head -1 oci_api_key.pem)"
+          # Compute fingerprint from key to verify match
+          openssl rsa -in oci_api_key.pem -pubout -outform DER 2>/dev/null | openssl md5 -c | awk '{print $2}' || echo "WARNING: Could not compute fingerprint from key"
 
       - name: Write SSH Public Key
         run: |
