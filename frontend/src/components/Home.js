@@ -55,7 +55,7 @@ function GaugeCircle({ value, max = 100, size = 120, strokeWidth = 10, color = '
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="font-bold text-white leading-none text-xl">{centerText ?? value}</span>
+          <span className={`font-bold text-white leading-none ${String(centerText ?? value).length > 3 ? 'text-base' : 'text-xl'}`}>{centerText ?? value}</span>
         </div>
       </div>
       {label && <span className="text-xs text-slate-400">{label}</span>}

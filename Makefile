@@ -81,8 +81,7 @@ local-test:
 	cd backend && $(shell [ -f venv/bin/python ] && echo venv/bin/python || echo $$HOME/.local/share/yvy-venv/bin/python) test_sqlite_manual.py
 
 local-stop:
-	-pkill -f "hypercorn backend:app" 2>/dev/null || true
-	-pkill -f "python backend.py" 2>/dev/null || true
-	-pkill -f "node server.js" 2>/dev/null || true
-	-pkill -f "react-scripts start" 2>/dev/null || true
+	@echo "Killing all local processes..."
+	@pkill -9 -f "hypercorn|python backend|node server|react-scripts" 2>/dev/null || true
+	@sleep 2
 	@echo "Local processes stopped."
