@@ -1,17 +1,41 @@
 ---
 - name: Deploy Yvy na OCI
   hosts: yvy
-  become: yes
+  become: true
   vars:
     app_dir: /opt/yvy
     repo_url: https://github.com/samuelishida/yvy.git
+    yvy_user: ubuntu
+    yvy_group: ubuntu
 
   tasks:
-    - name: Garantir que Docker está rodando
+    - name: Instalar dependencias de runtime baremetal
+      ansible.builtin.apt:
+        update_cache: true
+        name:
+          - git
+          - python3
+          - python3-venv
+          - python3-pip
+          - nodejs
+          - npm
+          - redis-server
+          - sqlite3
+        state: present
+
+    - name: Garantir Redis ativo
       ansible.builtin.systemd:
-        name: docker
+        name: redis-server
         state: started
-        enabled: yes
+        enabled: true
+
+    - name: Criar diretorio da aplicacao
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: "{{ yvy_user }}"
+        group: "{{ yvy_group }}"
+        mode: '0755'
 
     - name: Clonar repositório Yvy
       ansible.builtin.git:
@@ -19,35 +43,53 @@
         dest: "{{ app_dir }}"
         version: main
         force: yes
-      become_user: ubuntu
+      become_user: "{{ yvy_user }}"
 
     - name: Gerar secrets se .env não existir
       ansible.builtin.command:
         cmd: bash scripts/generate-secrets.sh
         chdir: "{{ app_dir }}"
-      become_user: ubuntu
+      become_user: "{{ yvy_user }}"
       args:
         creates: "{{ app_dir }}/.env"
 
-    - name: Template docker-compose.prod.yml
+    - name: Rodar setup local (venv + node_modules)
+      ansible.builtin.command:
+        cmd: bash scripts/setup-local.sh
+        chdir: "{{ app_dir }}"
+      become_user: "{{ yvy_user }}"
+
+    - name: Criar unidade systemd do backend
       ansible.builtin.template:
-        src: docker-compose.prod.yml.j2
-        dest: "{{ app_dir }}/docker-compose.prod.yml"
-        owner: ubuntu
-        group: ubuntu
+        src: yvy-backend.service.j2
+        dest: /etc/systemd/system/yvy-backend.service
+        owner: root
+        group: root
         mode: '0644'
 
-    - name: Docker Compose pull
-      ansible.builtin.command:
-        cmd: docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-        chdir: "{{ app_dir }}"
-      become_user: ubuntu
+    - name: Criar unidade systemd do frontend
+      ansible.builtin.template:
+        src: yvy-frontend.service.j2
+        dest: /etc/systemd/system/yvy-frontend.service
+        owner: root
+        group: root
+        mode: '0644'
 
-    - name: Docker Compose up
-      ansible.builtin.command:
-        cmd: docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
-        chdir: "{{ app_dir }}"
-      become_user: ubuntu
+    - name: Recarregar systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Ativar e iniciar backend
+      ansible.builtin.systemd:
+        name: yvy-backend
+        state: restarted
+        enabled: true
+
+    - name: Ativar e iniciar frontend
+      ansible.builtin.systemd:
+        name: yvy-frontend
+        state: restarted
+        enabled: true
 
     - name: Aguardar backend ficar saudável
       ansible.builtin.uri:
@@ -57,32 +99,6 @@
       until: backend_health.status == 200
       retries: 30
       delay: 5
-
-    - name: Executar ingestão de dados (se banco vazio)
-      ansible.builtin.command:
-        cmd: docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend python ingest.py
-        chdir: "{{ app_dir }}"
-      become_user: ubuntu
-      register: ingest_result
-      changed_when: "'already populated' not in ingest_result.stdout"
-      ignore_errors: yes
-
-    - name: Configurar cron de backup
-      ansible.builtin.cron:
-        name: "Yvy MongoDB backup"
-        minute: "0"
-        hour: "3"
-        job: "cd {{ app_dir }} && bash backup.sh >> {{ app_dir }}/backup.log 2>&1"
-        user: ubuntu
-
-    - name: Configurar cron de prune Docker
-      ansible.builtin.cron:
-        name: "Docker system prune"
-        minute: "0"
-        hour: "4"
-        weekday: "0"
-        job: "docker system prune -f"
-        user: root
 
     - name: Verificar health do frontend
       ansible.builtin.uri:
