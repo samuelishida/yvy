@@ -33,12 +33,12 @@ jobs:
 
       - name: Write OCI API Key
         run: |
-          echo "${{ secrets.OCI_PRIVATE_KEY }}" > oci_api_key.pem
-          chmod 600 oci_api_key.pem
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > infra/oci_api_key.pem
+          chmod 600 infra/oci_api_key.pem
 
       - name: Write SSH Public Key
         run: |
-          echo "${{ secrets.OCI_SSH_PUBLIC_KEY }}" > oci_ssh_key.pub
+          echo "${{ secrets.OCI_SSH_PUBLIC_KEY }}" > infra/oci_ssh_key.pub
 
       - name: Terraform Init
         working-directory: ./infra
@@ -83,7 +83,6 @@ jobs:
       - name: Install Ansible + OCI Collection
         run: |
           pip install ansible
-          ansible-galaxy collection install oracle.oci
 
       - name: Write SSH Private Key
         run: |
@@ -91,16 +90,6 @@ jobs:
           echo "${{ secrets.OCI_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ needs.terraform.outputs.public_ip }} >> ~/.ssh/known_hosts
-
-      - name: Write .env to VM
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ needs.terraform.outputs.public_ip }}
-          username: ubuntu
-          key: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
-          source: ".env"
-          target: "/opt/yvy/"
-          overwrite: true
 
       - name: Run Ansible Playbook
         working-directory: ./ansible
