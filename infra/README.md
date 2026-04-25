@@ -1,6 +1,6 @@
 # 🚀 Deploy Yvy na OCI Always Free
 
-Este diretório contém toda a infraestrutura como código (IaC) para subir o Yvy na **Oracle Cloud Infrastructure (OCI) Always Free** usando **Terraform** + **Ansible**.
+Este diretório contém toda a infraestrutura como código (IaC) para subir o Yvy na **Oracle Cloud Infrastructure (OCI) Always Free** usando **Terraform** + **Ansible** em modo **baremetal (sem Docker)**.
 
 ---
 
@@ -12,14 +12,15 @@ infra/
 ├── variables.tf             # Variáveis Terraform
 ├── main.tf                  # VM, VCN, Security List
 ├── outputs.tf               # IPs e comandos úteis
-├── cloud-init.yml           # Setup inicial da VM (Docker, UFW)
+├── cloud-init.yml           # Setup inicial da VM (runtime baremetal, UFW)
 └── terraform.tfvars.example # Template de credenciais
 
 ansible/
 ├── inventory.oci.yml        # Dynamic inventory OCI
 ├── playbook.yml             # Deploy da aplicação
 └── templates/
-    └── docker-compose.prod.yml.j2  # Override de produção
+    ├── yvy-backend.service.j2
+    └── yvy-frontend.service.j2
 
 scripts/
 ├── generate-secrets.sh      # Gera .env com secrets aleatórios
@@ -100,6 +101,103 @@ Atualize o `compartment_ocid` para corresponder ao seu.
 
 ## 🚀 Deploy Manual (Local)
 
+### Opção A: OCI CLI (recomendado — sem Terraform/Ansible)
+
+Deploy direto na VM OCI existente usando OCI CLI local. Não precisa de Terraform nem Ansible.
+
+```bash
+# 0. Variáveis
+SSH_KEY=~/.ssh/oci_yvy
+SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+SSH="ssh -i $SSH_KEY $SSH_OPTS ubuntu@<IP_DA_VM>"
+
+# 1. Add swap (VM 1GB precisa para npm build)
+$SSH "sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile \
+  && sudo mkswap /swapfile && sudo swapon /swapfile \
+  && echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab"
+
+# 2. Instalar deps de runtime
+$SSH "sudo apt-get update && sudo apt-get install -y git python3 python3-venv python3-pip redis-server sqlite3"
+
+# 3. Instalar Node 18 via nvm (Node 12 do sistema é velho demais para react-scripts 5)
+$SSH 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash'
+$SSH 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm install 18'
+
+# 4. Clonar/atualizar repo
+$SSH "if [ -d /opt/yvy ]; then cd /opt/yvy && git pull; \
+  else sudo mkdir -p /opt/yvy && sudo chown ubuntu:ubuntu /opt/yvy \
+  && git clone https://github.com/samuelishida/yvy.git /opt/yvy; fi"
+
+# 5. Gerar .env (apenas se não existir)
+$SSH "cd /opt/yvy && bash scripts/generate-secrets.sh"
+# Corrigir CORS_ORIGINS com IP público:
+$SSH "sed -i 's|CORS_ORIGINS=.*|CORS_ORIGINS=http://<IP_DA_VM>:5001,http://localhost:5001|' /opt/yvy/.env"
+
+# 6. Setup backend (venv + deps)
+$SSH "cd /opt/yvy && bash scripts/setup-local.sh"
+
+# 7. Instalar deps frontend com Node 18
+$SSH 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" \
+  && cd /opt/yvy/frontend && rm -rf node_modules package-lock.json && npm install'
+
+# 8. Criar serviços systemd
+$SSH 'sudo tee /etc/systemd/system/yvy-backend.service > /dev/null << EOF
+[Unit]
+Description=Yvy Backend Service
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/yvy
+Environment=HOME=/home/ubuntu
+Environment=YVY_LOCAL_DEV=0
+ExecStart=/usr/bin/bash /opt/yvy/scripts/run-backend.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF'
+
+$SSH 'sudo tee /etc/systemd/system/yvy-frontend.service > /dev/null << EOF
+[Unit]
+Description=Yvy Frontend Service
+After=network.target yvy-backend.service
+Wants=yvy-backend.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/yvy
+Environment=HOME=/home/ubuntu
+Environment=YVY_LOCAL_DEV=1
+Environment=PORT=5001
+Environment=BROWSER=none
+Environment=PATH=/home/ubuntu/.nvm/versions/node/v18.20.8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/bash /opt/yvy/scripts/run-frontend.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF'
+
+# 9. Iniciar serviços
+$SSH "sudo systemctl daemon-reload && sudo systemctl enable yvy-backend yvy-frontend \
+  && sudo systemctl start yvy-backend && sleep 3 \
+  && sudo systemctl start yvy-frontend"
+
+# 10. Verificar
+curl -s http://<IP_DA_VM>:5000/ | head -1   # backend
+curl -s -o /dev/null -w '%{http_code}' http://<IP_DA_VM>:5001/  # frontend (200 = OK)
+```
+
+### Opção B: Terraform + Ansible
+
 ```bash
 cd scripts
 bash deploy-local.sh
@@ -107,9 +205,17 @@ bash deploy-local.sh
 
 O script executa:
 1. **Terraform**: Cria VM, VCN, Security List
-2. **Ansible**: Instala app, Docker Compose up, health checks
+2. **Ansible**: Instala app, cria serviços systemd (backend/frontend), health checks
 
 Ao final, exibe a URL de acesso.
+
+### Notas importantes para deploy
+
+- **Node 12 é velho demais** para react-scripts 5. Use nvm para instalar Node 18 na VM.
+- **VMs com 1GB RAM** precisam de swap (2GB) para npm install e webpack.
+- **Frontend roda em modo DEV** (`YVY_LOCAL_DEV=1`) na VM porque o build de produção exige mais RAM.
+- **Backend usa `run-backend.sh`** que carrega o `.env` antes de iniciar o hypercorn.
+- **CORS_ORIGINS** deve incluir o IP público da VM para acesso via browser.
 
 ---
 
@@ -170,13 +276,13 @@ ssh -i ~/.ssh/oci_yvy ubuntu@<IP_PUBLICO>
 
 ### Logs da aplicação
 ```bash
-cd /opt/yvy
-docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f
+journalctl -u yvy-backend -f
+journalctl -u yvy-frontend -f
 ```
 
 ### Restart
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml restart
+sudo systemctl restart yvy-backend yvy-frontend
 ```
 
 ### Backup manual
@@ -188,7 +294,11 @@ cd /opt/yvy && bash backup.sh
 ```bash
 cd /opt/yvy
 git pull
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+bash scripts/setup-local.sh
+# Reinstalar deps do frontend se necessário:
+export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+cd frontend && rm -rf node_modules package-lock.json && npm install
+sudo systemctl restart yvy-backend yvy-frontend
 ```
 
 ---
@@ -213,7 +323,7 @@ cd infra
 terraform destroy
 ```
 
-Isso remove **tudo** (VM, VCN, regras de firewall). Os dados no MongoDB serão perdidos se não houver backup.
+Isso remove **tudo** (VM, VCN, regras de firewall). Os dados locais serão perdidos se não houver backup.
 
 ---
 
