@@ -662,6 +662,19 @@ async def refresh_news():
     return jsonify({"status": "refreshed"})
 
 
+@app.route("/api/news/repair", methods=["POST"])
+async def repair_news():
+    """Manually trigger repair of corrupted MyMemory translations. Requires API key."""
+    enforce_api_auth()
+    await enforce_rate_limit()
+
+    from news_sqlite import repair_all_bad_translations
+    result = await repair_all_bad_translations(limit=500)
+    _news_cache.clear()
+
+    return jsonify({"status": "repair_complete", **result})
+
+
 WAQI_TOKEN = os.getenv("WAQI_TOKEN", "demo")
 
 
