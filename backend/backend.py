@@ -378,7 +378,14 @@ async def get_fires():
         abort(400, description="Invalid query parameters for /api/fires.")
 
     data = await db_sqlite.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit=MAX_RESULTS)
-    return jsonify(data)
+    last_sync = None
+    try:
+        last_sync_raw = await redis_client.get("fires:last_sync")
+        if last_sync_raw:
+            last_sync = last_sync_raw.decode() if isinstance(last_sync_raw, bytes) else last_sync_raw
+    except Exception:
+        pass
+    return jsonify({"fires": data, "last_sync": last_sync})
 
 
 @app.route("/api/admin/firms/sync", methods=["POST"])
