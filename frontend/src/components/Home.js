@@ -363,11 +363,14 @@ export default function Home() {
         {/* Floating widgets - right column */}
         <div className="absolute top-16 right-2 z-[500] flex flex-col gap-2 w-32 sm:top-20 sm:right-4 sm:gap-3 sm:w-52">
           <FiresCard fires={fires} lastSync={firesLastSync} t={t} />
-          <TemperatureCard temperature={temperature} t={t} />
         </div>
         {/* Floating widget - bottom left */}
         <div className="absolute bottom-2 left-2 z-[500] w-40 sm:bottom-4 sm:left-4 sm:w-60">
           <MetricsRow airQuality={airQuality} temperature={temperature} t={t} />
+        </div>
+        {/* Floating widget - bottom right */}
+        <div className="absolute bottom-2 right-2 z-[500] w-32 sm:bottom-4 sm:right-4 sm:w-52">
+          <TemperatureCard temperature={temperature} t={t} />
         </div>
       </div>
     </div>
