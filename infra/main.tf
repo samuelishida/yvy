@@ -125,10 +125,10 @@ resource "oci_core_security_list" "yvy_security_list" {
 
 # ---------------------------------------------------------------------------
 # VM Always Free — ARM Ampere A1 (VM.Standard.A1.Flex)
-# Fallback: tenta AD-2 se AD-1 estiver sem capacidade
+# Tenta AD-1 primeiro; se sem capacidade, AD-2
 # ---------------------------------------------------------------------------
 locals {
-  ad_name = length(data.oci_identity_availability_domains.ads.availability_domains) > 1 ? data.oci_identity_availability_domains.ads.availability_domains[1].name : data.oci_identity_availability_domains.ads.availability_domains[0].name
+  ad_name = data.oci_identity_availability_domains.ads.availability_domains[0].name
 }
 
 resource "oci_core_instance" "yvy_server" {
@@ -139,7 +139,7 @@ resource "oci_core_instance" "yvy_server" {
 
   shape_config {
     ocpus         = 1
-    memory_in_gbs = 6
+    memory_in_gbs = 4
   }
 
   source_details {
