@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Popup, useMapEvents } from 'react-leaflet';
 import {
   Thermometer,
   TreePine,
@@ -72,7 +72,27 @@ function GlassCard({ children, className = '' }) {
   );
 }
 
-function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, loading, error, t }) {
+function VisibleFiresCounter({ fires, showFires, onVisibleCountChange }) {
+  const map = useMapEvents('moveend', () => {
+    if (!showFires || !fires) return;
+    const bounds = map.getBounds();
+    const visible = fires.filter(f => 
+      bounds.contains([f.lat, f.lon])
+    );
+    onVisibleCountChange(visible.length);
+  });
+  useEffect(() => {
+    if (!showFires || !fires) return;
+    const bounds = map.getBounds();
+    const visible = fires.filter(f => 
+      bounds.contains([f.lat, f.lon])
+    );
+    onVisibleCountChange(visible.length);
+  }, [fires, showFires]);
+  return null;
+}
+
+function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, loading, error, t, onVisibleFiresChange }) {
   const mapCenter = [-14.235, -51.925];
   const mapZoom = 4;
   const [satellite, setSatellite] = useState(true);
@@ -141,6 +161,7 @@ function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, se
             attribution={tileAttribution}
             url={tileUrl}
           />
+          <VisibleFiresCounter fires={fires} showFires={showFires} onVisibleCountChange={onVisibleFiresChange} />
           {showDeforest &&
             records &&
             records.slice(0, 500).map((record, idx) => (
@@ -234,12 +255,12 @@ function TemperatureCard({ temperature, t }) {
   );
 }
 
-function FiresCard({ fires, lastSync, t }) {
+function FiresCard({ fires, visibleCount, lastSync, t }) {
   return (
     <GlassCard className="p-2 sm:p-4 flex flex-col items-center justify-center gap-1 sm:gap-3 text-center">
       <div className="flex flex-col items-center gap-0.5">
         <span className="text-lg sm:text-2xl font-bold text-orange-300 leading-none">
-          {(fires?.length || 0).toLocaleString('pt-BR')}
+          {(visibleCount ?? fires?.length ?? 0).toLocaleString('pt-BR')}
         </span>
         <span className="text-[8px] sm:text-[9px] text-slate-300 uppercase tracking-wider">
           {t('home.totalOnMap')}
@@ -339,6 +360,8 @@ export default function Home() {
     }
   }, []);
 
+  const [visibleFiresCount, setVisibleFiresCount] = useState(null);
+
   return (
     <div className="min-h-screen p-4 lg:p-6">
       <div className="w-full max-w-[1920px] mx-auto relative">
@@ -353,10 +376,11 @@ export default function Home() {
           error={error}
           t={t}
           firesLastSync={firesLastSync}
+          onVisibleFiresChange={setVisibleFiresCount}
         />
         {/* Floating widgets - right column */}
         <div className="absolute top-16 right-2 z-[500] flex flex-col gap-2 w-32 sm:top-20 sm:right-4 sm:gap-3 sm:w-52">
-          <FiresCard fires={fires} lastSync={firesLastSync} t={t} />
+          <FiresCard fires={fires} visibleCount={visibleFiresCount} lastSync={firesLastSync} t={t} />
         </div>
         {/* Floating widget - bottom left */}
         <div className="absolute bottom-8 left-2 z-[500] w-40 sm:bottom-10 sm:left-4 sm:w-60">
