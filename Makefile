@@ -1,5 +1,5 @@
 # Define os alvos (targets)
-.PHONY: build-frontend build-backend build-both rebuild-frontend rebuild-backend rebuild clean stop-frontend stop-backend stop run run-frontend run-backend sqlite-access
+.PHONY: build-frontend build-backend build-both rebuild-frontend rebuild-backend rebuild clean stop-frontend stop-backend stop run run-frontend run-backend sqlite-access local-setup local-run local-backend local-frontend local-test local-stop
 
 # Parar o frontend
 stop-frontend:
@@ -62,3 +62,27 @@ run-backend:
 # Acessar o SQLite
 sqlite-access:
 	docker-compose exec backend sh -lc 'sqlite3 /app/data/yvy.db ".tables"'
+
+# ─── Local Development (no Docker) ───────────────────────────────────────────
+
+local-setup:
+	bash scripts/setup-local.sh
+
+local-run:
+	bash scripts/run-local.sh
+
+local-backend:
+	bash scripts/run-backend.sh
+
+local-frontend:
+	bash scripts/run-frontend.sh
+
+local-test:
+	cd backend && $(shell [ -f venv/bin/python ] && echo venv/bin/python || echo $$HOME/.local/share/yvy-venv/bin/python) test_sqlite_manual.py
+
+local-stop:
+	-pkill -f "hypercorn backend:app" 2>/dev/null || true
+	-pkill -f "python backend.py" 2>/dev/null || true
+	-pkill -f "node server.js" 2>/dev/null || true
+	-pkill -f "react-scripts start" 2>/dev/null || true
+	@echo "Local processes stopped."
