@@ -9,14 +9,18 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+# Create data directory for SQLite (must be writable by appuser)
+RUN mkdir -p /app/data && chown appuser:appuser /app/data
+
 # Copy requirements and source
 COPY requirements.txt ./
 COPY backend.py ./
-COPY ingest.py ./ingest.py
-COPY news.py ./news.py
+COPY db_sqlite.py ./
+COPY news_sqlite.py ./
+COPY ingest_sqlite.py ./
 COPY start.sh ./start.sh
 
-# Install Python deps (includes gunicorn)
+# Install Python deps
 RUN pip install --no-cache-dir -r requirements.txt
 
 RUN chmod +x /app/start.sh

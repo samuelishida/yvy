@@ -179,3 +179,5 @@ frontend/node_modules/
 .idea/
 *.swp
 *.swo
+backend/data/
+backend/__pycache__/

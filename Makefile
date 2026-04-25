@@ -1,5 +1,5 @@
 # Define os alvos (targets)
-.PHONY: build-frontend build-backend build-both rebuild-frontend rebuild-backend rebuild clean stop-frontend stop-backend stop run run-frontend run-backend mongo-access
+.PHONY: build-frontend build-backend build-both rebuild-frontend rebuild-backend rebuild clean stop-frontend stop-backend stop run run-frontend run-backend sqlite-access
 
 # Parar o frontend
 stop-frontend:
@@ -59,6 +59,6 @@ run-frontend:
 run-backend:
 	docker-compose up -d backend
 
-# Acessar o MongoDB
-mongo-access:
-	docker-compose exec mongo sh -lc 'mongosh --authenticationDatabase admin -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD" "$$MONGO_DATABASE"'
+# Acessar o SQLite
+sqlite-access:
+	docker-compose exec backend sh -lc 'sqlite3 /app/data/yvy.db ".tables"'

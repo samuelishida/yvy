@@ -18,48 +18,11 @@ services:
           cpus: '1.0'
           memory: 512M
 
-  mongo:
-    image: mongo:7.0
-    container_name: mongo
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
-      MONGO_DATABASE: ${MONGO_DATABASE:-terrabrasilis_data}
-      MONGO_APP_USERNAME: ${MONGO_APP_USERNAME:-yvy_app}
-      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD}
-      MONGO_READONLY_USERNAME: ${MONGO_READONLY_USERNAME:-yvy_readonly}
-      MONGO_READONLY_PASSWORD: ${MONGO_READONLY_PASSWORD}
-    expose:
-      - "27017"
-    volumes:
-      - mongo-data-new:/data/db
-      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
-    networks:
-      - app-network
-    restart: always
-    deploy:
-      resources:
-        limits:
-          cpus: '12.0'
-          memory: 24G
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   backend:
     build: ./backend
     container_name: backend
     environment:
-      MONGO_URI: ${MONGO_URI}
-      MONGO_DATABASE: ${MONGO_DATABASE}
-      MONGO_HOST: mongo
-      MONGO_PORT: 27017
-      MONGO_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
-      MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
-      MONGO_APP_USERNAME: ${MONGO_APP_USERNAME:-yvy_app}
-      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD}
+      SQLITE_PATH: /app/data/yvy.db
       REDIS_URL: redis://redis:6379/0
       TRUSTED_PROXIES: 172.16.0.0/12,192.168.0.0/16,10.0.0.0/8
       AUTH_REQUIRED: ${AUTH_REQUIRED:-0}
@@ -78,9 +41,8 @@ services:
     # Remove it in production so the image's COPY-ed code is what runs.
     volumes:
       - ./backend:/app
+      - sqlite-data:/app/data
     depends_on:
-      mongo:
-        condition: service_healthy
       redis:
         condition: service_healthy
     restart: always
@@ -128,5 +90,5 @@ networks:
     driver: bridge
 
 volumes:
-  mongo-data-new:
+  sqlite-data:
 

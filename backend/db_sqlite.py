@@ -19,7 +19,7 @@ import aiosqlite
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = os.getenv("SQLITE_PATH", "/opt/yvy/yvy.db")
+DB_PATH = os.getenv("SQLITE_PATH", "/app/data/yvy.db")
 
 # Schema ------------------------------------------------------------------
 
