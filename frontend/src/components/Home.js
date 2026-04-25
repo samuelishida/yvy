@@ -365,11 +365,11 @@ export default function Home() {
           <FiresCard fires={fires} lastSync={firesLastSync} t={t} />
         </div>
         {/* Floating widget - bottom left */}
-        <div className="absolute bottom-2 left-2 z-[500] w-40 sm:bottom-4 sm:left-4 sm:w-60">
+        <div className="absolute bottom-8 left-2 z-[500] w-40 sm:bottom-10 sm:left-4 sm:w-60">
           <MetricsRow airQuality={airQuality} temperature={temperature} t={t} />
         </div>
         {/* Floating widget - bottom right */}
-        <div className="absolute bottom-2 right-2 z-[500] w-32 sm:bottom-4 sm:right-4 sm:w-52">
+        <div className="absolute bottom-8 right-2 z-[500] w-32 sm:bottom-10 sm:right-4 sm:w-52">
           <TemperatureCard temperature={temperature} t={t} />
         </div>
       </div>
