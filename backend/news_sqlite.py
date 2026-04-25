@@ -85,11 +85,13 @@ async def _wipe_bad_en_from_db(urls_with_bad_title: list[str], urls_with_bad_des
 
 
 async def _repair_bad_translations(limit: int = 50) -> dict:
-    """Retroactively repair corrupted MyMemory translations in DB using fallback chain.
+    """Retroactively repair corrupted or missing EN translations in DB.
     
-    1. Find up to `limit` rows with title_en or description_en containing MyMemory warning.
-    2. Wipe the bad fields.
-    3. Re-translate PT title/description via LibreTranslate -> Google.
+    1. Find up to `limit` rows where title_en or description_en is either:
+       - containing MyMemory warning text (corrupted)
+       - NULL or empty (never translated, likely because MyMemory was exhausted at fetch)
+    2. Wipe bad fields.
+    3. Re-translate PT title/description via fallback chain (Libre, Google).
     4. Save back to DB.
     
     Returns {"repaired": int, "failed": int, "skipped": int}.
@@ -100,13 +102,14 @@ async def _repair_bad_translations(limit: int = 50) -> dict:
     
     try:
         async with db_sqlite._get_conn() as conn:
-            # Find rows where EITHER title_en OR description_en contains MyMemory warning
+            # Find rows where either title_en OR description_en is bad or missing
             cursor = await conn.execute(
                 """
                 SELECT url, title, description, title_en, description_en
                 FROM news
-                WHERE (title_en LIKE '%MYMEMORY WARNING%')
-                   OR (description_en LIKE '%MYMEMORY WARNING%')
+                WHERE (title_en IS NULL OR title_en = '' OR title_en LIKE '%MYMEMORY WARNING%')
+                   OR (description_en IS NULL OR description_en = '' OR description_en LIKE '%MYMEMORY WARNING%')
+                ORDER BY publishedAt DESC
                 LIMIT ?
                 """,
                 (limit,),
@@ -119,7 +122,7 @@ async def _repair_bad_translations(limit: int = 50) -> dict:
     if not rows:
         return {"repaired": 0, "failed": 0, "skipped": 0}
 
-    logger.info("Found %d rows with MyMemory warning translations. Repairing...", len(rows))
+    logger.info("Found %d rows needing EN translation repair. Repairing...", len(rows))
     
     chain = TranslatorChain()
     semaphore = asyncio.Semaphore(3)
@@ -132,8 +135,9 @@ async def _repair_bad_translations(limit: int = 50) -> dict:
         old_te = row["title_en"] or ""
         old_de = row["description_en"] or ""
         
-        te_bad = _is_mymemory_warning(old_te)
-        de_bad = _is_mymemory_warning(old_de)
+        # A field is "bad" if it's a MyMemory warning OR if it's NULL/empty
+        te_bad = _is_mymemory_warning(old_te) or (not old_te)
+        de_bad = _is_mymemory_warning(old_de) or (not old_de)
         
         if not te_bad and not de_bad:
             skipped += 1
@@ -161,6 +165,11 @@ async def _repair_bad_translations(limit: int = 50) -> dict:
         else:
             final_de = None
         
+        # Only write back if we actually got a good translation
+        if not final_te and not final_de:
+            failed += 1
+            return
+        
         try:
             async with db_sqlite._get_conn() as conn:
                 await conn.execute(
@@ -173,11 +182,8 @@ async def _repair_bad_translations(limit: int = 50) -> dict:
                     (final_te, final_de, url),
                 )
                 await conn.commit()
-            if final_te or final_de:
-                repaired += 1
-                logger.info("Repaired translations for %s", url)
-            else:
-                failed += 1
+            repaired += 1
+            logger.info("Repaired translations for %s (te=%s, de=%s)", url, bool(final_te), bool(final_de))
         except Exception as e:
             logger.error("DB update failed for %s: %s", url, e)
             failed += 1
@@ -414,11 +420,41 @@ async def fetch_and_save_news():
 # Read
 # ---------------------------------------------------------------------------
 
+async def _save_en_to_db(articles: list[dict]) -> None:
+    """Write translated EN fields back to DB. Uses COALESCE to avoid overwriting good data.
+    Skips articles with no title_en or description_en."""
+    if not articles:
+        return
+    updates = [
+        (a.get("title_en"), a.get("description_en"), a["url"])
+        for a in articles if a.get("title_en") or a.get("description_en")
+    ]
+    if not updates:
+        return
+    try:
+        async with db_sqlite._get_conn() as conn:
+            for te, de, url in updates:
+                await conn.execute(
+                    """
+                    UPDATE news
+                    SET title_en = COALESCE(?, title_en),
+                        description_en = COALESCE(?, description_en)
+                    WHERE url = ?
+                    """,
+                    (te, de, url),
+                )
+            await conn.commit()
+        logger.info("Saved EN translations for %d articles.", len(updates))
+    except Exception as e:
+        logger.error("Failed saving EN to DB: %s", e)
+
+
 async def get_news(page=1, page_size=20, lang="pt"):
     try:
         articles = await db_sqlite.get_news_page(page, page_size)
 
         bad_rows_seen = 0
+        missing_en_rows = 0
         bad_title_urls = []
         bad_desc_urls = []
 
@@ -426,13 +462,19 @@ async def get_news(page=1, page_size=20, lang="pt"):
             article["_id"] = str(hash(article.get("url", "")))
             _clear_bad_en(article)
 
-            # If EN was bad, also collect for async DB wipe
+            # If EN was bad (corrupted MyMemory warning), collect for DB wipe
             if article.pop("title_en_bad", False):
                 bad_title_urls.append(article["url"])
             if article.pop("description_en_bad", False):
                 bad_desc_urls.append(article["url"])
-            if article.get("title_en") is None or article.get("description_en") is None:
+
+            # Count rows with missing or corrupted EN
+            te = article.get("title_en")
+            de = article.get("description_en")
+            if te is None or de is None or _is_mymemory_warning(te or "") or _is_mymemory_warning(de or ""):
                 bad_rows_seen += 1
+                if te is None or _is_mymemory_warning(te or ""):
+                    missing_en_rows += 1
 
             if lang == "en":
                 if article.get("title_en"):
@@ -440,13 +482,42 @@ async def get_news(page=1, page_size=20, lang="pt"):
                 if article.get("description_en"):
                     article["description"] = article["description_en"]
 
+        # --- Immediate on-demand EN translation for missing fields in this page (EN requests only) ---
+        if lang == "en" and missing_en_rows > 0:
+            texts_to_translate = []
+            translate_map = []  # [(article_index, field)]
+            for i, article in enumerate(articles):
+                pt_title = (article.get("title") or "").strip()
+                pt_desc = (article.get("description") or "").strip()
+                if (not article.get("title_en") or _is_mymemory_warning(article.get("title_en", ""))) and pt_title:
+                    texts_to_translate.append(pt_title)
+                    translate_map.append((i, "title"))
+                if (not article.get("description_en") or _is_mymemory_warning(article.get("description_en", ""))) and pt_desc:
+                    texts_to_translate.append(pt_desc)
+                    translate_map.append((i, "description"))
+
+            if texts_to_translate:
+                logger.info("On-demand EN translation for %d missing fields in page %d...", len(texts_to_translate), page)
+                translations = await batch_translate(texts_to_translate, "pt", "en")
+                for idx, (article_i, field) in enumerate(translate_map):
+                    val = translations.get(idx, "")
+                    if val and not _is_mymemory_warning(val):
+                        articles[article_i][f"{field}_en"] = val
+                        # Also swap in-memory for the current EN response
+                        if field == "title" and articles[article_i].get("title_en"):
+                            articles[article_i]["title"] = articles[article_i]["title_en"]
+                        if field == "description" and articles[article_i].get("description_en"):
+                            articles[article_i]["description"] = articles[article_i]["description_en"]
+                # Save translated results back to DB
+                asyncio.get_event_loop().create_task(_save_en_to_db(articles))
+
         if bad_title_urls or bad_desc_urls:
             asyncio.get_event_loop().create_task(
                 _wipe_bad_en_from_db(bad_title_urls, bad_desc_urls)
             )
         
         if bad_rows_seen > 0:
-            # Trigger retroactive repair in background
+            # Trigger background retroactive repair (larger batch than immediate)
             asyncio.get_event_loop().create_task(_repair_bad_translations(limit=bad_rows_seen + 10))
 
         return articles
