@@ -1,4 +1,5 @@
 """News module using SQLite instead of MongoDB."""
+import asyncio
 import os
 import logging
 from datetime import datetime, timedelta, timezone
@@ -48,10 +49,25 @@ async def fetch_and_save_news():
             logger.info("No articles found.")
             return []
 
+        # Translate titles/descriptions to EN before saving
+        texts_to_translate = []
         for article in articles:
+            texts_to_translate.append((article.get("title") or "").strip())
+            texts_to_translate.append((article.get("description") or "").strip())
+
+        translations = await batch_translate(texts_to_translate, "pt", "en")
+
+        for i, article in enumerate(articles):
             if not article.get("title"):
                 extracted = extract_title_from_url(article.get("url", ""))
                 article["title"] = extracted or (article.get("description", "")[:50] + "..." if article.get("description") else "#")
+
+            t_title = translations.get(i * 2, "")
+            t_desc = translations.get(i * 2 + 1, "")
+            if t_title:
+                article["title_en"] = t_title
+            if t_desc:
+                article["description_en"] = t_desc
 
             await db_sqlite.upsert_news(article)
 
@@ -73,7 +89,38 @@ async def get_news(page=1, page_size=20, lang="pt"):
             article["_id"] = str(hash(article.get("url", "")))
 
         if lang == "en":
-            articles = await translate_articles(articles)
+            missing_indices = []
+            for i, article in enumerate(articles):
+                if article.get("title_en") and article.get("description_en"):
+                    article["title"] = article["title_en"]
+                    article["description"] = article["description_en"]
+                else:
+                    missing_indices.append(i)
+
+            if missing_indices:
+                to_translate = [articles[i] for i in missing_indices]
+                translated = await translate_articles(to_translate)
+                for idx, article in zip(missing_indices, translated):
+                    # Update EN fields on original article
+                    articles[idx]["title_en"] = article.get("title_en")
+                    articles[idx]["description_en"] = article.get("description_en")
+                    # Persist back to DB with original PT title/description BEFORE swapping
+                    await db_sqlite.upsert_news({
+                        "url": article.get("url"),
+                        "title": article.get("title"),
+                        "description": article.get("description"),
+                        "title_en": article.get("title_en"),
+                        "description_en": article.get("description_en"),
+                        "publishedAt": article.get("publishedAt"),
+                        "source": article.get("source"),
+                        "urlToImage": article.get("urlToImage"),
+                        "content": article.get("content"),
+                    })
+                    # Swap for response AFTER persisting
+                    if articles[idx].get("title_en"):
+                        articles[idx]["title"] = articles[idx]["title_en"]
+                    if articles[idx].get("description_en"):
+                        articles[idx]["description"] = articles[idx]["description_en"]
 
         return articles
     except Exception as e:
