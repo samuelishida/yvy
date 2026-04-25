@@ -400,13 +400,23 @@ async def get_fires():
     await enforce_rate_limit()
     enforce_api_auth()
 
-    try:
-        ne_lat = float(request.args.get("ne_lat", 5.5))
-        ne_lng = float(request.args.get("ne_lng", -34.0))
-        sw_lat = float(request.args.get("sw_lat", -34.0))
-        sw_lng = float(request.args.get("sw_lng", -74.0))
-    except (TypeError, ValueError):
-        abort(400, description="Invalid query parameters for /api/fires.")
+    ne_lat = request.args.get("ne_lat")
+    ne_lng = request.args.get("ne_lng")
+    sw_lat = request.args.get("sw_lat")
+    sw_lng = request.args.get("sw_lng")
+
+    if ne_lat and ne_lng and sw_lat and sw_lng:
+        try:
+            ne_lat = float(ne_lat)
+            ne_lng = float(ne_lng)
+            sw_lat = float(sw_lat)
+            sw_lng = float(sw_lng)
+        except (TypeError, ValueError):
+            abort(400, description="Invalid coordinates.")
+        if ne_lat <= sw_lat or ne_lng <= sw_lng:
+            abort(400, description="Invalid bbox.")
+    else:
+        sw_lat, ne_lat, sw_lng, ne_lng = -90.0, 90.0, -180.0, 180.0
 
     data = await db_sqlite.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit=MAX_RESULTS)
     last_sync = None
@@ -757,30 +767,31 @@ async def get_data():
     await enforce_rate_limit()
     enforce_api_auth()
 
-    try:
-        ne_lat = float(request.args.get("ne_lat", None))
-        ne_lng = float(request.args.get("ne_lng", None))
-        sw_lat = float(request.args.get("sw_lat", None))
-        sw_lng = float(request.args.get("sw_lng", None))
-    except (TypeError, ValueError):
-        abort(400, description="Invalid or missing query parameters. Please provide valid 'ne_lat', 'ne_lng', 'sw_lat', and 'sw_lng'.")
+    ne_lat = request.args.get("ne_lat")
+    ne_lng = request.args.get("ne_lng")
+    sw_lat = request.args.get("sw_lat")
+    sw_lng = request.args.get("sw_lng")
 
-    if ne_lat is None or ne_lng is None or sw_lat is None or sw_lng is None:
-        abort(400, description="All parameters (ne_lat, ne_lng, sw_lat, sw_lng) are required.")
-
-    if ne_lat <= sw_lat or ne_lng <= sw_lng:
-        abort(400, description="Invalid bounding box: ne_lat must be > sw_lat and ne_lng must be > sw_lng.")
-
-    validate_coordinate("ne_lat", ne_lat, -90.0, 90.0)
-    validate_coordinate("sw_lat", sw_lat, -90.0, 90.0)
-    validate_coordinate("ne_lng", ne_lng, -180.0, 180.0)
-    validate_coordinate("sw_lng", sw_lng, -180.0, 180.0)
-
-    clamped_bbox = clamp_bbox_to_brazil(ne_lat, ne_lng, sw_lat, sw_lng)
-    if clamped_bbox is None:
-        return jsonify([])
-
-    ne_lat, ne_lng, sw_lat, sw_lng = clamped_bbox
+    if ne_lat and ne_lng and sw_lat and sw_lng:
+        try:
+            ne_lat = float(ne_lat)
+            ne_lng = float(ne_lng)
+            sw_lat = float(sw_lat)
+            sw_lng = float(sw_lng)
+        except (TypeError, ValueError):
+            abort(400, description="Invalid coordinates.")
+        if ne_lat <= sw_lat or ne_lng <= sw_lng:
+            abort(400, description="Invalid bbox.")
+        validate_coordinate("ne_lat", ne_lat, -90.0, 90.0)
+        validate_coordinate("sw_lat", sw_lat, -90.0, 90.0)
+        validate_coordinate("ne_lng", ne_lng, -180.0, 180.0)
+        validate_coordinate("sw_lng", sw_lng, -180.0, 180.0)
+        clamped_bbox = clamp_bbox_to_brazil(ne_lat, ne_lng, sw_lat, sw_lng)
+        if clamped_bbox is None:
+            return jsonify([])
+        ne_lat, ne_lng, sw_lat, sw_lng = clamped_bbox
+    else:
+        sw_lat, ne_lat, sw_lng, ne_lng = -90.0, 90.0, -180.0, 180.0
 
     data = await db_sqlite.find_deforestation(sw_lat, ne_lat, sw_lng, ne_lng, limit=MAX_RESULTS)
     return jsonify([{
