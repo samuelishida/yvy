@@ -400,15 +400,6 @@ sudo systemctl restart yvy-backend yvy-frontend
 
 ---
 
-## 💰 Custos
-
-| Recurso | Tier | Custo |
-|---------|------|-------|
-| VM ARM 4 OCPU / 24 GB | Always Free | **$0** |
-| Boot Volume 100 GB | Always Free | **$0** |
-| VCN + Subnet + IGW | Always Free | **$0** |
-| Banda de saída | 10 TB/mês | **$0** |
-
 > ⚠️ **Atenção:** Nunca exceda os limites do Always Free (ex: criar mais de 1 VM ARM ou volume > 200 GB).
 
 ---

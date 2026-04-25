@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useI18n } from '../i18n';
+import { getCache, setCache } from '../utils/cache';
 import './News.css';
 
 const PAGE_SIZE = 20;
@@ -30,6 +31,16 @@ const News = () => {
       try {
         setLoading(true);
         setError(null);
+
+        // Try cache first for page 1
+        if (page === 1) {
+          const cached = getCache(`news_${lang}`, 15);
+          if (cached) {
+            setArticles(cached);
+            setLoading(false);
+          }
+        }
+
         const response = await fetch(`/api/news?page=${page}&lang=${lang}`);
         const payload = await response.json();
         const data = normalizeArticles(payload);
@@ -44,6 +55,7 @@ const News = () => {
 
         if (page === 1) {
           setArticles(data);
+          setCache(`news_${lang}`, data);
         } else {
           setArticles((prevArticles) => [...prevArticles, ...data]);
         }

@@ -6,6 +6,7 @@ import {
   Flame,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
+import { getCache, setCache } from '../utils/cache';
 import 'leaflet/dist/leaflet.css';
 
 const BBOX = { ne_lat: 5.5, ne_lng: -34.0, sw_lat: -34.0, sw_lng: -74.0 };
@@ -292,17 +293,25 @@ export default function Home() {
         setLoading(false);
       });
 
+    // Load FIRMS from cache first, then fetch fresh data
+    const cachedFires = getCache('fires', 10);
+    if (cachedFires) {
+      setFires(cachedFires.fires || []);
+      setFiresLastSync(cachedFires.last_sync || null);
+    }
     fetch(`/api/fires?${params}`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
       .then((d) => {
-        setFires(d.fires || []);
+        const firesData = d.fires || [];
+        setFires(firesData);
         setFiresLastSync(d.last_sync || null);
+        setCache('fires', { fires: firesData, last_sync: d.last_sync });
       })
       .catch(() => {
-        setFires([]);
+        if (!cachedFires) setFires([]);
       });
 
     const fetchWeather = (lat, lon) => {
