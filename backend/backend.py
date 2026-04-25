@@ -378,6 +378,7 @@ async def get_fires():
         abort(400, description="Invalid query parameters for /api/fires.")
 
     data = await db_sqlite.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit=MAX_RESULTS)
+    return jsonify(data)
 
 
 @app.route("/api/admin/firms/sync", methods=["POST"])
