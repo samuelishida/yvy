@@ -74,7 +74,7 @@ function GlassCard({ children, className = '' }) {
   );
 }
 
-function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, loading, error, t, firesLastSync, airQuality, temperature, fires: firesData }) {
+function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, loading, error, t }) {
   const mapCenter = [-14.235, -51.925];
   const mapZoom = 4;
   const [satellite, setSatellite] = useState(false);
@@ -83,7 +83,7 @@ function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, se
     ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
     : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
   const tileAttribution = satellite
-    ? '&copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, GIS User Community'
+    ? '&copy; Esri, Earthstar Geographics'
     : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 
   return (
@@ -111,7 +111,7 @@ function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, se
             }`}
           >
             <Flame size={11} />
-            {t('home.firmsFire')}
+            FIRMS
           </button>
           <button
             onClick={() => setSatellite(!satellite)}
@@ -120,7 +120,7 @@ function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, se
             }`}
           >
             <span className={`w-1.5 h-1.5 rounded-full ${satellite ? 'bg-indigo-400' : 'bg-slate-600'}`} />
-            Satélite
+            Satelite
           </button>
         </div>
       </div>
@@ -136,13 +136,22 @@ function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, se
           {t('home.error')}: {error}
         </div>
       )}
-        {!loading && !error && (
-          <MapContainer center={mapCenter} zoom={mapZoom} scrollWheelZoom={true} className="w-full h-full" style={{ minHeight: '82vh' }}>
-            <TileLayer
-              key={tileUrl}
-              attribution={tileAttribution}
-              url={tileUrl}
-            >
+      {!loading && !error && (
+        <MapContainer center={mapCenter} zoom={mapZoom} scrollWheelZoom={true} className="w-full h-full" style={{ minHeight: '82vh' }}>
+          <TileLayer
+            key={satellite ? 'sat' : 'osm'}
+            attribution={tileAttribution}
+            url={tileUrl}
+          />
+          {showDeforest &&
+            records &&
+            records.slice(0, 500).map((record, idx) => (
+              <CircleMarker
+                key={`d-${idx}`}
+                center={[record.lat, record.lon]}
+                pathOptions={{ color: record.color || '#00b4d8', fillColor: record.color, fillOpacity: 0.5 }}
+                radius={3}
+              >
                 <Popup>
                   <strong>{classLabel(record.clazz, t)}</strong><br />
                   {t('home.source')}: PRODES/INPE<br />
@@ -227,23 +236,25 @@ function TemperatureCard({ temperature, t }) {
   );
 }
 
-function FiresCard({ fires, t }) {
+function FiresCard({ fires, lastSync, t }) {
   return (
-    <GlassCard className="p-1.5 sm:p-2 flex flex-col items-center justify-center gap-0.5 text-center">
-      <div className="text-slate-400 mb-0.5">
-        <Flame size={10} className="text-red-400 inline align-middle mr-1" />
-        <span className="text-[9px] sm:text-[10px] font-medium uppercase tracking-wider text-slate-400 align-middle">
-          Queimadas
-        </span>
-      </div>
-      <div className="flex flex-col items-center gap-0">
-        <span className="text-lg sm:text-xl font-bold text-orange-300 leading-tight">
+    <GlassCard className="p-2 sm:p-4 flex flex-col items-center justify-center gap-1 sm:gap-3 text-center">
+      <div className="flex flex-col items-center gap-0.5">
+        <span className="text-lg sm:text-2xl font-bold text-orange-300 leading-none">
           {(fires?.length || 0).toLocaleString('pt-BR')}
         </span>
-        <span className="text-[7px] sm:text-[8px] text-slate-400 uppercase tracking-wider">
-          total no mapa
+        <span className="text-[8px] sm:text-[9px] text-slate-300 uppercase tracking-wider">
+          {t('home.totalOnMap')}
         </span>
       </div>
+      <a
+        href="https://firms.modaps.eosdis.nasa.gov/map/?lang=pt"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-[9px] sm:text-[10px] text-cyan-400 hover:text-cyan-300 transition-colors"
+      >
+        {t('home.viewOnFirms')}
+      </a>
     </GlassCard>
   );
 }
@@ -348,7 +359,7 @@ export default function Home() {
         />
         {/* Floating widgets - right column */}
         <div className="absolute top-16 right-2 z-[500] flex flex-col gap-2 w-32 sm:top-20 sm:right-4 sm:gap-3 sm:w-52">
-          <FiresCard fires={fires} t={t} />
+          <FiresCard fires={fires} lastSync={firesLastSync} t={t} />
         </div>
         {/* Floating widget - bottom left */}
         <div className="absolute bottom-8 left-2 z-[500] w-40 sm:bottom-10 sm:left-4 sm:w-60">
