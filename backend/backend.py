@@ -1,6 +1,7 @@
 import asyncio
 import csv
 import datetime
+from datetime import timezone
 import ipaddress
 import io
 import json
@@ -40,7 +41,7 @@ RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 AUTH_REQUIRED = os.getenv("AUTH_REQUIRED", "1") == "1"
 API_KEY = os.getenv("API_KEY", "").strip()
 FIRMS_MAP_KEY = os.getenv("FIRMS_MAP_KEY", "").strip()
-FIRMS_SYNC_INTERVAL_HOURS = int(os.getenv("FIRMS_SYNC_INTERVAL_HOURS", "24"))
+FIRMS_SYNC_INTERVAL_HOURS = int(os.getenv("FIRMS_SYNC_INTERVAL_HOURS", "4"))
 FIRMS_DAY_RANGE = int(os.getenv("FIRMS_DAY_RANGE", "3"))
 FIRMS_BBOX = "-74,-34,-34,5.5"
 FIRMS_SOURCE = os.getenv("FIRMS_SOURCE", "VIIRS_SNPP_NRT")
@@ -52,7 +53,7 @@ _RATE_LIMIT_LOCK = Lock()
 class JsonFormatter(logging.Formatter):
     def format(self, record):
         payload = {
-            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
+            "timestamp": datetime.datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -377,6 +378,22 @@ async def get_fires():
         abort(400, description="Invalid query parameters for /api/fires.")
 
     data = await db_sqlite.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit=MAX_RESULTS)
+
+
+@app.route("/api/admin/firms/sync", methods=["POST"])
+async def trigger_firms_sync():
+    """Manual trigger for FIRMS data sync. Requires API key auth."""
+    enforce_api_auth()
+    
+    logger.info("Manual FIRMS sync triggered.", extra={"event": "firms_manual_trigger"})
+    count = await _fetch_firms_data()
+    
+    return jsonify({
+        "status": "success",
+        "message": f"FIRMS sync completed. {count} records processed.",
+        "records": count,
+        "last_sync": await redis_client.get("fires:last_sync")
+    })
 
     last_sync = None
     try:
