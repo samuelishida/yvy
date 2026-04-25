@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS news (
     url TEXT UNIQUE NOT NULL,
     title TEXT,
     description TEXT,
+    title_en TEXT,
+    description_en TEXT,
     publishedAt TEXT,
     source_name TEXT,
     urlToImage TEXT,
@@ -83,6 +85,22 @@ async def _create_connection() -> aiosqlite.Connection:
     return conn
 
 
+async def _migrate_news_table() -> None:
+    """Add title_en/description_en columns if missing (SQLite migration)."""
+    async with _get_conn() as conn:
+        try:
+            await conn.execute("ALTER TABLE news ADD COLUMN title_en TEXT")
+            logger.info("Migration: added title_en to news")
+        except Exception:
+            pass
+        try:
+            await conn.execute("ALTER TABLE news ADD COLUMN description_en TEXT")
+            logger.info("Migration: added description_en to news")
+        except Exception:
+            pass
+        await conn.commit()
+
+
 async def init_db() -> None:
     """Create tables and connection pool."""
     global _pool
@@ -99,6 +117,9 @@ async def init_db() -> None:
     for _ in range(_pool_size):
         await _pool.put(await _create_connection())
     logger.info("SQLite initialized at %s", DB_PATH)
+
+    # Migrate existing tables
+    await _migrate_news_table()
 
 
 async def close_db() -> None:
@@ -279,12 +300,14 @@ async def upsert_news(article: dict[str, Any]) -> None:
     async with _get_conn() as conn:
         await conn.execute(
             """
-            INSERT INTO news (url, title, description, publishedAt,
+            INSERT INTO news (url, title, description, title_en, description_en, publishedAt,
                               source_name, urlToImage, content)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(url) DO UPDATE SET
                 title=excluded.title,
                 description=excluded.description,
+                title_en=COALESCE(excluded.title_en, news.title_en),
+                description_en=COALESCE(excluded.description_en, news.description_en),
                 publishedAt=excluded.publishedAt,
                 source_name=excluded.source_name,
                 urlToImage=excluded.urlToImage,
@@ -292,7 +315,8 @@ async def upsert_news(article: dict[str, Any]) -> None:
             """,
             (
                 article.get("url"), article.get("title"),
-                article.get("description"), article.get("publishedAt"),
+                article.get("description"), article.get("title_en"),
+                article.get("description_en"), article.get("publishedAt"),
                 article.get("source", {}).get("name") if isinstance(article.get("source"), dict) else article.get("source"),
                 article.get("urlToImage"), article.get("content"),
             ),
@@ -307,7 +331,7 @@ async def get_news_page(
     async with _get_conn() as conn:
         cursor = await conn.execute(
             """
-            SELECT url, title, description, publishedAt,
+            SELECT url, title, description, title_en, description_en, publishedAt,
                    source_name, urlToImage, content
             FROM news
             ORDER BY publishedAt DESC
@@ -321,6 +345,8 @@ async def get_news_page(
                 "url": r["url"],
                 "title": r["title"],
                 "description": r["description"],
+                "title_en": r["title_en"],
+                "description_en": r["description_en"],
                 "publishedAt": r["publishedAt"],
                 "source": {"name": r["source_name"]} if r["source_name"] else {},
                 "urlToImage": r["urlToImage"],
