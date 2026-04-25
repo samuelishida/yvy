@@ -19,12 +19,12 @@ from threading import Lock
 from urllib.parse import quote_plus
 
 import httpx
-import pymongo
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
-from motor.motor_asyncio import AsyncIOMotorClient
 from quart import Quart, request, abort, jsonify
 from quart_cors import cors
+
+import db_sqlite
 
 load_dotenv()
 
@@ -115,34 +115,8 @@ def parse_cors_origins():
 
 
 def build_mongo_uri():
-    explicit_uri = os.getenv("MONGO_URI", "").strip()
-    if explicit_uri:
-        return explicit_uri
-
-    database = os.getenv("MONGO_DATABASE", "terrabrasilis_data")
-    host = os.getenv("MONGO_HOST", "mongo")
-    port = os.getenv("MONGO_PORT", "27017")
-    app_username = os.getenv("MONGO_APP_USERNAME", "").strip()
-    app_password = os.getenv("MONGO_APP_PASSWORD", "").strip()
-    root_username = os.getenv("MONGO_ROOT_USERNAME", "").strip()
-    root_password = os.getenv("MONGO_ROOT_PASSWORD", "").strip()
-
-    if app_username and app_password:
-        auth_source = os.getenv("MONGO_DATABASE", "terrabrasilis_data")
-        uri = (
-            f"mongodb://{quote_plus(app_username)}:{quote_plus(app_password)}"
-            f"@{host}:{port}/{database}?authSource={auth_source}"
-        )
-        logger.info("Building MongoDB URI with app user.", extra={"event": "mongo_uri_build", "details": {"host": host, "port": port, "database": database, "auth_source": auth_source}})
-        return uri
-
-    if root_username and root_password:
-        return (
-            f"mongodb://{quote_plus(root_username)}:{quote_plus(root_password)}"
-            f"@{host}:{port}/{database}?authSource=admin"
-        )
-
-    return f"mongodb://{host}:{port}/{database}"
+    """Deprecated: kept for compatibility with ingest.py."""
+    return os.getenv("MONGO_URI", "sqlite")
 
 
 def validate_coordinate(name, value, minimum, maximum):
@@ -280,31 +254,22 @@ async def enforce_rate_limit():
 app = Quart(__name__)
 app = cors(app, allow_origin=parse_cors_origins())
 
-MONGO_URI = build_mongo_uri()
-MONGO_DATABASE = os.getenv("MONGO_DATABASE", "terrabrasilis_data")
-
-motor_client: AsyncIOMotorClient | None = None
-mongo_db = None
-
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 redis_client: aioredis.Redis | None = None
 
 
 @app.before_serving
 async def startup():
-    global motor_client, mongo_db, redis_client
-    motor_client = AsyncIOMotorClient(MONGO_URI, serverSelectionTimeoutMS=10000)
-    await motor_client.admin.command('ping')
-    mongo_db = motor_client[MONGO_DATABASE]
-    logger.info("MongoDB connection verified.", extra={"event": "mongo_connect_ok"})
+    global redis_client
+    await db_sqlite.init_db()
+    logger.info("SQLite connection verified.", extra={"event": "sqlite_connect_ok"})
     redis_client = aioredis.from_url(REDIS_URL, socket_connect_timeout=5, socket_timeout=5)
     asyncio.get_event_loop().create_task(_fires_sync_loop())
 
 
 @app.after_serving
 async def shutdown():
-    if motor_client:
-        motor_client.close()
+    await db_sqlite.close_db()
     if redis_client:
         await redis_client.close()
 
@@ -330,7 +295,7 @@ async def _fetch_firms_data():
         return 0
 
     reader = csv.DictReader(io.StringIO(text))
-    operations = []
+    docs = []
     count = 0
     for row in reader:
         try:
@@ -347,7 +312,7 @@ async def _fetch_firms_data():
         if not (-90 <= lat <= 90 and -180 <= lon <= 180):
             continue
 
-        doc = {
+        docs.append({
             "lat": lat,
             "lon": lon,
             "confidence": confidence,
@@ -356,23 +321,12 @@ async def _fetch_firms_data():
             "satellite": satellite,
             "bright_ti4": bright_ti4,
             "source": "NASA_FIRMS_VIIRS_SNPP",
-            "ingested_at": datetime.datetime.now(datetime.UTC),
-        }
-        operations.append(
-            pymongo.UpdateOne(
-                {"lat": lat, "lon": lon, "acq_date": acq_date},
-                {"$setOnInsert": doc},
-                upsert=True,
-            )
-        )
+            "ingested_at": datetime.datetime.now(datetime.UTC).isoformat(),
+        })
         count += 1
 
-    if operations:
-        from pymongo import UpdateOne as _UO
-        batch_size = 500
-        for i in range(0, len(operations), batch_size):
-            batch = operations[i:i + batch_size]
-            await mongo_db.fire_data.bulk_write(batch, ordered=False)
+    if docs:
+        await db_sqlite.bulk_upsert_fires(docs)
 
     try:
         await redis_client.set("fires:last_sync", datetime.datetime.now(datetime.UTC).isoformat())
@@ -422,16 +376,7 @@ async def get_fires():
     except (TypeError, ValueError):
         abort(400, description="Invalid query parameters for /api/fires.")
 
-    query = {
-        "lat": {"$lte": ne_lat, "$gte": sw_lat},
-        "lon": {"$lte": ne_lng, "$gte": sw_lng},
-    }
-
-    cursor = mongo_db.fire_data.find(query).limit(MAX_RESULTS)
-    if hasattr(cursor, "to_list"):
-        data = await cursor.to_list(length=MAX_RESULTS)
-    else:
-        data = list(cursor)
+    data = await db_sqlite.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit=MAX_RESULTS)
 
     last_sync = None
     try:
@@ -621,65 +566,6 @@ def parse_tif(file_path):
     return coordinates
 
 
-def process_coordinate_batch(args):
-    from pymongo import UpdateOne
-
-    coordinates_batch, color_legend, mongo_uri, mongo_database = args
-    from pymongo import MongoClient as SyncMongoClient
-
-    client = SyncMongoClient(mongo_uri)
-    db = client[mongo_database]
-    batch_data = []
-    for coord in coordinates_batch:
-        value = coord["value"]
-        if value in color_legend:
-            data = {
-                "name": color_legend[value]["label"],
-                "clazz": "Desmatamento",
-                "periods": "N/A",
-                "source": "TerraBrasilis",
-                "color": color_legend[value]["color"],
-                "lat": coord["lat"],
-                "lon": coord["lon"],
-                "timestamp": datetime.datetime.now(datetime.UTC),
-            }
-            batch_data.append(data)
-
-    if batch_data:
-        operations = []
-        for data in batch_data:
-            operations.append(
-                UpdateOne(
-                    {"name": data["name"], "lat": data["lat"], "lon": data["lon"]},
-                    {"$setOnInsert": data},
-                    upsert=True,
-                )
-            )
-        if operations:
-            db.deforestation_data.bulk_write(operations, ordered=False)
-        logger.info(
-            "Batch documents upserted into MongoDB.",
-            extra={"event": "mongo_bulk_upsert", "details": {"documents": len(batch_data)}},
-        )
-    client.close()
-
-
-def insert_data_to_mongo_parallel(color_legend, coordinates):
-    num_processes = max(1, cpu_count() // 2 + 2)
-    coordinate_batches = split_into_batches(coordinates, num_processes)
-    if not coordinate_batches:
-        logger.info(
-            "Skipping ingestion because there are no coordinates to process.",
-            extra={"event": "mongo_ingest_skipped_empty"},
-        )
-        return
-
-    mongo_uri = build_mongo_uri()
-    mongo_database = os.getenv("MONGO_DATABASE", "terrabrasilis_data")
-    with ThreadPoolExecutor(max_workers=len(coordinate_batches)) as executor:
-        list(executor.map(process_coordinate_batch, [(batch, color_legend, mongo_uri, mongo_database) for batch in coordinate_batches]))
-
-
 @app.route("/")
 async def home():
     return jsonify({"message": "API do backend de desmatamento"})
@@ -704,12 +590,12 @@ async def get_news():
     if lang not in ("pt", "en"):
         lang = "pt"
 
-    from news import get_news as fetch_news, fetch_and_save_news
+    from news_sqlite import get_news as fetch_news, fetch_and_save_news
 
     if page == 1:
-        await fetch_and_save_news(mongo_db)
+        await fetch_and_save_news()
 
-    articles = await fetch_news(mongo_db, page, page_size, lang=lang)
+    articles = await fetch_news(page, page_size, lang=lang)
     return jsonify(articles)
 
 
@@ -719,8 +605,8 @@ async def refresh_news():
         enforce_api_auth()
     await enforce_rate_limit()
 
-    from news import fetch_and_save_news
-    await fetch_and_save_news(mongo_db)
+    from news_sqlite import fetch_and_save_news
+    await fetch_and_save_news()
 
     return jsonify({"status": "refreshed"})
 
@@ -832,16 +718,7 @@ async def get_data():
 
     ne_lat, ne_lng, sw_lat, sw_lng = clamped_bbox
 
-    query = {
-        "lat": {"$lte": ne_lat, "$gte": sw_lat},
-        "lon": {"$lte": ne_lng, "$gte": sw_lng},
-    }
-
-    cursor = mongo_db.deforestation_data.find(query).limit(MAX_RESULTS)
-    if hasattr(cursor, "to_list"):
-        data = await cursor.to_list(length=MAX_RESULTS)
-    else:
-        data = list(cursor)
+    data = await db_sqlite.find_deforestation(sw_lat, ne_lat, sw_lng, ne_lng, limit=MAX_RESULTS)
     return jsonify([{
         "name": item["name"],
         "lat": item["lat"],
@@ -850,7 +727,7 @@ async def get_data():
         "clazz": item.get("clazz", "Desmatamento"),
         "periods": item.get("periods", "N/A"),
         "source": item.get("source", "TerraBrasilis"),
-        "timestamp": item["timestamp"].isoformat(),
+        "timestamp": item.get("timestamp", ""),
     } for item in data])
 
 
