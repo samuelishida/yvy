@@ -73,18 +73,28 @@ function GlassCard({ children, className = '' }) {
 }
 
 function VisibleFiresCounter({ fires, showFires, onVisibleCountChange }) {
-  const map = useMapEvents('moveend', () => {
-    if (!showFires || !fires) return;
-    const bounds = map.getBounds();
-    const visible = fires.filter(f => 
-      bounds.contains([f.lat, f.lon])
-    );
-    onVisibleCountChange(visible.length);
+  const map = useMapEvents({
+    moveend: () => {
+      if (!showFires || !fires) return;
+      const bounds = map.getBounds();
+      const visible = fires.filter(f =>
+        bounds.contains([f.lat, f.lon])
+      );
+      onVisibleCountChange(visible.length);
+    },
+    zoomend: () => {
+      if (!showFires || !fires) return;
+      const bounds = map.getBounds();
+      const visible = fires.filter(f =>
+        bounds.contains([f.lat, f.lon])
+      );
+      onVisibleCountChange(visible.length);
+    },
   });
   useEffect(() => {
     if (!showFires || !fires) return;
     const bounds = map.getBounds();
-    const visible = fires.filter(f => 
+    const visible = fires.filter(f =>
       bounds.contains([f.lat, f.lon])
     );
     onVisibleCountChange(visible.length);
