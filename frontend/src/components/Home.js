@@ -219,20 +219,25 @@ function TemperatureCard({ temperature, t }) {
 }
 
 function FiresCard({ fires, lastSync, t }) {
-  const last3 = useMemo(() => {
-    if (!fires || !fires.length) return 0;
-    const threeDaysAgo = new Date();
-    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-    return fires.filter((f) => new Date(f.acq_date) >= threeDaysAgo).length;
-  }, [fires]);
-
   return (
     <GlassCard className="p-2 sm:p-4 flex flex-col items-center justify-center gap-1 sm:gap-3 text-center">
       <div className="flex items-center gap-1 text-slate-400">
         <Flame size={11} className="text-red-400" />
         <span className="text-[9px] sm:text-[10px] font-medium uppercase tracking-wider text-slate-400">
-          Queimadas
+          {t('home.recentFires')}
         </span>
+      </div>
+      <div className="flex flex-col items-center gap-0.5">
+        <span className="text-lg sm:text-2xl font-bold text-orange-300 leading-none">
+          {(fires?.length || 0).toLocaleString('pt-BR')}
+        </span>
+        <span className="text-[8px] sm:text-[9px] text-slate-300 uppercase tracking-wider">
+          {t('home.totalOnMap')}
+        </span>
+      </div>
+      <div className="hidden sm:flex items-center gap-1.5 text-[10px] text-slate-500">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+        Sincronizado {lastSync && new Date(lastSync).toLocaleDateString('pt-BR')}
       </div>
       <a
         href="https://firms.modaps.eosdis.nasa.gov/map/?lang=pt"
