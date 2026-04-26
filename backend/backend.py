@@ -422,7 +422,7 @@ async def _fires_sync_loop():
                 last_sync_str = await cache_get("fires:last_sync")
                 if last_sync_str:
                     last_sync = datetime.datetime.fromisoformat(last_sync_str)
-                    elapsed_hours = (datetime.datetime.now(datetime.UTC) - last_sync).total_seconds() / 3600
+                    elapsed_hours = (datetime.datetime.now(datetime.timezone.utc) - last_sync).total_seconds() / 3600
                     if elapsed_hours < FIRMS_SYNC_INTERVAL_HOURS:
                         should_sync = False
                         logger.info("FIRMS sync not due yet.", extra={"event": "firms_sync_skip", "details": {"hours_since_last": round(elapsed_hours, 1)}})
@@ -564,7 +564,7 @@ async def add_security_headers(response):
 
 @app.route("/health")
 async def health():
-    return jsonify({"status": "healthy", "timestamp": datetime.datetime.now(datetime.UTC).isoformat()})
+    return jsonify({"status": "healthy", "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()})
 
 
 @app.errorhandler(404)

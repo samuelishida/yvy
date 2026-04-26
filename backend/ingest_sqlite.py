@@ -97,7 +97,7 @@ async def process_coordinate_batch_async(coordinates_batch, color_legend):
                 "color": color_legend[value]["color"],
                 "lat": coord["lat"],
                 "lon": coord["lon"],
-                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             }
             batch_data.append(data)
 
