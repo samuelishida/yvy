@@ -180,9 +180,42 @@
       retries: 15
       delay: 5
 
-    - name: Configurar nginx com SSL
-      ansible.builtin.template:
-        src: yvy-nginx.conf.j2
+    - name: Deploy HTTP-only nginx config (phase 1)
+      ansible.builtin.copy:
+        content: |
+          server {
+              listen 80;
+              server_name {{ domain }} www.{{ domain }};
+              root {{ app_dir }}/frontend/build;
+              index index.html;
+
+              location /.well-known/acme-challenge/ {
+                  root /var/www/certbot;
+              }
+
+              gzip on;
+              gzip_vary on;
+              gzip_min_length 1024;
+              gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json application/javascript;
+
+              location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+                  expires 1y;
+                  add_header Cache-Control "public, immutable";
+              }
+
+              location /api/ {
+                  proxy_pass http://127.0.0.1:5000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+
+              location / {
+                  try_files $uri $uri/ /index.html;
+              }
+          }
         dest: /etc/nginx/sites-available/yvy
         owner: root
         group: root
@@ -213,9 +246,17 @@
             --non-interactive \
             -d "{{ domain }}" \
             -d "www.{{ domain }}"
-        creates: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
       ignore_errors: true
       register: cert_result
+
+    - name: Deploy HTTPS nginx config (phase 2, if cert obtained)
+      when: cert_result is defined and cert_result.rc is defined and cert_result.rc == 0
+      ansible.builtin.template:
+        src: yvy-nginx.conf.j2
+        dest: /etc/nginx/sites-available/yvy
+        owner: root
+        group: root
+        mode: '0644'
       notify: reload nginx
 
     - name: Aviso se SSL falhou (DNS nao aponta para esta VM)
@@ -223,15 +264,8 @@
       ansible.builtin.debug:
         msg: |
           ⚠️  Certificado SSL nao foi emitido.
-          DNS de {{ domain }} aponta para 200.160.2.95 (nao para {{ ansible_host }}).
-          Apos atualizar o registro A, rode manualmente:
-            sudo certbot --nginx -d {{ domain }} -d www.{{ domain }}
-
-    - name: Ativar HTTPS se certificado foi obtido
-      when: cert_result is defined and cert_result.rc is defined and cert_result.rc == 0
-      ansible.builtin.shell:
-        cmd: certbot --nginx -d {{ domain }} -d www.{{ domain }}
-      notify: reload nginx
+          DNS de {{ domain }} precisa apontar para {{ ansible_host }}.
+          Apos atualizar o registro A, re-deploy para obter o certificado.
 
     - name: Configurar renew automático do SSL
       ansible.builtin.copy:
@@ -249,19 +283,24 @@
         enabled: false
       ignore_errors: true
 
-    - name: Testar HTTPS
+    - name: Testar HTTP
       ansible.builtin.uri:
-        url: "https://{{ domain }}/"
+        url: "http://{{ ansible_host }}/"
         status_code: 200
-        validate_certs: no
-      register: https_health
-      until: https_health.status == 200
+      register: http_health
+      until: http_health.status == 200
       retries: 5
       delay: 5
 
     - name: Mostrar URL de acesso
       ansible.builtin.debug:
-        msg: "Yvy disponível em: https://{{ domain }}"
+        msg: |
+          {% if cert_result is defined and cert_result.rc is defined and cert_result.rc == 0 %}
+          ✅ Yvy disponível em: https://{{ domain }}
+          {% else %}
+          ⚠️  Yvy disponível em: http://{{ ansible_host }} (HTTP-only, SSL pendente)
+          Apos atualizar DNS para {{ domain }} → {{ ansible_host }}, re-deploy para ativar HTTPS.
+          {% endif %}
 
   handlers:
     - name: reload nginx
