@@ -160,12 +160,12 @@
 
     - name: Verificar health do frontend
       ansible.builtin.uri:
-        url: http://localhost:5001/health
+        url: http://localhost:5001/
         status_code: 200
       register: frontend_health
       until: frontend_health.status == 200
-      retries: 10
-      delay: 3
+      retries: 15
+      delay: 5
 
     - name: Mostrar URL de acesso
       ansible.builtin.debug:
