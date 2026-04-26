@@ -56,7 +56,7 @@ sudo certbot certonly --webroot \
     --email "$EMAIL" \
     --agree-tos \
     --no-eff-email \
-    --force-interaction \
+    --non-interactive \
     -d "$DOMAIN" \
     -d "www.$DOMAIN"
 

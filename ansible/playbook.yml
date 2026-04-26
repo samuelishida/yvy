@@ -210,7 +210,7 @@
             --email "{{ certbot_email }}" \
             --agree-tos \
             --no-eff-email \
-            --force-interaction \
+            --non-interactive \
             -d "{{ domain }}" \
             -d "www.{{ domain }}"
         creates: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
