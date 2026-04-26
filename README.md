@@ -2,6 +2,8 @@
 
 Observabilidade ambiental para monitorar desmatamento e queimadas no Brasil.
 
+**Produção**: https://yvy.app.br/
+
 Stack atual:
 - **Frontend**: React 18 + Express (proxy server-side) + Tailwind CSS + Leaflet
 - **Backend**: Quart + Hypercorn (async ASGI)
@@ -52,9 +54,11 @@ Parar processos locais:
 make stop
 ```
 
-URLs locais:
-- Frontend: http://127.0.0.1:5001
-- Backend: http://127.0.0.1:5000
+URLs:
+- **Produção**: https://yvy.app.br/
+- **Local**:
+  - Frontend: http://127.0.0.1:5001
+  - Backend: http://127.0.0.1:5000
 
 ## Comandos Make
 
