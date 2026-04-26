@@ -7,8 +7,6 @@ packages:
   - python3
   - python3-venv
   - python3-pip
-  - nodejs
-  - npm
   - redis-server
   - sqlite3
   - jq
@@ -28,6 +26,17 @@ runcmd:
   - ufw allow 80/tcp
   - ufw allow 443/tcp
   - ufw --force enable
+
+  # Swap para VM 1GB (necessário para npm build)
+  - fallocate -l 2G /swapfile
+  - chmod 600 /swapfile
+  - mkswap /swapfile
+  - swapon /swapfile
+  - echo '/swapfile none swap sw 0 0' | tee -a /etc/fstab
+
+  # Instalar nvm + Node 18 (Node 12 do apt é velho demais)
+  - curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+  - export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm install 18
 
   # Criar diretório do projeto
   - mkdir -p /opt/yvy

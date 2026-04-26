@@ -35,7 +35,6 @@ jobs:
         run: |
           printf '%s\n' "${{ secrets.OCI_PRIVATE_KEY }}" > infra/oci_api_key.pem
           chmod 600 infra/oci_api_key.pem
-          # Verify key format
           head -1 infra/oci_api_key.pem | grep -q 'BEGIN' || {
             echo "ERROR: Private key format invalid. Ensure secret has literal newlines."
             exit 1
@@ -46,12 +45,7 @@ jobs:
         run: |
           echo "Region: $TF_VAR_region"
           echo "Tenancy: ${TF_VAR_tenancy_ocid:0:20}..."
-          echo "User: ${TF_VAR_user_ocid:0:20}..."
-          echo "Fingerprint: $TF_VAR_fingerprint"
           echo "Key file exists: $(test -f oci_api_key.pem && echo yes || echo no)"
-          echo "Key first line: $(head -1 oci_api_key.pem)"
-          # Compute fingerprint from key to verify match
-          openssl rsa -in oci_api_key.pem -pubout -outform DER 2>/dev/null | openssl md5 -c | awk '{print $2}' || echo "WARNING: Could not compute fingerprint from key"
 
       - name: Write SSH Public Key
         run: |
@@ -97,7 +91,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Ansible + OCI Collection
+      - name: Install Ansible
         run: |
           pip install ansible
 
@@ -106,25 +100,41 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.OCI_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ needs.terraform.outputs.public_ip }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ needs.terraform.outputs.public_ip }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Wait for VM to be ready (cloud-init)
+        run: |
+          echo "Waiting for VM to finish cloud-init..."
+          for i in $(seq 1 30); do
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 ubuntu@${{ needs.terraform.outputs.public_ip }} "cloud-init status --wait 2>/dev/null; echo READY" 2>/dev/null | grep -q READY && break
+            echo "Attempt $i/30 - not ready yet..."
+            sleep 10
+          done
 
       - name: Run Ansible Playbook
         working-directory: ./ansible
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
         run: |
-          # Criar inventory inline com o IP dinâmico
           cat > inventory.ini <<EOF
           [yvy]
           ${{ needs.terraform.outputs.public_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa
           EOF
 
-          ansible-playbook -i inventory.ini playbook.yml
+          ansible-playbook -i inventory.ini playbook.yml -v
 
       - name: Health Check
         run: |
           echo "Aguardando aplicação ficar pronta..."
-          sleep 30
-          curl -sf http://${{ needs.terraform.outputs.public_ip }}:5001/health || exit 1
-          echo "✅ Yvy deployado com sucesso!"
-          echo "🌐 URL: http://${{ needs.terraform.outputs.public_ip }}:5001"
+          for i in $(seq 1 12); do
+            HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://${{ needs.terraform.outputs.public_ip }}:5001/health 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Yvy deployado com sucesso!"
+              echo "🌐 URL: http://${{ needs.terraform.outputs.public_ip }}:5001"
+              exit 0
+            fi
+            echo "Attempt $i/12 - HTTP $HTTP_CODE, waiting..."
+            sleep 10
+          done
+          echo "❌ Health check failed after 120 seconds"
+          exit 1

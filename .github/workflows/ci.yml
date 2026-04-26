@@ -34,6 +34,16 @@ jobs:
         run: |
           python -m py_compile backend/backend.py backend/db_sqlite.py backend/ingest_sqlite.py backend/news_sqlite.py
 
+      - name: Run SQLite manual tests
+        working-directory: ./backend
+        run: python test_sqlite_manual.py
+
+      - name: Install pytest and run suite
+        working-directory: ./backend
+        run: |
+          pip install pytest pytest-asyncio
+          python -m pytest test_db_sqlite.py -v
+
       - name: Validate shell scripts
         run: |
           sh -n backup.sh
@@ -41,3 +51,4 @@ jobs:
           sh -n scripts/run-backend.sh
           sh -n scripts/run-frontend.sh
           sh -n scripts/deploy-local.sh
+          sh -n scripts/deploy-nginx.sh

@@ -7,6 +7,8 @@
     repo_url: https://github.com/samuelishida/yvy.git
     yvy_user: ubuntu
     yvy_group: ubuntu
+    nvm_dir: "/home/{{ yvy_user }}/.nvm"
+    node_version: "18"
 
   tasks:
     - name: Instalar dependencias de runtime baremetal
@@ -17,10 +19,9 @@
           - python3
           - python3-venv
           - python3-pip
-          - nodejs
-          - npm
           - redis-server
           - sqlite3
+          - curl
         state: present
 
     - name: Garantir Redis ativo
@@ -28,6 +29,57 @@
         name: redis-server
         state: started
         enabled: true
+
+    - name: Garantir swap para VM 1GB
+      ansible.builtin.command:
+        cmd: |
+          swapon --show | grep -q /swapfile || {
+            fallocate -l 2G /swapfile &&
+            chmod 600 /swapfile &&
+            mkswap /swapfile &&
+            swapon /swapfile &&
+            echo '/swapfile none swap sw 0 0' >> /etc/fstab
+          }
+        warn: false
+      changed_when: false
+
+    - name: Verificar se nvm esta instalado
+      ansible.builtin.stat:
+        path: "{{ nvm_dir }}/nvm.sh"
+      register: nvm_installed
+
+    - name: Instalar nvm
+      when: not nvm_installed.stat.exists
+      ansible.builtin.shell:
+        cmd: |
+          curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+        args:
+          creates: "{{ nvm_dir }}/nvm.sh"
+      become_user: "{{ yvy_user }}"
+
+    - name: Instalar Node {{ node_version }} via nvm
+      ansible.builtin.shell:
+        cmd: |
+          export NVM_DIR="{{ nvm_dir }}"
+          [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+          nvm install {{ node_version }}
+          nvm alias default {{ node_version }}
+        args:
+          executable: /bin/bash
+      become_user: "{{ yvy_user }}"
+      register: node_install
+      changed_when: "'already installed' not in node_install.stdout"
+
+    - name: Obter caminho do Node bin
+      ansible.builtin.shell:
+        cmd: |
+          export NVM_DIR="{{ nvm_dir }}"
+          [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+          which node
+        executable: /bin/bash
+      become_user: "{{ yvy_user }}"
+      register: node_path_result
+      changed_when: false
 
     - name: Criar diretorio da aplicacao
       ansible.builtin.file:
@@ -52,6 +104,14 @@
       become_user: "{{ yvy_user }}"
       args:
         creates: "{{ app_dir }}/.env"
+
+    - name: Configurar CORS_ORIGINS no .env
+      ansible.builtin.lineinfile:
+        path: "{{ app_dir }}/.env"
+        regexp: "^CORS_ORIGINS=.*"
+        line: "CORS_ORIGINS=http://{{ ansible_host }}:5001,http://localhost:5001"
+        create: true
+      become_user: "{{ yvy_user }}"
 
     - name: Rodar setup local (venv + node_modules)
       ansible.builtin.command:
