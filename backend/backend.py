@@ -14,6 +14,7 @@ import zipfile
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
+from functools import lru_cache
 from multiprocessing import cpu_count
 from secrets import compare_digest
 from threading import Lock
@@ -28,6 +29,10 @@ from quart_cors import cors
 import db_sqlite
 
 load_dotenv()
+
+# Redis cache TTL (seconds)
+CACHE_TTL_DEFAULT = 300  # 5 min
+CACHE_TTL_FIRMS = 60     # 1 min (frequently updated)
 
 BRAZIL_BOUNDS = {
     "min_lat": -34.0,
@@ -359,10 +364,15 @@ async def _fetch_firms_data(global_sync: bool = False):
             await db_sqlite.bulk_upsert_fires(docs)
         total_count += count
 
+    # Update sync timestamp
     try:
         await redis_client.set("fires:last_sync", datetime.datetime.now(timezone.utc).isoformat())
     except Exception:
         pass
+    
+    # Invalidate fires cache
+    await cache_delete("fires:*")
+    logger.debug("Fires cache invalidated")
 
     logger.info("FIRMS sync complete.", extra={"event": "firms_sync_complete", "details": {"records": total_count, "global": global_sync}})
     return total_count
@@ -417,6 +427,15 @@ async def get_fires():
     sw_lat = request.args.get("sw_lat")
     sw_lng = request.args.get("sw_lng")
 
+    # Build cache key from bbox
+    cache_key = f"fires:{ne_lat or 'global'}:{ne_lng or ''}:{sw_lat or ''}:{sw_lng or ''}"
+    
+    # Try cache first
+    cached = await cache_get(cache_key)
+    if cached:
+        logger.debug(f"Cache hit: {cache_key}")
+        return jsonify(json.loads(cached))
+
     if ne_lat and ne_lng and sw_lat and sw_lng:
         try:
             ne_lat = float(ne_lat)
@@ -438,7 +457,14 @@ async def get_fires():
             last_sync = last_sync_raw.decode() if isinstance(last_sync_raw, bytes) else last_sync_raw
     except Exception:
         pass
-    return jsonify({"fires": data, "last_sync": last_sync})
+    
+    response = {"fires": data, "last_sync": last_sync}
+    
+    # Cache response
+    await cache_set(cache_key, json.dumps(response), CACHE_TTL_FIRMS)
+    logger.debug(f"Cache set: {cache_key}")
+    
+    return jsonify(response)
 
 
 @app.route("/api/admin/firms/sync", methods=["POST"])
