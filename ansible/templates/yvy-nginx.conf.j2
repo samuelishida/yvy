@@ -1,9 +1,11 @@
-# Yvy nginx config — HTTP block
-# After SSL cert is obtained, certbot --nginx adds the HTTPS block and redirect.
+# Yvy nginx config — Phase 1: HTTP only
+# After DNS points here and cert is obtained, run:
+#   sudo certbot --nginx -d {{ domain }} -d www.{{ domain }}
+# Certbot will automatically add the HTTPS server block and HTTP→HTTPS redirect.
 
 server {
     listen 80;
-    server_name {{ domain }} www.{{ domain }};
+    server_name {{ domain }} www.{{ domain }} _;
     root {{ app_dir }}/frontend/build;
     index index.html;
 
@@ -11,30 +13,6 @@ server {
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
-
-    # Redirect HTTP to HTTPS (active after certbot --nginx runs)
-    location / {
-        return 301 https://$host$request_uri;
-    }
-}
-
-server {
-    listen 443 ssl http2;
-    server_name {{ domain }} www.{{ domain }};
-    root {{ app_dir }}/frontend/build;
-    index index.html;
-
-    # SSL — certbot --nginx fills these in after cert is obtained
-    ssl_certificate /etc/letsencrypt/live/{{ domain }}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/{{ domain }}/privkey.pem;
-
-    # Modern TLS
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers off;
-
-    # HSTS
-    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
 
     # Gzip compression
     gzip on;

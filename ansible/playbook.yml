@@ -180,42 +180,9 @@
       retries: 15
       delay: 5
 
-    - name: Deploy HTTP-only nginx config (phase 1)
-      ansible.builtin.copy:
-        content: |
-          server {
-              listen 80;
-              server_name {{ domain }} www.{{ domain }};
-              root {{ app_dir }}/frontend/build;
-              index index.html;
-
-              location /.well-known/acme-challenge/ {
-                  root /var/www/certbot;
-              }
-
-              gzip on;
-              gzip_vary on;
-              gzip_min_length 1024;
-              gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json application/javascript;
-
-              location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-                  expires 1y;
-                  add_header Cache-Control "public, immutable";
-              }
-
-              location /api/ {
-                  proxy_pass http://127.0.0.1:5000;
-                  proxy_http_version 1.1;
-                  proxy_set_header Host $host;
-                  proxy_set_header X-Real-IP $remote_addr;
-                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto $scheme;
-              }
-
-              location / {
-                  try_files $uri $uri/ /index.html;
-              }
-          }
+    - name: Deploy nginx config (HTTP-only, phase 1)
+      ansible.builtin.template:
+        src: yvy-nginx.conf.j2
         dest: /etc/nginx/sites-available/yvy
         owner: root
         group: root
@@ -229,10 +196,15 @@
         state: link
       notify: reload nginx
 
-    - name: Remover site default do nginx
+    - name: Remover configs obsoletas do nginx
       ansible.builtin.file:
-        path: /etc/nginx/sites-enabled/default
+        path: "{{ item }}"
         state: absent
+      loop:
+        - /etc/nginx/sites-enabled/default
+        - /etc/nginx/sites-enabled/yvy-temp
+        - /etc/nginx/sites-available/yvy-temp
+        - /etc/nginx/sites-available/yvy-ssl
       notify: reload nginx
 
     - name: Solicitar certificado SSL Let's Encrypt
@@ -246,17 +218,14 @@
             --non-interactive \
             -d "{{ domain }}" \
             -d "www.{{ domain }}"
+        creates: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
       ignore_errors: true
       register: cert_result
 
-    - name: Deploy HTTPS nginx config (phase 2, if cert obtained)
+    - name: Ativar HTTPS via certbot (phase 2, if cert obtained)
       when: cert_result is defined and cert_result.rc is defined and cert_result.rc == 0
-      ansible.builtin.template:
-        src: yvy-nginx.conf.j2
-        dest: /etc/nginx/sites-available/yvy
-        owner: root
-        group: root
-        mode: '0644'
+      ansible.builtin.shell:
+        cmd: certbot --nginx -d {{ domain }} -d www.{{ domain }} --non-interactive
       notify: reload nginx
 
     - name: Aviso se SSL falhou (DNS nao aponta para esta VM)

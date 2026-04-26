@@ -1,4 +1,4 @@
-﻿also add https://yvy.app.br/ to nginx#!/bin/bash
+﻿#!/bin/bash
 # Yvy Frontend Nginx Deployment Script with SSL
 # Replaces Node.js Express with Nginx for 10x performance + 200MB RAM savings
 # Includes Let's Encrypt SSL setup (two-phase: HTTP-first, then HTTPS)
@@ -27,7 +27,7 @@ echo "Configuring nginx (HTTP-only for certbot)..."
 sudo tee /etc/nginx/sites-available/yvy > /dev/null << 'NGINX_HTTP'
 server {
     listen 80;
-    server_name yvy.app.br www.yvy.app.br;
+    server_name yvy.app.br www.yvy.app.br _;
     root /opt/yvy/frontend/build;
     index index.html;
 
