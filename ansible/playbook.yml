@@ -197,14 +197,14 @@
       changed_when: false
 
     - name: Deploy nginx config (HTTPS with HTTP redirect)
+      vars:
+        api_key: "{{ api_key_result.stdout }}"
       ansible.builtin.template:
         src: yvy-nginx.conf.j2
         dest: /etc/nginx/sites-available/yvy
         owner: root
         group: root
         mode: '0644'
-        vars:
-          api_key: "{{ api_key_result.stdout }}"
       notify: reload nginx
 
     - name: Habilitar site nginx
