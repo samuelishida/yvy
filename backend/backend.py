@@ -278,6 +278,38 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 redis_client: aioredis.Redis | None = None
 
 
+async def cache_get(key: str):
+    """Get value from Redis cache."""
+    if not redis_client:
+        return None
+    try:
+        return await redis_client.get(key)
+    except Exception:
+        return None
+
+
+async def cache_set(key: str, value, ttl: int = CACHE_TTL_DEFAULT):
+    """Set value in Redis cache with TTL."""
+    if not redis_client:
+        return
+    try:
+        await redis_client.setex(key, ttl, value)
+    except Exception:
+        pass
+
+
+async def cache_delete(pattern: str):
+    """Delete cache keys matching pattern."""
+    if not redis_client:
+        return
+    try:
+        keys = await redis_client.keys(pattern)
+        if keys:
+            await redis_client.delete(*keys)
+    except Exception:
+        pass
+
+
 @app.before_serving
 async def startup():
     global redis_client, _news_sync_task
