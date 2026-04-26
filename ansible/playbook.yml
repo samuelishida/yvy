@@ -130,6 +130,16 @@
         chdir: "{{ app_dir }}"
       become_user: "{{ yvy_user }}"
 
+    - name: Build frontend (produzir static build/)
+      ansible.builtin.shell:
+        cmd: |
+          export NVM_DIR="{{ nvm_dir }}"
+          [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+          cd {{ app_dir }}/frontend
+          npm run build
+        executable: /bin/bash
+      become_user: "{{ yvy_user }}"
+
     - name: Criar unidade systemd do backend
       ansible.builtin.template:
         src: yvy-backend.service.j2
