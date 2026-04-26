@@ -739,11 +739,12 @@ async def get_air_quality():
                 data2 = resp2.json()
                 if data2.get("status") == "ok":
                     d = data2["data"]
+                    city = await reverse_geocode(float(lat), float(lon)) if lat and lon else "Brasil"
                     return jsonify({
                         "aqi": d.get("aqi"),
                         "pm25": d.get("iaqi", {}).get("pm25", {}).get("v"),
                         "humidity": d.get("iaqi", {}).get("h", {}).get("v"),
-                        "city": "Brasil",
+                        "city": city,
                     })
             return jsonify({"aqi": None})
     except Exception:
