@@ -190,6 +190,12 @@
       retries: 15
       delay: 5
 
+    - name: Obter API_KEY do .env para nginx
+      ansible.builtin.shell:
+        cmd: grep '^API_KEY=' {{ app_dir }}/.env | cut -d= -f2
+      register: api_key_result
+      changed_when: false
+
     - name: Deploy nginx config (HTTPS with HTTP redirect)
       ansible.builtin.template:
         src: yvy-nginx.conf.j2
@@ -197,6 +203,8 @@
         owner: root
         group: root
         mode: '0644'
+        vars:
+          api_key: "{{ api_key_result.stdout }}"
       notify: reload nginx
 
     - name: Habilitar site nginx
