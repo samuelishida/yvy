@@ -63,8 +63,7 @@
           [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
           nvm install {{ node_version }}
           nvm alias default {{ node_version }}
-        args:
-          executable: /bin/bash
+        executable: /bin/bash
       become_user: "{{ yvy_user }}"
       register: node_install
       changed_when: "'already installed' not in node_install.stdout"
