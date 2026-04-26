@@ -243,12 +243,22 @@
         enabled: false
       ignore_errors: true
 
-    - name: Testar HTTP
+    - name: Testar backend health
       ansible.builtin.uri:
-        url: "http://{{ ansible_host }}/"
+        url: "http://localhost:5000/health"
         status_code: 200
-      register: http_health
-      until: http_health.status == 200
+      register: backend_health_check
+      until: backend_health_check.status == 200
+      retries: 5
+      delay: 5
+
+    - name: Testar frontend via nginx HTTPS
+      ansible.builtin.uri:
+        url: "https://{{ domain }}/"
+        status_code: 200
+        validate_certs: false
+      register: frontend_health_check
+      until: frontend_health_check.status == 200
       retries: 5
       delay: 5
 
