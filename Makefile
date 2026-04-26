@@ -13,7 +13,18 @@ frontend:
 	bash scripts/run-frontend.sh
 
 test:
-	cd backend && $(shell [ -f venv/bin/python ] && echo venv/bin/python || echo $$HOME/.local/share/yvy-venv/bin/python) test_sqlite_manual.py
+	cd backend && bash -c '\
+		if [ -f "venv/Scripts/python.exe" ]; then \
+			exec venv/Scripts/python.exe test_sqlite_manual.py; \
+		elif [ -f "venv/bin/python" ]; then \
+			exec venv/bin/python test_sqlite_manual.py; \
+		elif [ -f "$$HOME/.local/share/yvy-venv/Scripts/python.exe" ]; then \
+			exec "$$HOME/.local/share/yvy-venv/Scripts/python.exe" test_sqlite_manual.py; \
+		elif [ -f "$$HOME/.local/share/yvy-venv/bin/python" ]; then \
+			exec "$$HOME/.local/share/yvy-venv/bin/python" test_sqlite_manual.py; \
+		else \
+			echo "No venv python found"; exit 1; \
+		fi'
 
 sqlite-access:
 	@sqlite3 backend/data/yvy.db ".tables"

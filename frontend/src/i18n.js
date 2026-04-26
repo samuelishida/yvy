@@ -47,7 +47,7 @@ const translations = {
     dashboard: {
       title: 'Dashboard de Desmatamento',
       subtitle: 'Dados PRODES · INPE — Cobertura florestal do Brasil',
-      mongoLive: 'MongoDB · Ao vivo',
+      mongoLive: 'SQLite · Ao vivo',
       loading: 'Carregando dados do banco...',
       connectionError: 'Erro ao conectar ao backend',
       errorHint: 'Verifique se o backend está rodando e os dados foram ingeridos com',
@@ -117,7 +117,7 @@ const translations = {
     dashboard: {
       title: 'Deforestation Dashboard',
       subtitle: 'PRODES · INPE Data — Brazil Forest Coverage',
-      mongoLive: 'MongoDB · Live',
+      mongoLive: 'SQLite · Live',
       loading: 'Loading data from database...',
       connectionError: 'Error connecting to backend',
       errorHint: 'Make sure the backend is running and data has been ingested with',

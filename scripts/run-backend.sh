@@ -5,13 +5,27 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# --- OS-aware venv paths ---
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+        VENV_BIN="Scripts"
+        VENV_PY="Scripts/python.exe"
+        VENV_HYPERCORN="Scripts/hypercorn.exe"
+        ;;
+    *)
+        VENV_BIN="bin"
+        VENV_PY="bin/python"
+        VENV_HYPERCORN="bin/hypercorn"
+        ;;
+esac
+
 # Detect venv location (project dir or home fallback for NTFS/exFAT)
 VENV_DIR="$PROJECT_DIR/backend/venv"
-if [ ! -f "$VENV_DIR/bin/python" ]; then
+if [ ! -f "$VENV_DIR/$VENV_PY" ]; then
     VENV_DIR="${YVY_VENV:-$HOME/.local/share/yvy-venv}"
 fi
 
-if [ ! -f "$VENV_DIR/bin/python" ]; then
+if [ ! -f "$VENV_DIR/$VENV_PY" ]; then
     echo "Virtual environment not found. Run: make setup"
     exit 1
 fi
@@ -41,10 +55,10 @@ echo ""
 # Run with hypercorn (production-like) or python directly (dev)
 if [ "${DEV:-1}" = "1" ]; then
     echo "Running in DEV mode (python backend.py)..."
-    exec "$VENV_DIR/bin/python" backend.py
+    exec "$VENV_DIR/$VENV_PY" backend.py
 else
     echo "Running in PROD mode (hypercorn)..."
-    exec "$VENV_DIR/bin/hypercorn" backend:app \
+    exec "$VENV_DIR/$VENV_HYPERCORN" backend:app \
         --bind 0.0.0.0:5000 \
         --workers 1 \
         --worker-class asyncio \

@@ -352,7 +352,7 @@ async def fetch_and_save_news():
             logger.info("No articles found.")
             return []
 
-        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        now_iso = datetime.now(timezone.utc).isoformat()
 
         # Normalize API articles to consistent dict keys
         for a in articles:

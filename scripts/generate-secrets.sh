@@ -11,8 +11,24 @@ fi
 
 echo "Gerando .env com secrets aleatórios..."
 
+# Cross-platform Python detection
+PYTHON_CMD=""
+for cmd in python3 python py; do
+  if command -v "$cmd" &>/dev/null; then
+    major=$("$cmd" -c "import sys; print(sys.version_info.major)" 2>/dev/null || echo 0)
+    if [ "$major" -ge 3 ]; then
+      PYTHON_CMD="$cmd"
+      break
+    fi
+  fi
+done
+if [ -z "$PYTHON_CMD" ]; then
+  echo "ERROR: Python 3 not found."
+  exit 1
+fi
+
 generate_secret() {
-  python3 -c "import secrets; print(secrets.token_urlsafe(${1:-32}))"
+  "$PYTHON_CMD" -c "import secrets; print(secrets.token_urlsafe(${1:-32}))"
 }
 
 cat > "$ENV_FILE" <<EOF

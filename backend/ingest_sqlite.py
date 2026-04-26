@@ -3,8 +3,6 @@ import asyncio
 import datetime
 import logging
 import os
-import sys
-from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import cpu_count
 from xml.etree import ElementTree as ET
 import zipfile
@@ -85,8 +83,8 @@ def parse_tif(file_path):
     return coordinates
 
 
-def process_coordinate_batch(args):
-    coordinates_batch, color_legend = args
+async def process_coordinate_batch_async(coordinates_batch, color_legend):
+    """Process a batch of coordinates asynchronously."""
     batch_data = []
     for coord in coordinates_batch:
         value = coord["value"]
@@ -104,7 +102,7 @@ def process_coordinate_batch(args):
             batch_data.append(data)
 
     if batch_data:
-        asyncio.run(db_sqlite.bulk_upsert_deforestation(batch_data))
+        await db_sqlite.bulk_upsert_deforestation(batch_data)
         logger.info("Batch documents upserted: %d", len(batch_data))
 
 
@@ -116,15 +114,17 @@ def split_into_batches(items, batch_count):
     return [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
 
 
-def insert_data_parallel(color_legend, coordinates):
+async def insert_data_parallel(color_legend, coordinates):
     num_processes = max(1, cpu_count() // 2 + 2)
     coordinate_batches = split_into_batches(coordinates, num_processes)
     if not coordinate_batches:
         logger.info("Skipping ingestion: no coordinates to process.")
         return
 
-    with ThreadPoolExecutor(max_workers=len(coordinate_batches)) as executor:
-        list(executor.map(process_coordinate_batch, [(batch, color_legend) for batch in coordinate_batches]))
+    await asyncio.gather(*(
+        process_coordinate_batch_async(batch, color_legend)
+        for batch in coordinate_batches
+    ))
 
 
 async def main():
@@ -139,7 +139,7 @@ async def main():
 
     if existing_count == 0:
         logger.info("Ingesting %d coordinates into SQLite...", len(coordinates))
-        insert_data_parallel(color_legend, coordinates)
+        await insert_data_parallel(color_legend, coordinates)
         final_count = (await db_sqlite.get_stats())["deforestation"]
         logger.info("Ingestion complete. Total records: %d", final_count)
     else:

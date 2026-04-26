@@ -9,16 +9,10 @@ import logging
 import os
 import sys
 import time
-import xml.etree.ElementTree as ET
-import zipfile
 from collections import defaultdict, deque
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
-from functools import lru_cache
-from multiprocessing import cpu_count
 from secrets import compare_digest
 from threading import Lock
-from urllib.parse import quote_plus
 
 import httpx
 import redis.asyncio as aioredis
@@ -67,6 +61,7 @@ _NEWS_CACHE_TTL_SECONDS = 60 * 5  # 5 minutes server-side
 
 # News sync background task
 _news_sync_task: asyncio.Task | None = None
+_fires_sync_task: asyncio.Task | None = None
 
 
 class JsonFormatter(logging.Formatter):
@@ -134,11 +129,6 @@ def parse_cors_origins():
     return origins or ["http://localhost:5001", "http://127.0.0.1:5001"]
 
 
-def build_mongo_uri():
-    """Deprecated: kept for compatibility with ingest.py."""
-    return os.getenv("MONGO_URI", "sqlite")
-
-
 def validate_coordinate(name, value, minimum, maximum):
     if not minimum <= value <= maximum:
         abort(400, description=f"{name} must be between {minimum} and {maximum}.")
@@ -163,9 +153,6 @@ def split_into_batches(items, batch_count):
     batch_count = max(1, min(batch_count, len(items)))
     chunk_size = (len(items) + batch_count - 1) // batch_count
     return [items[index:index + chunk_size] for index in range(0, len(items), chunk_size)]
-
-
-_TRUSTED_NETWORKS = _parse_trusted_networks if False else None
 
 
 def _parse_trusted_networks():
@@ -279,11 +266,14 @@ redis_client: aioredis.Redis | None = None
 
 
 async def cache_get(key: str):
-    """Get value from Redis cache."""
+    """Get value from Redis cache. Returns decoded string or None."""
     if not redis_client:
         return None
     try:
-        return await redis_client.get(key)
+        val = await redis_client.get(key)
+        if val is not None and isinstance(val, bytes):
+            val = val.decode()
+        return val
     except Exception:
         # Redis unavailable - skip cache
         return None
@@ -301,11 +291,13 @@ async def cache_set(key: str, value, ttl: int = CACHE_TTL_DEFAULT):
 
 
 async def cache_delete(pattern: str):
-    """Delete cache keys matching pattern."""
+    """Delete cache keys matching pattern using SCAN (production-safe)."""
     if not redis_client:
         return
     try:
-        keys = await redis_client.keys(pattern)
+        keys = []
+        async for key in redis_client.scan_iter(match=pattern, count=100):
+            keys.append(key)
         if keys:
             await redis_client.delete(*keys)
     except Exception:
@@ -315,7 +307,7 @@ async def cache_delete(pattern: str):
 
 @app.before_serving
 async def startup():
-    global redis_client, _news_sync_task
+    global redis_client, _news_sync_task, _fires_sync_task
     await db_sqlite.init_db()
     logger.info("SQLite connection verified.", extra={"event": "sqlite_connect_ok"})
     
@@ -328,8 +320,8 @@ async def startup():
         redis_client = None
         logger.warning(f"Redis unavailable - caching disabled. Error: {e}", extra={"event": "redis_connect_failed"})
     
-    asyncio.get_event_loop().create_task(_fires_sync_loop())
-    _news_sync_task = asyncio.get_event_loop().create_task(_news_sync_loop())
+    _fires_sync_task = asyncio.create_task(_fires_sync_loop())
+    _news_sync_task = asyncio.create_task(_news_sync_loop())
 
 
 @app.after_serving
@@ -339,13 +331,14 @@ async def shutdown():
         await redis_client.close()
     from news_sqlite import close_http_client
     await close_http_client()
-    global _news_sync_task
-    if _news_sync_task:
-        _news_sync_task.cancel()
-        try:
-            await _news_sync_task
-        except asyncio.CancelledError:
-            pass
+    global _news_sync_task, _fires_sync_task
+    for task in (_news_sync_task, _fires_sync_task):
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 async def _fetch_firms_data(global_sync: bool = False):
@@ -409,10 +402,7 @@ async def _fetch_firms_data(global_sync: bool = False):
         total_count += count
 
     # Update sync timestamp
-    try:
-        await redis_client.set("fires:last_sync", datetime.datetime.now(timezone.utc).isoformat())
-    except Exception:
-        pass
+    await cache_set("fires:last_sync", datetime.datetime.now(timezone.utc).isoformat(), ttl=CACHE_TTL_DEFAULT * 12)
     
     # Invalidate fires cache
     await cache_delete("fires:*")
@@ -429,9 +419,9 @@ async def _fires_sync_loop():
         try:
             should_sync = True
             try:
-                last_sync_str = await redis_client.get("fires:last_sync")
+                last_sync_str = await cache_get("fires:last_sync")
                 if last_sync_str:
-                    last_sync = datetime.datetime.fromisoformat(last_sync_str.decode())
+                    last_sync = datetime.datetime.fromisoformat(last_sync_str)
                     elapsed_hours = (datetime.datetime.now(datetime.UTC) - last_sync).total_seconds() / 3600
                     if elapsed_hours < FIRMS_SYNC_INTERVAL_HOURS:
                         should_sync = False
@@ -463,8 +453,8 @@ async def _news_sync_loop():
 
 @app.route("/api/fires")
 async def get_fires():
-    await enforce_rate_limit()
     enforce_api_auth()
+    await enforce_rate_limit()
 
     ne_lat = request.args.get("ne_lat")
     ne_lng = request.args.get("ne_lng")
@@ -494,13 +484,7 @@ async def get_fires():
         sw_lat, ne_lat, sw_lng, ne_lng = -90.0, 90.0, -180.0, 180.0
 
     data = await db_sqlite.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit=MAX_RESULTS)
-    last_sync = None
-    try:
-        last_sync_raw = await redis_client.get("fires:last_sync")
-        if last_sync_raw:
-            last_sync = last_sync_raw.decode() if isinstance(last_sync_raw, bytes) else last_sync_raw
-    except Exception:
-        pass
+    last_sync = await cache_get("fires:last_sync")
     
     response = {"fires": data, "last_sync": last_sync}
     
@@ -520,13 +504,7 @@ async def trigger_firms_sync():
     logger.info("Manual FIRMS sync triggered.", extra={"event": "firms_manual_trigger"})
     count = await _fetch_firms_data()
     
-    last_sync = None
-    try:
-        last_sync_raw = await redis_client.get("fires:last_sync")
-        if last_sync_raw:
-            last_sync = last_sync_raw.decode() if isinstance(last_sync_raw, bytes) else last_sync_raw
-    except Exception:
-        pass
+    last_sync = await cache_get("fires:last_sync")
     
     return jsonify({
         "status": "success",
@@ -619,89 +597,6 @@ async def internal_error(error):
     return jsonify({"error": "Internal server error"}), 500
 
 
-def download_and_extract_data():
-    tif_file_path = "/app/prodes_brasil_2023.tif"
-    qml_file_path = "/app/prodes_brasil_2023.qml"
-    zip_file_url = "https://terrabrasilis.dpi.inpe.br/download/dataset/brasil-prodes/raster/prodes_brasil_2023.zip"
-    zip_file_path = "/app/prodes_brasil_2023.zip"
-
-    if not (os.path.isfile(tif_file_path) and os.path.isfile(qml_file_path)):
-        logger.info(
-            "Dataset files not found. Downloading archive.",
-            extra={"event": "dataset_download_start", "details": {"archive_url": zip_file_url}},
-        )
-        with httpx.Client(timeout=120) as client:
-            with client.stream("GET", zip_file_url) as resp:
-                if resp.status_code == 200:
-                    with open(zip_file_path, "wb") as zip_file:
-                        for chunk in resp.iter_bytes(chunk_size=1024):
-                            zip_file.write(chunk)
-                    with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
-                        zip_ref.extractall("/app")
-                    os.remove(zip_file_path)
-                    logger.info(
-                        "Dataset archive downloaded successfully.",
-                        extra={"event": "dataset_download_complete", "details": {"target_dir": "/app"}},
-                    )
-                else:
-                    logger.error(
-                        "Failed to download dataset archive.",
-                        extra={
-                            "event": "dataset_download_failed",
-                            "status_code": resp.status_code,
-                            "details": {"archive_url": zip_file_url},
-                        },
-                    )
-    else:
-        logger.info(
-            "Dataset files already available locally.",
-            extra={"event": "dataset_already_present", "details": {"target_dir": "/app"}},
-        )
-
-
-def parse_qml(file_path):
-    tree = ET.parse(file_path)
-    root = tree.getroot()
-    color_legend = {}
-
-    for entry in root.findall(".//paletteEntry"):
-        value = entry.get("value")
-        color = entry.get("color")
-        label = entry.get("label")
-        if value and color and label:
-            color_legend[int(value)] = {
-                "color": color,
-                "label": label,
-            }
-
-    return color_legend
-
-
-def parse_tif(file_path):
-    try:
-        import rasterio
-    except Exception:
-        raise
-
-    coordinates = []
-    with rasterio.open(file_path) as dataset:
-        band1 = dataset.read(1)
-        rows, cols = band1.shape
-
-        for row in range(0, rows, 50):
-            for col in range(0, cols, 50):
-                value = band1[row, col]
-                if value != dataset.nodata:
-                    lon, lat = dataset.xy(row, col)
-                    coordinates.append({
-                        "value": value,
-                        "lat": lat,
-                        "lon": lon,
-                    })
-
-    return coordinates
-
-
 @app.route("/")
 async def home():
     return jsonify({"message": "API do backend de desmatamento"})
@@ -709,8 +604,8 @@ async def home():
 
 @app.route("/api/news", methods=["GET"])
 async def get_news():
-    await enforce_rate_limit()
     enforce_api_auth()
+    await enforce_rate_limit()
 
     try:
         page = int(request.args.get("page", 1))
@@ -847,8 +742,8 @@ async def handle_exception(error):
 
 @app.route("/api/data")
 async def get_data():
-    await enforce_rate_limit()
     enforce_api_auth()
+    await enforce_rate_limit()
 
     ne_lat = request.args.get("ne_lat")
     ne_lng = request.args.get("ne_lng")
@@ -894,11 +789,9 @@ def _shutdown_handler(signum, frame):
     sys.exit(0)
 
 
-import signal
-signal.signal(signal.SIGTERM, _shutdown_handler)
-signal.signal(signal.SIGINT, _shutdown_handler)
-
-
 if __name__ == "__main__":
+    import signal
+    signal.signal(signal.SIGTERM, _shutdown_handler)
+    signal.signal(signal.SIGINT, _shutdown_handler)
     if os.getenv("DEV", "0") == "1":
         app.run(host="0.0.0.0", port=5000)
