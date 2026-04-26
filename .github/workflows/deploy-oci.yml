@@ -50,19 +50,12 @@ jobs:
             echo "Trying compartment: ${COMPARTMENT:0:20}..."
             INSTANCES=$(oci compute instance list -c "$COMPARTMENT" --lifecycle-state RUNNING \
               --query 'data[?"display-name"==`yvy-server`]' --raw-output 2>/dev/null || echo "[]")
-            INSTANCE_ID=$(echo "$INSTANCES" | python3 -c "
-import sys,json
-try:
-    data = json.load(sys.stdin)
-    if data:
-        print(data[0]['id'])
-except: pass
-" 2>/dev/null || echo "")
+            INSTANCE_ID=$(echo "$INSTANCES" | python3 -c 'import sys,json; data=json.load(sys.stdin); print(data[0]["id"] if data else "")' 2>/dev/null || echo "")
             [ -n "$INSTANCE_ID" ] && break
           done
 
           if [ -z "$INSTANCE_ID" ]; then
-            echo "❌ No running yvy-server found in any compartment."
+            echo "No running yvy-server found in any compartment."
             echo "Available VMs:"
             oci compute instance list -c "${{ secrets.OCI_TENANCY_OCID }}" --all \
               --query 'data[*].{Name:"display-name", State:"lifecycle-state"}' --output table 2>/dev/null || true
@@ -82,7 +75,7 @@ except: pass
           PUBLIC_IP=$(oci network vnic get --vnic-id "$VNIC_ID" --query 'data."public-ip"' --raw-output 2>/dev/null || echo "")
 
           if [ -z "$PUBLIC_IP" ]; then
-            echo "❌ Could not get public IP for instance $INSTANCE_ID"
+            echo "Could not get public IP for instance $INSTANCE_ID"
             exit 1
           fi
 
