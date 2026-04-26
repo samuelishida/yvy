@@ -1,0 +1,343 @@
+# OCI CLI Skill: Check VM Metrics
+
+## Overview
+This skill helps you check Oracle Cloud Infrastructure (OCI) VM metrics and manage OCI resources using the OCI CLI on Windows.
+
+## Quick Command Reference
+
+### 🔧 Setup & Configuration
+| Task | Command |
+| :--- | :--- |
+| **Get command help** | `oci --help` <br> `oci compute instance -h` |
+| **Get your namespace** | `oci os ns get` |
+| **List all compartments** | `oci iam compartment list -c $T` |
+| **List IAM users** | `oci iam user list -c $T` |
+
+### 💻 Compute & Storage
+| Task | Command |
+| :--- | :--- |
+| **List instances** | `oci compute instance list -c $C` |
+| **Get instance details** | `oci compute instance get --instance-id <INSTANCE_OCID>` |
+| **List boot volumes** | `oci bv boot-volume list -c $C` |
+| **List volume attachments** | `oci compute volume-attachment list -c $C` |
+
+### 🌐 Networking
+| Task | Command |
+| :--- | :--- |
+| **List VCNs** | `oci network vcn list -c $C` |
+| **List subnets** | `oci network subnet list -c $C` |
+| **List public IPs** | `oci network public-ip list -c $C` |
+
+### 🗄️ Object Storage
+| Task | Command |
+| :--- | :--- |
+| **List buckets** | `oci os bucket list -ns <NAMESPACE> -c $C` |
+| **List objects in bucket** | `oci os object list -ns <NAMESPACE> -bn <BUCKET_NAME>` |
+
+### 📦 Resource Manager (IaC)
+| Task | Command |
+| :--- | :--- |
+| **Create an apply job** | `oci resource-manager job create-apply-job --stack-id <STACK_OCID>` |
+| **Get job status** | `oci resource-manager job get --job-id <JOB_ID>` |
+
+### 🔍 Checking Status of OCI Resources
+| Resource | Status Check Command |
+| :--- | :--- |
+| **Compute Instance** | `oci compute instance get --instance-id <OCID> --query 'data."lifecycle-state"'` |
+| **Block Volume** | `oci bv volume get --volume-id <OCID> --query 'data."lifecycle-state"'` |
+| **Resource Manager Job** | `oci resource-manager job get --job-id <JOB_ID> --query 'data."lifecycle-state"'` |
+
+## Prerequisites
+
+### 1. OCI CLI Installation
+```powershell
+# Download and install OCI CLI
+wget https://oci-cli_latest.zip -OutFile oci-cli.zip
+Expand-Archive oci-cli.zip -DestinationPath $env:LOCALAPPDATA\oci
+$env:PATH += ";$env:LOCALAPPDATA\oci\bin"
+```
+
+### 2. Configure OCI CLI for Windows
+
+#### Update config file:
+```powershell
+# Create .oci directory if it doesn't exist
+New-Item -ItemType Directory -Force -Path ".oci"
+
+# Create config file
+@"
+[DEFAULT]
+user=<YOUR_USER_OCID>
+fingerprint=<YOUR_FINGERPRINT>
+key_file=<PATH_TO_OCI_API_KEY_PEM>
+tenancy=<YOUR_TENANCY_OCID>
+region=<YOUR_REGION>
+"@ | Out-File -FilePath ".oci\config" -Encoding utf8
+```
+
+#### Set environment variables:
+```powershell
+$env:OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING="True"
+$env:OCI_CONFIG_FILE=".oci\config"
+```
+
+### 3. SSH Key Configuration
+```powershell
+# Ensure SSH keys exist
+Test-Path ".ssh\oci_yvy"
+Test-Path ".ssh\oci_yvy.pub"
+
+# Copy to default location if needed
+Copy-Item ".ssh\oci_yvy" -Destination "$env:USERPROFILE\.ssh\oci_yvy" -Force
+Copy-Item ".ssh\oci_yvy.pub" -Destination "$env:USERPROFILE\.ssh\oci_yvy.pub" -Force
+```
+
+## Usage
+
+### Check VM Metrics (via Monitoring Service)
+
+```powershell
+# Setup variables
+$env:OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING="True"
+$T = "ocid1.tenancy.oc1..<YOUR_TENANCY_OCID>"
+$C = $T
+
+# List all VMs
+oci compute instance list -c $C | ConvertFrom-Json | ForEach-Object {
+  $_.data | ForEach-Object {
+    Write-Host "Name: $($_.'display-name') | State: $($_.'lifecycle-state') | Shape: $($_.shape)"
+  }
+}
+
+# Get VM Public IP
+$vnicAttachments = oci compute vnic-attachment list -c $C --instance-id <INSTANCE_OCID> | ConvertFrom-Json
+$vnicAttachments.data | ForEach-Object {
+  $vnic = oci network vnic get --vnic-id $_.'vnic-id' | ConvertFrom-Json
+  Write-Host "Public IP: $($vnic.data.'public-ip') | Private IP: $($vnic.data.'private-ip')"
+}
+
+# CPU Metrics (last 1 hour, 1-min intervals)
+oci monitoring metric-data summarize-metrics-data -c $C `
+  --namespace oci_computeagent `
+  --query-text "CpuUtilization[1m].mean()" | ConvertFrom-Json | ForEach-Object {
+  $_.data | ForEach-Object {
+    Write-Host "VM: $($_.dimensions.resourceDisplayName)"
+    $_.'aggregated-datapoints' | Select-Object -Last 5 | ForEach-Object {
+      Write-Host "  $($_.timestamp) -> $([math]::Round($_.value, 2))%"
+    }
+  }
+}
+
+# Memory Metrics
+oci monitoring metric-data summarize-metrics-data -c $C `
+  --namespace oci_computeagent `
+  --query-text "MemoryUtilization[1m].mean()" | ConvertFrom-Json | ForEach-Object {
+  $_.data | ForEach-Object {
+    Write-Host "VM: $($_.dimensions.resourceDisplayName)"
+    $_.'aggregated-datapoints' | Select-Object -Last 3 | ForEach-Object {
+      Write-Host "  $($_.timestamp) -> $([math]::Round($_.value, 2))%"
+    }
+  }
+}
+
+# Network Inbound
+oci monitoring metric-data summarize-metrics-data -c $C `
+  --namespace oci_computeagent `
+  --query-text "NetworksBytesIn[1m].mean()" | ConvertFrom-Json | ForEach-Object {
+  $_.data | ForEach-Object {
+    Write-Host "VM: $($_.dimensions.resourceDisplayName)"
+    $_.'aggregated-datapoints' | Select-Object -Last 3 | ForEach-Object {
+      Write-Host "  $($_.timestamp) -> $([math]::Round($_.value/1024, 2)) KB/s"
+    }
+  }
+}
+
+# Network Outbound
+oci monitoring metric-data summarize-metrics-data -c $C `
+  --namespace oci_computeagent `
+  --query-text "NetworksBytesOut[1m].mean()" | ConvertFrom-Json | ForEach-Object {
+  $_.data | ForEach-Object {
+    Write-Host "VM: $($_.dimensions.resourceDisplayName)"
+    $_.'aggregated-datapoints' | Select-Object -Last 3 | ForEach-Object {
+      Write-Host "  $($_.timestamp) -> $([math]::Round($_.value/1024, 2)) KB/s"
+    }
+  }
+}
+
+# Disk Read
+oci monitoring metric-data summarize-metrics-data -c $C `
+  --namespace oci_computeagent `
+  --query-text "DiskBytesRead[1m].mean()" | ConvertFrom-Json | ForEach-Object {
+  $_.data | ForEach-Object {
+    Write-Host "VM: $($_.dimensions.resourceDisplayName)"
+    $_.'aggregated-datapoints' | Select-Object -Last 3 | ForEach-Object {
+      Write-Host "  $($_.timestamp) -> $([math]::Round($_.value/1024, 2)) KB/s"
+    }
+  }
+}
+
+# Disk Written
+oci monitoring metric-data summarize-metrics-data -c $C `
+  --namespace oci_computeagent `
+  --query-text "DiskBytesWritten[1m].mean()" | ConvertFrom-Json | ForEach-Object {
+  $_.data | ForEach-Object {
+    Write-Host "VM: $($_.dimensions.resourceDisplayName)"
+    $_.'aggregated-datapoints' | Select-Object -Last 3 | ForEach-Object {
+      Write-Host "  $($_.timestamp) -> $([math]::Round($_.value/1024, 2)) KB/s"
+    }
+  }
+}
+
+# Load Average
+oci monitoring metric-data summarize-metrics-data -c $C `
+  --namespace oci_computeagent `
+  --query-text "LoadAverage[1m].mean()" | ConvertFrom-Json | ForEach-Object {
+  $_.data | ForEach-Object {
+    Write-Host "VM: $($_.dimensions.resourceDisplayName)"
+    $_.'aggregated-datapoints' | Select-Object -Last 3 | ForEach-Object {
+      Write-Host "  $($_.timestamp) -> $($_.value)"
+    }
+  }
+}
+
+# List all available metrics
+oci monitoring metric list -c $C --namespace oci_computeagent | ConvertFrom-Json |
+  ForEach-Object { $_.data | ForEach-Object { Write-Host "  $($_.name)" } }
+```
+
+### Get VM Information
+
+```powershell
+# Get VM details
+oci compute instance get --instance-id <INSTANCE_OCID>
+
+# List all VMs in compartment
+oci compute instance list -c $C | ConvertFrom-Json | ForEach-Object {
+  $_.data | ForEach-Object {
+    Write-Host "Name: $($_.'display-name') | State: $($_.'lifecycle-state') | Shape: $($_.shape) | ID: $($_.id)"
+  }
+}
+```
+
+### SSH into VM
+
+```powershell
+# SSH to VM
+ssh -i ".ssh\oci_yvy" ubuntu@<VM_PUBLIC_IP>
+```
+
+### Check VM Status
+
+```powershell
+# Get VM state
+oci compute instance get --instance-id <INSTANCE_OCID> | ConvertFrom-Json |
+  ForEach-Object { Write-Host "State: $($_.data.'lifecycle-state')" }
+```
+
+### 💡 Pro Tips for Using OCI CLI
+- **Use `--query` with JMESPath**: Filter output with `--query 'data[*].{id:id, name:"display-name"}'` (escape hyphens with backticks in PowerShell)
+- **Use `--output table`**: For cleaner formatted view
+- **Work with JSON**: Pass JSON files to commands: `oci compute instance launch --from-json file://instance-details.json`
+- **Use `--wait-for-state`**: Make CLI wait until a state is reached: `--wait-for-state RUNNING`
+- **Metrics via Monitoring**: Use `oci monitoring metric-data summarize-metrics-data` (NOT `oci compute instance metric-list` which doesn't exist)
+
+## Available Metrics (oci_computeagent namespace)
+- `CpuUtilization` — CPU usage percentage
+- `MemoryUtilization` — Memory usage percentage
+- `NetworksBytesIn` — Network inbound bytes
+- `NetworksBytesOut` — Network outbound bytes
+- `DiskBytesRead` — Disk read bytes
+- `DiskBytesWritten` — Disk written bytes
+- `DiskIopsRead` — Disk read IOPS
+- `DiskIopsWritten` — Disk write IOPS
+- `LoadAverage` — System load average
+- `MemoryAllocationStalls` — Memory allocation stalls
+
+## Troubleshooting
+
+### Authentication Errors
+```powershell
+# Check config file
+Get-Content "$env:USERPROFILE\.oci\config"
+
+# Verify API key file exists
+Test-Path "$env:USERPROFILE\.oci\sessions\DEFAULT\oci_api_key.pem"
+
+# Test authentication
+oci os ns get
+```
+
+### Time Skew Issues
+```powershell
+# Check system time and timezone
+Get-Date
+Get-TimeZone
+
+# Fix timezone if needed (run as admin)
+Set-TimeZone "E. South America Standard Time"   # Brazil
+Set-TimeZone "UTC"                               # UTC
+```
+
+### Permission Errors
+```powershell
+# Set permission warning suppression
+$env:OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING="True"
+```
+
+## Example: Complete Metrics Check Script
+
+```powershell
+function Check-OCIMetrics {
+    param(
+        [string]$CompartmentId,
+        [string]$Region = "sa-saopaulo-1"
+    )
+    
+    $env:OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING="True"
+    
+    try {
+        # List VMs
+        Write-Host "`n=== VMs ===" -ForegroundColor Cyan
+        $vms = oci compute instance list -c $CompartmentId | ConvertFrom-Json
+        $vms.data | ForEach-Object {
+            Write-Host "$($_.'display-name') | $($_.'lifecycle-state') | $($_.shape)"
+        }
+        
+        # CPU Summary
+        Write-Host "`n=== CPU Summary (last 1h) ===" -ForegroundColor Cyan
+        $cpu = oci monitoring metric-data summarize-metrics-data -c $CompartmentId `
+            --namespace oci_computeagent --query-text "CpuUtilization[1m].mean()" | ConvertFrom-Json
+        $cpu.data | ForEach-Object {
+            $vals = $_.'aggregated-datapoints'.value
+            $avg = ($vals | Measure-Object -Average).Average
+            $max = ($vals | Measure-Object -Maximum).Maximum
+            $min = ($vals | Measure-Object -Minimum).Minimum
+            Write-Host "$($_.dimensions.resourceDisplayName): Avg=$([math]::Round($avg,2))% Max=$([math]::Round($max,2))% Min=$([math]::Round($min,2))%"
+        }
+        
+        # Memory Summary
+        Write-Host "`n=== Memory Summary (last 1h) ===" -ForegroundColor Cyan
+        $mem = oci monitoring metric-data summarize-metrics-data -c $CompartmentId `
+            --namespace oci_computeagent --query-text "MemoryUtilization[1m].mean()" | ConvertFrom-Json
+        $mem.data | ForEach-Object {
+            $vals = $_.'aggregated-datapoints'.value
+            $avg = ($vals | Measure-Object -Average).Average
+            Write-Host "$($_.dimensions.resourceDisplayName): Avg=$([math]::Round($avg,2))%"
+        }
+        
+    } catch {
+        Write-Host "Error: $_" -ForegroundColor Red
+    }
+}
+
+# Usage
+Check-OCIMetrics -CompartmentId "ocid1.tenancy.oc1..<YOUR_TENANCY_OCID>"
+```
+
+## Notes
+
+- Always set `$env:OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING="True"` on Windows
+- Ensure SSH keys are properly configured for VM access
+- Keep your system time synchronized with OCI servers
+- Use the correct region for your VM (e.g., `sa-saopaulo-1` for Brazil)
+- Use `oci monitoring metric-data summarize-metrics-data` (NOT `oci compute instance metric-list` which doesn't exist)
