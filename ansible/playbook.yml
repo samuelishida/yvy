@@ -9,6 +9,8 @@
     yvy_group: ubuntu
     nvm_dir: "/home/{{ yvy_user }}/.nvm"
     node_version: "18"
+    domain: "yvy.app.br"
+    certbot_email: "samuel.ishida@gmail.com"
 
   tasks:
     - name: Instalar dependencias de runtime baremetal
@@ -22,6 +24,9 @@
           - redis-server
           - sqlite3
           - curl
+          - nginx
+          - certbot
+          - python3-certbot-nginx
         state: present
 
     - name: Garantir Redis ativo
@@ -41,6 +46,14 @@
             echo '/swapfile none swap sw 0 0' >> /etc/fstab
           }
       changed_when: false
+
+    - name: Criar diretorio para ACME challenges
+      ansible.builtin.file:
+        path: /var/www/certbot
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: '0755'
 
     - name: Verificar se nvm esta instalado
       ansible.builtin.stat:
@@ -167,6 +180,74 @@
       retries: 15
       delay: 5
 
+    - name: Configurar nginx com SSL
+      ansible.builtin.template:
+        src: yvy-nginx.conf.j2
+        dest: /etc/nginx/sites-available/yvy
+        owner: root
+        group: root
+        mode: '0644'
+      notify: reload nginx
+
+    - name: Habilitar site nginx
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/yvy
+        dest: /etc/nginx/sites-enabled/yvy
+        state: link
+      notify: reload nginx
+
+    - name: Remover site default do nginx
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: reload nginx
+
+    - name: Solicitar certificado SSL Let's Encrypt
+      ansible.builtin.shell:
+        cmd: |
+          certbot certonly --webroot \
+            --webroot-path=/var/www/certbot \
+            --email "{{ certbot_email }}" \
+            --agree-tos \
+            --no-eff-email \
+            --force-interaction \
+            -d "{{ domain }}" \
+            -d "www.{{ domain }}"
+        creates: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
+      notify: reload nginx
+
+    - name: Configurar renew automático do SSL
+      ansible.builtin.copy:
+        dest: /etc/cron.d/certbot-renew
+        content: |
+          0 3 1 * * root certbot renew --quiet --deploy-hook "systemctl reload nginx"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Parar frontend Node.js (liberar RAM)
+      ansible.builtin.systemd:
+        name: yvy-frontend
+        state: stopped
+        enabled: false
+      ignore_errors: true
+
+    - name: Testar HTTPS
+      ansible.builtin.uri:
+        url: "https://{{ domain }}/"
+        status_code: 200
+        validate_certs: no
+      register: https_health
+      until: https_health.status == 200
+      retries: 5
+      delay: 5
+
     - name: Mostrar URL de acesso
       ansible.builtin.debug:
-        msg: "Yvy disponível em: http://{{ ansible_host }}:5001"
+        msg: "Yvy disponível em: https://{{ domain }}"
+
+  handlers:
+    - name: reload nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded

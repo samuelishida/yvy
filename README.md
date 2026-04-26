@@ -169,11 +169,14 @@ CI:
 
 Deploy via **OCI CLI + Ansible** em VM existente (sem Terraform — evita limites do Always Free).
 
+**Produção**: https://yvy.app.br/ (HTTPS com Let's Encrypt SSL)
+
 ### Fluxo GitHub Actions
 
 1. **OCI CLI** descobre VM `yvy-server` em execução
 2. **Ansible** aplica setup da aplicação e serviços systemd
-3. **Health check** valida backend + frontend
+3. **Nginx + SSL** configura reverse proxy com HTTPS
+4. **Health check** valida backend + frontend
 
 ### Deploy rápido via OCI CLI (VM existente)
 
@@ -223,34 +226,17 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF'
 
-$SSH 'sudo tee /etc/systemd/system/yvy-frontend.service > /dev/null << EOF
-[Unit]
-Description=Yvy Frontend Service
-After=network.target yvy-backend.service
-Wants=yvy-backend.service
-[Service]
-Type=simple
-User=ubuntu
-Group=ubuntu
-WorkingDirectory=/opt/yvy
-Environment=HOME=/home/ubuntu
-Environment=YVY_LOCAL_DEV=1
-Environment=PORT=5001
-Environment=BROWSER=none
-ExecStart=/usr/bin/bash /opt/yvy/scripts/run-frontend.sh
-Restart=always
-RestartSec=10
-[Install]
-WantedBy=multi-user.target
-EOF'
+$SSH "sudo systemctl daemon-reload && sudo systemctl enable yvy-backend \
+  && sudo systemctl restart yvy-backend && sleep 3"
 
-$SSH "sudo systemctl daemon-reload && sudo systemctl enable yvy-backend yvy-frontend \
-  && sudo systemctl restart yvy-backend && sleep 3 \
-  && sudo systemctl restart yvy-frontend"
+# 7. Instale e configure nginx + SSL
+$SSH 'sudo apt-get update && sudo apt-get install -y nginx certbot python3-certbot-nginx'
+$SSH 'sudo mkdir -p /var/www/certbot && sudo chown -R www-data:www-data /var/www/certbot'
+$SSH "sudo bash /opt/yvy/scripts/deploy-nginx.sh"
 
-# 7. Verifique
+# 8. Verifique
 curl -s http://$VM_IP:5000/health
-curl -s -o /dev/null -w '%{http_code}' http://$VM_IP:5001/
+curl -s -o /dev/null -w '%{http_code}' https://$VM_IP/ --insecure
 ```
 
 ### Deploy via GitHub Actions (automático)

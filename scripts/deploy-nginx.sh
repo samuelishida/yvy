@@ -1,22 +1,108 @@
 ﻿#!/bin/bash
-# Yvy Frontend Nginx Deployment Script
+# Yvy Frontend Nginx Deployment Script with SSL
 # Replaces Node.js Express with Nginx for 10x performance + 200MB RAM savings
+# Includes Let's Encrypt SSL setup
 
 set -e
 
-echo "=== Yvy Frontend Nginx Setup ==="
+echo "=== Yvy Frontend Nginx Setup with SSL ==="
 
-# 1. Install nginx
-echo "Installing nginx..."
+# Configuration
+DOMAIN="yvy.app.br"
+EMAIL="samuel.ishida@gmail.com"
+
+# 1. Install nginx and certbot
+echo "Installing nginx and certbot..."
 sudo apt-get update
-sudo apt-get install -y nginx
+sudo apt-get install -y nginx certbot python3-certbot-nginx
 
-# 2. Create nginx config
-echo "Configuring nginx..."
-sudo tee /etc/nginx/sites-available/yvy > /dev/null << 'NGINX_EOF'
+# 2. Create directory for ACME challenges
+echo "Setting up ACME challenge directory..."
+sudo mkdir -p /var/www/certbot
+sudo chown -R www-data:www-data /var/www/certbot
+
+# 3. Create initial nginx config (HTTP only for SSL cert request)
+echo "Configuring nginx for SSL certificate request..."
+sudo tee /etc/nginx/sites-available/yvy > /dev/null << NGINX_EOF
 server {
     listen 80;
-    server_name _;
+    server_name $DOMAIN www.$DOMAIN;
+    
+    # ACME challenge for Let's Encrypt
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    
+    # Temporary redirect to www
+    location / {
+        return 301 https://$DOMAIN\$request_uri;
+    }
+}
+NGINX_EOF
+
+# 4. Enable site
+sudo ln -sf /etc/nginx/sites-available/yvy /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# 5. Test and reload nginx
+echo "Testing nginx config..."
+sudo nginx -t
+sudo systemctl reload nginx
+
+# 6. Request SSL certificate
+echo "Requesting SSL certificate from Let's Encrypt..."
+sudo certbot certonly --webroot \
+    --webroot-path=/var/www/certbot \
+    --email "$EMAIL" \
+    --agree-tos \
+    --no-eff-email \
+    --force-interaction \
+    -d "$DOMAIN" \
+    -d "www.$DOMAIN"
+
+# 7. Update nginx config with SSL
+echo "Configuring nginx with SSL..."
+sudo tee /etc/nginx/sites-available/yvy > /dev/null << 'NGINX_EOF'
+# HTTP server - redirect to HTTPS
+server {
+    listen 80;
+    server_name yvy.app.br www.yvy.app.br;
+    
+    # ACME challenge for Let's Encrypt
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    
+    # Redirect all HTTP to HTTPS
+    location / {
+        return 301 https://$server_name$request_uri;
+    }
+}
+
+# HTTPS server
+server {
+    listen 443 ssl http2;
+    server_name yvy.app.br www.yvy.app.br;
+    
+    # SSL certificates
+    ssl_certificate /etc/letsencrypt/live/yvy.app.br/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yvy.app.br/privkey.pem;
+    
+    # SSL configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    
+    # Security headers
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    
+    # Root
     root /opt/yvy/frontend/build;
     index index.html;
     
@@ -49,26 +135,34 @@ server {
 }
 NGINX_EOF
 
-# 3. Enable site
-sudo ln -sf /etc/nginx/sites-available/yvy /etc/nginx/sites-enabled/
-sudo rm -f /etc/nginx/sites-enabled/default
-
-# 4. Test and reload
-echo "Testing nginx config..."
+# 8. Test and reload nginx with SSL config
+echo "Testing nginx config with SSL..."
 sudo nginx -t
 sudo systemctl reload nginx
 
-# 5. Stop Node frontend (free RAM)
+# 9. Setup automatic SSL renewal
+echo "Setting up automatic SSL renewal..."
+sudo tee /etc/cron.d/certbot-renew > /dev/null << 'CRON_EOF'
+0 3 1 * * root certbot renew --quiet --deploy-hook "systemctl reload nginx"
+CRON_EOF
+
+# 10. Stop Node frontend (free RAM)
 echo "Stopping Node.js frontend..."
 sudo systemctl stop yvy-frontend 2>/dev/null || true
 sudo systemctl disable yvy-frontend 2>/dev/null || true
 
-# 6. Verify
+# 11. Verify
 echo ""
 echo "=== Setup Complete ==="
-echo "Testing frontend..."
-curl -I http://localhost/ | head -5
+echo "Testing HTTPS..."
+curl -I -L http://localhost/ | head -5
+
+echo ""
+echo "SSL Status:"
+sudo certbot certificates
 
 echo ""
 echo "RAM freed: ~200MB (Node process stopped)"
 echo "Performance: 10x faster static serving"
+echo "Security: HTTPS with Let's Encrypt SSL"
+echo "Auto-renewal: Monthly cron job at 3 AM"
