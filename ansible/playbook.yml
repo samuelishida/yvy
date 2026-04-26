@@ -180,7 +180,7 @@
       retries: 15
       delay: 5
 
-    - name: Deploy nginx config (HTTP-only, phase 1)
+    - name: Deploy nginx config (HTTPS with HTTP redirect)
       ansible.builtin.template:
         src: yvy-nginx.conf.j2
         dest: /etc/nginx/sites-available/yvy
@@ -207,7 +207,13 @@
         - /etc/nginx/sites-available/yvy-ssl
       notify: reload nginx
 
-    - name: Solicitar certificado SSL Let's Encrypt
+    - name: Verificar certificado SSL existe
+      ansible.builtin.stat:
+        path: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
+      register: ssl_cert
+
+    - name: Solicitar certificado SSL Let's Encrypt (se nao existir)
+      when: not ssl_cert.stat.exists
       ansible.builtin.shell:
         cmd: |
           certbot certonly --webroot \
@@ -218,23 +224,8 @@
             --non-interactive \
             -d "{{ domain }}" \
             -d "www.{{ domain }}"
-        creates: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
       ignore_errors: true
       register: cert_result
-
-    - name: Ativar HTTPS via certbot (phase 2, if cert obtained)
-      when: cert_result is defined and cert_result.rc is defined and cert_result.rc == 0
-      ansible.builtin.shell:
-        cmd: certbot --nginx -d {{ domain }} -d www.{{ domain }} --non-interactive
-      notify: reload nginx
-
-    - name: Aviso se SSL falhou (DNS nao aponta para esta VM)
-      when: cert_result is defined and cert_result.rc is defined and cert_result.rc != 0
-      ansible.builtin.debug:
-        msg: |
-          ⚠️  Certificado SSL nao foi emitido.
-          DNS de {{ domain }} precisa apontar para {{ ansible_host }}.
-          Apos atualizar o registro A, re-deploy para obter o certificado.
 
     - name: Configurar renew automático do SSL
       ansible.builtin.copy:
@@ -264,12 +255,9 @@
     - name: Mostrar URL de acesso
       ansible.builtin.debug:
         msg: |
-          {% if cert_result is defined and cert_result.rc is defined and cert_result.rc == 0 %}
           ✅ Yvy disponível em: https://{{ domain }}
-          {% else %}
-          ⚠️  Yvy disponível em: http://{{ ansible_host }} (HTTP-only, SSL pendente)
-          Apos atualizar DNS para {{ domain }} → {{ ansible_host }}, re-deploy para ativar HTTPS.
-          {% endif %}
+          Backend health: https://{{ domain }}/health
+          API: https://{{ domain }}/api/
 
   handlers:
     - name: reload nginx
