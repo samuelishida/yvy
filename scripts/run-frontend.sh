@@ -31,6 +31,8 @@ export BACKEND_URL="http://127.0.0.1:5000"
 export API_KEY="${API_KEY:-}"
 export REACT_APP_API_KEY="${API_KEY:-}"
 export DEV="${YVY_LOCAL_DEV:-${DEV:-1}}"
+# Disable ESLint plugin to avoid Node.js compatibility issues in production
+export DISABLE_ESLINT_PLUGIN="${DISABLE_ESLINT_PLUGIN:-true}"
 
 REACT_SCRIPTS_BIN="$NODE_MODULES_DIR/react-scripts/bin/react-scripts.js"
 if [ ! -f "$REACT_SCRIPTS_BIN" ]; then

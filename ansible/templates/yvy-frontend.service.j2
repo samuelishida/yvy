@@ -10,6 +10,7 @@ Group={{ yvy_group }}
 WorkingDirectory={{ app_dir }}
 Environment=HOME=/home/{{ yvy_user }}
 Environment=YVY_LOCAL_DEV=1
+Environment=DISABLE_ESLINT_PLUGIN=true
 Environment=PORT=5001
 Environment=BROWSER=none
 ExecStart=/usr/bin/bash {{ app_dir }}/scripts/run-frontend.sh
