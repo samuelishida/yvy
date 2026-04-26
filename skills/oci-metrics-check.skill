@@ -1,245 +1,525 @@
 # OCI CLI Skill: Check VM Metrics
 
 ## Overview
-This skill helps you check Oracle Cloud Infrastructure (OCI) VM metrics and manage OCI resources using the OCI CLI on Windows.
+This skill helps you check Oracle Cloud Infrastructure (OCI) VM metrics and manage OCI resources. Provides **PowerShell** (Windows), **Bash** (Linux/macOS), and **Python** (cross-platform) commands.
 
 ## Quick Command Reference
 
 ### 🔧 Setup & Configuration
-| Task | Command |
-| :--- | :--- |
-| **Get command help** | `oci --help` <br> `oci compute instance -h` |
-| **Get your namespace** | `oci os ns get` |
-| **List all compartments** | `oci iam compartment list -c $T` |
-| **List IAM users** | `oci iam user list -c $T` |
+| Task | PowerShell | Bash | Python |
+| :--- | :--- | :--- | :--- |
+| **Set env vars** | `$env:OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING="True"` | `export OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING=True` | `config = oci.config.from_file()` |
+| **Set config path** | `$env:OCI_CONFIG_FILE="$env:USERPROFILE\.oci\config"` | `export OCI_CONFIG_FILE=~/.oci/config` | `oci.config.from_file("~/.oci/config")` |
+| **Get namespace** | `oci os ns get` | `oci os ns get` | `identity.get_user(config["user"])` |
+| **List compartments** | `oci iam compartment list -c $C` | `oci iam compartment list -c $C` | `identity.list_compartments(c).data` |
 
 ### 💻 Compute & Storage
-| Task | Command |
-| :--- | :--- |
-| **List instances** | `oci compute instance list -c $C` |
-| **Get instance details** | `oci compute instance get --instance-id <INSTANCE_OCID>` |
-| **List boot volumes** | `oci bv boot-volume list -c $C` |
-| **List volume attachments** | `oci compute volume-attachment list -c $C` |
+| Task | PowerShell | Bash | Python |
+| :--- | :--- | :--- | :--- |
+| **List instances** | `oci compute instance list -c $C --region sa-saopaulo-1 \| ConvertFrom-Json \| Select-Object -ExpandProperty data \| ForEach-Object { Write-Host "$($_.'display-name') \| $($_.'lifecycle-state') \| $($_.shape)" }` | `oci compute instance list -c $C --region sa-saopaulo-1 --query 'data[].{Name:"display-name", State:"lifecycle-state", Shape:shape}' --output table` | `compute.list_instances(c).data` |
+| **Get instance** | `oci compute instance get --instance-id <OCID> --region sa-saopaulo-1` | `oci compute instance get --instance-id <OCID> --region sa-saopaulo-1` | `compute.get_instance(instance_id).data` |
+| **List boot volumes** | `oci bv boot-volume list -c $C --region sa-saopaulo-1` | `oci bv boot-volume list -c $C --region sa-saopaulo-1` | `compute.list_boot_volume_attachments(c, ad, instance_id).data` |
 
 ### 🌐 Networking
-| Task | Command |
-| :--- | :--- |
-| **List VCNs** | `oci network vcn list -c $C` |
-| **List subnets** | `oci network subnet list -c $C` |
-| **List public IPs** | `oci network public-ip list -c $C` |
-
-### 🗄️ Object Storage
-| Task | Command |
-| :--- | :--- |
-| **List buckets** | `oci os bucket list -ns <NAMESPACE> -c $C` |
-| **List objects in bucket** | `oci os object list -ns <NAMESPACE> -bn <BUCKET_NAME>` |
-
-### 📦 Resource Manager (IaC)
-| Task | Command |
-| :--- | :--- |
-| **Create an apply job** | `oci resource-manager job create-apply-job --stack-id <STACK_OCID>` |
-| **Get job status** | `oci resource-manager job get --job-id <JOB_ID>` |
-
-### 🔍 Checking Status of OCI Resources
-| Resource | Status Check Command |
-| :--- | :--- |
-| **Compute Instance** | `oci compute instance get --instance-id <OCID> --query 'data."lifecycle-state"'` |
-| **Block Volume** | `oci bv volume get --volume-id <OCID> --query 'data."lifecycle-state"'` |
-| **Resource Manager Job** | `oci resource-manager job get --job-id <JOB_ID> --query 'data."lifecycle-state"'` |
+| Task | PowerShell | Bash | Python |
+| :--- | :--- | :--- | :--- |
+| **List VCNs** | `oci network vcn list -c $C --region sa-saopaulo-1` | `oci network vcn list -c $C --region sa-saopaulo-1` | `network.list_vcns(c).data` |
+| **List subnets** | `oci network subnet list -c $C --region sa-saopaulo-1` | `oci network subnet list -c $C --region sa-saopaulo-1` | `network.list_subnets(c, vcn_id).data` |
+| **Get VM IPs** | See "Get VM Public IP" below | See "Get VM Public IP" below | See "Get VM Public IP" below |
 
 ## Prerequisites
 
-### 1. OCI CLI Installation
+### 1. OCI CLI / SDK Installation
+**PowerShell (Windows):**
 ```powershell
-# Download and install OCI CLI
 wget https://oci-cli_latest.zip -OutFile oci-cli.zip
 Expand-Archive oci-cli.zip -DestinationPath $env:LOCALAPPDATA\oci
 $env:PATH += ";$env:LOCALAPPDATA\oci\bin"
 ```
 
-### 2. Configure OCI CLI for Windows
+**Bash (Linux/macOS):**
+```bash
+curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh | bash
+```
 
-#### Update config file:
+**Python (cross-platform):**
+```bash
+pip install oci
+```
+
+### 2. Configure OCI CLI
+**PowerShell (Windows):**
 ```powershell
-# Create .oci directory if it doesn't exist
-New-Item -ItemType Directory -Force -Path ".oci"
-
 # Create config file
-@"
+@" 
 [DEFAULT]
 user=<YOUR_USER_OCID>
 fingerprint=<YOUR_FINGERPRINT>
 key_file=<PATH_TO_OCI_API_KEY_PEM>
 tenancy=<YOUR_TENANCY_OCID>
-region=<YOUR_REGION>
-"@ | Out-File -FilePath ".oci\config" -Encoding utf8
+region=sa-saopaulo-1
+"@ | Out-File -FilePath "$env:USERPROFILE\.oci\config" -Encoding utf8
+
+# Set env vars
+$env:OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING="True"
+$env:OCI_CONFIG_FILE="$env:USERPROFILE\.oci\config"
 ```
 
-#### Set environment variables:
-```powershell
-$env:OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING="True"
-$env:OCI_CONFIG_FILE=".oci\config"
+**Bash (Linux/macOS):**
+```bash
+# Create config file
+cat > ~/.oci/config << 'EOF'
+[DEFAULT]
+user=<YOUR_USER_OCID>
+fingerprint=<YOUR_FINGERPRINT>
+key_file=<PATH_TO_OCI_API_KEY_PEM>
+tenancy=<YOUR_TENANCY_OCID>
+region=sa-saopaulo-1
+EOF
+
+# Set env vars
+export OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING=True
 ```
 
 ### 3. SSH Key Configuration
+**PowerShell:**
 ```powershell
-# Ensure SSH keys exist
-Test-Path ".ssh\oci_yvy"
-Test-Path ".ssh\oci_yvy.pub"
+Test-Path "$env:USERPROFILE\.ssh\oci_yvy"
+Test-Path "$env:USERPROFILE\.ssh\oci_yvy.pub"
+```
 
-# Copy to default location if needed
-Copy-Item ".ssh\oci_yvy" -Destination "$env:USERPROFILE\.ssh\oci_yvy" -Force
-Copy-Item ".ssh\oci_yvy.pub" -Destination "$env:USERPROFILE\.ssh\oci_yvy.pub" -Force
+**Bash:**
+```bash
+ls -la ~/.ssh/oci_yvy ~/.ssh/oci_yvy.pub
+```
+
+**Python (not needed — SDK uses API keys, not SSH):**
+```python
+# Python SDK uses ~/.oci/config with API key, not SSH keys
+# Verify config exists:
+import os
+print(os.path.exists(os.path.expanduser("~/.oci/config")))
 ```
 
 ## Usage
 
-### Check VM Metrics (via Monitoring Service)
-
+### Setup Variables
+**PowerShell:**
 ```powershell
-# Setup variables
 $env:OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING="True"
-$T = "ocid1.tenancy.oc1..<YOUR_TENANCY_OCID>"
-$C = $T
-
-# List all VMs
-oci compute instance list -c $C | ConvertFrom-Json | ForEach-Object {
-  $_.data | ForEach-Object {
-    Write-Host "Name: $($_.'display-name') | State: $($_.'lifecycle-state') | Shape: $($_.shape)"
-  }
-}
-
-# Get VM Public IP
-$vnicAttachments = oci compute vnic-attachment list -c $C --instance-id <INSTANCE_OCID> | ConvertFrom-Json
-$vnicAttachments.data | ForEach-Object {
-  $vnic = oci network vnic get --vnic-id $_.'vnic-id' | ConvertFrom-Json
-  Write-Host "Public IP: $($vnic.data.'public-ip') | Private IP: $($vnic.data.'private-ip')"
-}
-
-# CPU Metrics (last 1 hour, 1-min intervals)
-oci monitoring metric-data summarize-metrics-data -c $C `
-  --namespace oci_computeagent `
-  --query-text "CpuUtilization[1m].mean()" | ConvertFrom-Json | ForEach-Object {
-  $_.data | ForEach-Object {
-    Write-Host "VM: $($_.dimensions.resourceDisplayName)"
-    $_.'aggregated-datapoints' | Select-Object -Last 5 | ForEach-Object {
-      Write-Host "  $($_.timestamp) -> $([math]::Round($_.value, 2))%"
-    }
-  }
-}
-
-# Memory Metrics
-oci monitoring metric-data summarize-metrics-data -c $C `
-  --namespace oci_computeagent `
-  --query-text "MemoryUtilization[1m].mean()" | ConvertFrom-Json | ForEach-Object {
-  $_.data | ForEach-Object {
-    Write-Host "VM: $($_.dimensions.resourceDisplayName)"
-    $_.'aggregated-datapoints' | Select-Object -Last 3 | ForEach-Object {
-      Write-Host "  $($_.timestamp) -> $([math]::Round($_.value, 2))%"
-    }
-  }
-}
-
-# Network Inbound
-oci monitoring metric-data summarize-metrics-data -c $C `
-  --namespace oci_computeagent `
-  --query-text "NetworksBytesIn[1m].mean()" | ConvertFrom-Json | ForEach-Object {
-  $_.data | ForEach-Object {
-    Write-Host "VM: $($_.dimensions.resourceDisplayName)"
-    $_.'aggregated-datapoints' | Select-Object -Last 3 | ForEach-Object {
-      Write-Host "  $($_.timestamp) -> $([math]::Round($_.value/1024, 2)) KB/s"
-    }
-  }
-}
-
-# Network Outbound
-oci monitoring metric-data summarize-metrics-data -c $C `
-  --namespace oci_computeagent `
-  --query-text "NetworksBytesOut[1m].mean()" | ConvertFrom-Json | ForEach-Object {
-  $_.data | ForEach-Object {
-    Write-Host "VM: $($_.dimensions.resourceDisplayName)"
-    $_.'aggregated-datapoints' | Select-Object -Last 3 | ForEach-Object {
-      Write-Host "  $($_.timestamp) -> $([math]::Round($_.value/1024, 2)) KB/s"
-    }
-  }
-}
-
-# Disk Read
-oci monitoring metric-data summarize-metrics-data -c $C `
-  --namespace oci_computeagent `
-  --query-text "DiskBytesRead[1m].mean()" | ConvertFrom-Json | ForEach-Object {
-  $_.data | ForEach-Object {
-    Write-Host "VM: $($_.dimensions.resourceDisplayName)"
-    $_.'aggregated-datapoints' | Select-Object -Last 3 | ForEach-Object {
-      Write-Host "  $($_.timestamp) -> $([math]::Round($_.value/1024, 2)) KB/s"
-    }
-  }
-}
-
-# Disk Written
-oci monitoring metric-data summarize-metrics-data -c $C `
-  --namespace oci_computeagent `
-  --query-text "DiskBytesWritten[1m].mean()" | ConvertFrom-Json | ForEach-Object {
-  $_.data | ForEach-Object {
-    Write-Host "VM: $($_.dimensions.resourceDisplayName)"
-    $_.'aggregated-datapoints' | Select-Object -Last 3 | ForEach-Object {
-      Write-Host "  $($_.timestamp) -> $([math]::Round($_.value/1024, 2)) KB/s"
-    }
-  }
-}
-
-# Load Average
-oci monitoring metric-data summarize-metrics-data -c $C `
-  --namespace oci_computeagent `
-  --query-text "LoadAverage[1m].mean()" | ConvertFrom-Json | ForEach-Object {
-  $_.data | ForEach-Object {
-    Write-Host "VM: $($_.dimensions.resourceDisplayName)"
-    $_.'aggregated-datapoints' | Select-Object -Last 3 | ForEach-Object {
-      Write-Host "  $($_.timestamp) -> $($_.value)"
-    }
-  }
-}
-
-# List all available metrics
-oci monitoring metric list -c $C --namespace oci_computeagent | ConvertFrom-Json |
-  ForEach-Object { $_.data | ForEach-Object { Write-Host "  $($_.name)" } }
+$env:OCI_CONFIG_FILE="$env:USERPROFILE\.oci\config"
+$C = "ocid1.tenancy.oc1..aaaaaaaa5vfmx4xoxmfv577ibav5fk3ablvy56yo4arls7lvyrtbvcsohjha"
+$REGION = "sa-saopaulo-1"
 ```
 
-### Get VM Information
+**Bash:**
+```bash
+export OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING=True
+C="ocid1.tenancy.oc1..aaaaaaaa5vfmx4xoxmfv577ibav5fk3ablvy56yo4arls7lvyrtbvcsohjha"
+REGION="sa-saopaulo-1"
+```
 
+**Python:**
+```python
+import oci
+from oci.monitoring.models import SummarizeMetricsDataDetails
+from datetime import datetime, timedelta, timezone
+
+config = oci.config.from_file("~/.oci/config")
+C = config["tenancy"]  # compartment = tenancy for root compartment
+REGION = config["region"]
+
+# Initialize clients
+compute = oci.core.ComputeClient(config)
+monitoring = oci.monitoring.MonitoringClient(config)
+network = oci.core.VirtualNetworkClient(config)
+identity = oci.identity.IdentityClient(config)
+audit = oci.audit.AuditClient(config)
+```
+
+### List All VMs
+**PowerShell (reliable — uses raw JSON):**
 ```powershell
-# Get VM details
-oci compute instance get --instance-id <INSTANCE_OCID>
-
-# List all VMs in compartment
-oci compute instance list -c $C | ConvertFrom-Json | ForEach-Object {
-  $_.data | ForEach-Object {
-    Write-Host "Name: $($_.'display-name') | State: $($_.'lifecycle-state') | Shape: $($_.shape) | ID: $($_.id)"
+oci compute instance list -c $C --region $REGION 2>&1 | ConvertFrom-Json |
+  Select-Object -ExpandProperty data |
+  ForEach-Object {
+    Write-Host "$($_.'display-name') | $($_.'lifecycle-state') | $($_.shape) | $($_.id)"
   }
-}
+```
+
+**Bash (uses --query with JMESPath):**
+```bash
+oci compute instance list -c $C --region $REGION \
+  --query 'data[].{Name:"display-name", State:"lifecycle-state", Shape:shape, OCID:id}' \
+  --output table
+```
+
+**Python:**
+```python
+instances = compute.list_instances(C).data
+for inst in instances:
+    print(f"{inst.display_name} | {inst.lifecycle_state} | {inst.shape} | {inst.id}")
+```
+
+### Get VM Public IP
+**PowerShell:**
+```powershell
+$INSTANCE_ID = "<INSTANCE_OCID>"
+oci compute vnic-attachment list -c $C --region $REGION --instance-id $INSTANCE_ID 2>&1 |
+  ConvertFrom-Json | Select-Object -ExpandProperty data |
+  ForEach-Object {
+    $vnic = oci network vnic get --vnic-id $_.'vnic-id' --region $REGION 2>&1 | ConvertFrom-Json
+    Write-Host "Public IP: $($vnic.data.'public-ip') | Private IP: $($vnic.data.'private-ip')"
+  }
+```
+
+**Bash:**
+```bash
+INSTANCE_ID="<INSTANCE_OCID>"
+VNIC_ID=$(oci compute vnic-attachment list -c $C --region $REGION \
+  --instance-id $INSTANCE_ID \
+  --query 'data[0]."vnic-id"' --raw-output)
+oci network vnic get --vnic-id $VNIC_ID --region $REGION \
+  --query 'data.{PublicIP:"public-ip", PrivateIP:"private-ip"}' --output table
+```
+
+**Python:**
+```python
+vnic_attachments = compute.list_vnic_attachments(C, instance_id=inst.id).data
+for va in vnic_attachments:
+    vnic = network.get_vnic(va.vnic_id).data
+    print(f"Public IP: {vnic.public_ip} | Private IP: {vnic.private_ip} | MAC: {vnic.mac_address}")
+```
+
+### CPU Metrics (last 1 hour, 1-min intervals)
+**PowerShell:**
+```powershell
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION `
+  --namespace oci_computeagent --query-text "CpuUtilization[1m].mean()" 2>&1 |
+  ConvertFrom-Json | Select-Object -ExpandProperty data |
+  ForEach-Object {
+    Write-Host "VM: $($_.dimensions.resourceDisplayName)" -ForegroundColor Yellow
+    $_.'aggregated-datapoints' | Select-Object -Last 5 |
+      ForEach-Object { Write-Host "  $($_.timestamp) -> $([math]::Round($_.value, 2))%" }
+  }
+```
+
+**Bash:**
+```bash
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION \
+  --namespace oci_computeagent --query-text "CpuUtilization[1m].mean()"
+```
+
+**Python:**
+```python
+details = SummarizeMetricsDataDetails(namespace="oci_computeagent", query="CpuUtilization[1m].mean()")
+cpu = monitoring.summarize_metrics_data(C, details).data
+for metric in cpu:
+    vm = metric.dimensions.get("resourceDisplayName", "?")
+    vals = [p.value for p in metric.aggregated_datapoints]
+    if vals:
+        print(f"{vm}: avg={sum(vals)/len(vals):.1f}% max={max(vals):.1f}% min={min(vals):.1f}%")
+```
+
+### Memory Metrics
+**PowerShell:**
+```powershell
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION `
+  --namespace oci_computeagent --query-text "MemoryUtilization[1m].mean()" 2>&1 |
+  ConvertFrom-Json | Select-Object -ExpandProperty data |
+  ForEach-Object {
+    Write-Host "VM: $($_.dimensions.resourceDisplayName)" -ForegroundColor Yellow
+    $_.'aggregated-datapoints' | Select-Object -Last 3 |
+      ForEach-Object { Write-Host "  $($_.timestamp) -> $([math]::Round($_.value, 2))%" }
+  }
+```
+
+**Bash:**
+```bash
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION \
+  --namespace oci_computeagent --query-text "MemoryUtilization[1m].mean()"
+```
+
+**Python:**
+```python
+details = SummarizeMetricsDataDetails(namespace="oci_computeagent", query="MemoryUtilization[1m].mean()")
+mem = monitoring.summarize_metrics_data(C, details).data
+for metric in mem:
+    vm = metric.dimensions.get("resourceDisplayName", "?")
+    vals = [p.value for p in metric.aggregated_datapoints]
+    if vals:
+        print(f"{vm}: avg={sum(vals)/len(vals):.1f}% max={max(vals):.1f}%")
+```
+
+### Network Inbound
+**PowerShell:**
+```powershell
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION `
+  --namespace oci_computeagent --query-text "NetworksBytesIn[1m].mean()" 2>&1 |
+  ConvertFrom-Json | Select-Object -ExpandProperty data |
+  ForEach-Object {
+    Write-Host "VM: $($_.dimensions.resourceDisplayName)" -ForegroundColor Yellow
+    $_.'aggregated-datapoints' | Select-Object -Last 3 |
+      ForEach-Object { Write-Host "  $($_.timestamp) -> $([math]::Round($_.value/1024, 2)) KB/s" }
+  }
+```
+
+**Bash:**
+```bash
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION \
+  --namespace oci_computeagent --query-text "NetworksBytesIn[1m].mean()"
+```
+
+**Python:**
+```python
+details = SummarizeMetricsDataDetails(namespace="oci_computeagent", query="NetworksBytesIn[1m].mean()")
+net = monitoring.summarize_metrics_data(C, details).data
+for metric in net:
+    vm = metric.dimensions.get("resourceDisplayName", "?")
+    vals = [p.value for p in metric.aggregated_datapoints]
+    if vals:
+        print(f"{vm} In: {sum(vals)/len(vals)/1024:.1f} KB/s")
+```
+
+### Network Outbound
+**PowerShell:**
+```powershell
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION `
+  --namespace oci_computeagent --query-text "NetworksBytesOut[1m].mean()" 2>&1 |
+  ConvertFrom-Json | Select-Object -ExpandProperty data |
+  ForEach-Object {
+    Write-Host "VM: $($_.dimensions.resourceDisplayName)" -ForegroundColor Yellow
+    $_.'aggregated-datapoints' | Select-Object -Last 3 |
+      ForEach-Object { Write-Host "  $($_.timestamp) -> $([math]::Round($_.value/1024, 2)) KB/s" }
+  }
+```
+
+**Bash:**
+```bash
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION \
+  --namespace oci_computeagent --query-text "NetworksBytesOut[1m].mean()"
+```
+
+**Python:**
+```python
+details = SummarizeMetricsDataDetails(namespace="oci_computeagent", query="NetworksBytesOut[1m].mean()")
+net = monitoring.summarize_metrics_data(C, details).data
+for metric in net:
+    vm = metric.dimensions.get("resourceDisplayName", "?")
+    vals = [p.value for p in metric.aggregated_datapoints]
+    if vals:
+        print(f"{vm} Out: {sum(vals)/len(vals)/1024:.1f} KB/s")
+```
+
+### Disk Read
+**PowerShell:**
+```powershell
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION `
+  --namespace oci_computeagent --query-text "DiskBytesRead[1m].mean()" 2>&1 |
+  ConvertFrom-Json | Select-Object -ExpandProperty data |
+  ForEach-Object {
+    Write-Host "VM: $($_.dimensions.resourceDisplayName)" -ForegroundColor Yellow
+    $_.'aggregated-datapoints' | Select-Object -Last 3 |
+      ForEach-Object { Write-Host "  $($_.timestamp) -> $([math]::Round($_.value/1024, 2)) KB/s" }
+  }
+```
+
+**Bash:**
+```bash
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION \
+  --namespace oci_computeagent --query-text "DiskBytesRead[1m].mean()"
+```
+
+**Python:**
+```python
+details = SummarizeMetricsDataDetails(namespace="oci_computeagent", query="DiskBytesRead[1m].mean()")
+disk = monitoring.summarize_metrics_data(C, details).data
+for metric in disk:
+    vm = metric.dimensions.get("resourceDisplayName", "?")
+    vals = [p.value for p in metric.aggregated_datapoints]
+    if vals:
+        print(f"{vm} Read: {sum(vals)/len(vals)/1024:.1f} KB/s")
+```
+
+### Disk Written
+**PowerShell:**
+```powershell
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION `
+  --namespace oci_computeagent --query-text "DiskBytesWritten[1m].mean()" 2>&1 |
+  ConvertFrom-Json | Select-Object -ExpandProperty data |
+  ForEach-Object {
+    Write-Host "VM: $($_.dimensions.resourceDisplayName)" -ForegroundColor Yellow
+    $_.'aggregated-datapoints' | Select-Object -Last 3 |
+      ForEach-Object { Write-Host "  $($_.timestamp) -> $([math]::Round($_.value/1024, 2)) KB/s" }
+  }
+```
+
+**Bash:**
+```bash
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION \
+  --namespace oci_computeagent --query-text "DiskBytesWritten[1m].mean()"
+```
+
+**Python:**
+```python
+details = SummarizeMetricsDataDetails(namespace="oci_computeagent", query="DiskBytesWritten[1m].mean()")
+disk = monitoring.summarize_metrics_data(C, details).data
+for metric in disk:
+    vm = metric.dimensions.get("resourceDisplayName", "?")
+    vals = [p.value for p in metric.aggregated_datapoints]
+    if vals:
+        print(f"{vm} Written: {sum(vals)/len(vals)/1024:.1f} KB/s")
+```
+
+### Load Average
+**PowerShell:**
+```powershell
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION `
+  --namespace oci_computeagent --query-text "LoadAverage[1m].mean()" 2>&1 |
+  ConvertFrom-Json | Select-Object -ExpandProperty data |
+  ForEach-Object {
+    Write-Host "VM: $($_.dimensions.resourceDisplayName)" -ForegroundColor Yellow
+    $_.'aggregated-datapoints' | Select-Object -Last 3 |
+      ForEach-Object { Write-Host "  $($_.timestamp) -> $($_.value)" }
+  }
+```
+
+**Bash:**
+```bash
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION \
+  --namespace oci_computeagent --query-text "LoadAverage[1m].mean()"
+```
+
+**Python:**
+```python
+details = SummarizeMetricsDataDetails(namespace="oci_computeagent", query="LoadAverage[1m].mean()")
+load = monitoring.summarize_metrics_data(C, details).data
+for metric in load:
+    vm = metric.dimensions.get("resourceDisplayName", "?")
+    vals = [p.value for p in metric.aggregated_datapoints]
+    if vals:
+        print(f"{vm}: avg={sum(vals)/len(vals):.2f}")
+```
+
+### List All Available Metrics
+**PowerShell:**
+```powershell
+oci monitoring metric list -c $C --region $REGION --namespace oci_computeagent 2>&1 |
+  ConvertFrom-Json | Select-Object -ExpandProperty data |
+  ForEach-Object { Write-Host "  $($_.name)" }
+```
+
+**Bash:**
+```bash
+oci monitoring metric list -c $C --region $REGION --namespace oci_computeagent \
+  --query 'data[].name' --output table
+```
+
+**Python:**
+```python
+metrics = monitoring.list_metrics(C, oci.monitoring.models.ListMetricsDetails(namespace="oci_computeagent")).data
+for m in sorted(set(m.name for m in metrics)):
+    print(f"  {m}")
 ```
 
 ### SSH into VM
-
+**PowerShell:**
 ```powershell
-# SSH to VM
-ssh -i ".ssh\oci_yvy" ubuntu@<VM_PUBLIC_IP>
+ssh -i "$env:USERPROFILE\.ssh\oci_yvy" -o StrictHostKeyChecking=no ubuntu@<VM_PUBLIC_IP>
 ```
 
-### Check VM Status
-
-```powershell
-# Get VM state
-oci compute instance get --instance-id <INSTANCE_OCID> | ConvertFrom-Json |
-  ForEach-Object { Write-Host "State: $($_.data.'lifecycle-state')" }
+**Bash:**
+```bash
+ssh -i ~/.ssh/oci_yvy -o StrictHostKeyChecking=no ubuntu@<VM_PUBLIC_IP>
 ```
 
-### 💡 Pro Tips for Using OCI CLI
-- **Use `--query` with JMESPath**: Filter output with `--query 'data[*].{id:id, name:"display-name"}'` (escape hyphens with backticks in PowerShell)
-- **Use `--output table`**: For cleaner formatted view
-- **Work with JSON**: Pass JSON files to commands: `oci compute instance launch --from-json file://instance-details.json`
-- **Use `--wait-for-state`**: Make CLI wait until a state is reached: `--wait-for-state RUNNING`
-- **Metrics via Monitoring**: Use `oci monitoring metric-data summarize-metrics-data` (NOT `oci compute instance metric-list` which doesn't exist)
+**Python (not applicable — use paramiko or asyncssh for SSH):**
+```python
+# SSH is not part of OCI SDK. Use paramiko or asyncssh:
+# import paramiko
+# ssh = paramiko.SSHClient()
+# ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+# ssh.connect("<VM_PUBLIC_IP>", username="ubuntu", key_filename="~/.ssh/oci_yvy")
+```
+
+## Advanced Features (Python SDK Only)
+
+The Python SDK provides capabilities beyond the CLI. These features are best accessed via Python.
+
+### Audit Events (last 24h)
+```python
+audit = oci.audit.AuditClient(config)
+now = datetime.now(timezone.utc)
+events = audit.list_events(
+    compartment_id=C,
+    start_time=now - timedelta(hours=24),
+    end_time=now
+).data
+print(f"=== Audit Events (last 24h): {len(events)} ===")
+for e in events[:10]:
+    print(f"  [{e.event_time.strftime('%H:%M:%S')}] {e.event_type.split('.')[-1]}")
+    print(f"    Source: {e.source}")
+    print(f"    ID: {e.event_id[:20]}...")
+```
+
+### List Alarms
+```python
+alarms = monitoring.list_alarms(compartment_id=C).data
+print(f"=== Alarms: {len(alarms)} ===")
+for a in alarms:
+    print(f"  {a.display_name} | Severity: {a.severity} | State: {a.state}")
+```
+
+### Alarm Status
+```python
+status = monitoring.list_alarms_status(compartment_id=C).data
+print(f"=== Alarm Status: {len(status)} ===")
+for s in status:
+    print(f"  {s.display_name} | Severity: {s.severity} | Status: {s.status}")
+```
+
+### Instance Details (Shape, Region, Created)
+```python
+for inst in compute.list_instances(C).data:
+    if inst.lifecycle_state != "RUNNING":
+        continue
+    print(f"  {inst.display_name}:")
+    print(f"    Shape: {inst.shape}")
+    print(f"    Region: {inst.region}")
+    print(f"    Time Created: {inst.time_created}")
+    print(f"    OCID: {inst.id[:40]}...")
+```
+
+### Boot Volume Info
+```python
+for inst in compute.list_instances(C).data:
+    if inst.lifecycle_state != "RUNNING":
+        continue
+    boot_attachments = compute.list_boot_volume_attachments(
+        compartment_id=C,
+        availability_domain="ofav:SA-SAOPAULO-1-AD-1",
+        instance_id=inst.id
+    ).data
+    for ba in boot_attachments:
+        print(f"  {inst.display_name}: Boot Volume {ba.boot_volume_id[:30]}...")
+```
+
+### Metrics with Custom Time Range
+```python
+now = datetime.now(timezone.utc)
+details = SummarizeMetricsDataDetails(
+    namespace="oci_computeagent",
+    query="CpuUtilization[5m].mean()",  # 5-min intervals
+    start_time=now - timedelta(minutes=30),
+    end_time=now
+)
+cpu = monitoring.summarize_metrics_data(C, details).data
+for metric in cpu:
+    vm = metric.dimensions.get("resourceDisplayName", "?")
+    print(f"  {vm}:")
+    for dp in metric.aggregated_datapoints[-3:]:
+        print(f"    {dp.timestamp.strftime('%H:%M')} -> {dp.value:.2f}%")
+```
 
 ## Available Metrics (oci_computeagent namespace)
 - `CpuUtilization` — CPU usage percentage
@@ -256,6 +536,7 @@ oci compute instance get --instance-id <INSTANCE_OCID> | ConvertFrom-Json |
 ## Troubleshooting
 
 ### Authentication Errors
+**PowerShell:**
 ```powershell
 # Check config file
 Get-Content "$env:USERPROFILE\.oci\config"
@@ -267,46 +548,70 @@ Test-Path "$env:USERPROFILE\.oci\sessions\DEFAULT\oci_api_key.pem"
 oci os ns get
 ```
 
+**Bash:**
+```bash
+# Check config file
+cat ~/.oci/config
+
+# Verify API key file exists
+ls -la ~/.oci/oci_api_key.pem
+
+# Test authentication
+oci os ns get
+```
+
 ### Time Skew Issues
+**PowerShell:**
 ```powershell
-# Check system time and timezone
 Get-Date
 Get-TimeZone
-
-# Fix timezone if needed (run as admin)
 Set-TimeZone "E. South America Standard Time"   # Brazil
 Set-TimeZone "UTC"                               # UTC
 ```
 
+**Bash:**
+```bash
+date
+timedatectl
+sudo timedatectl set-timezone America/Sao_Paulo
+```
+
 ### Permission Errors
+**PowerShell:**
 ```powershell
-# Set permission warning suppression
 $env:OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING="True"
 ```
 
-## Example: Complete Metrics Check Script
+**Bash:**
+```bash
+export OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING=True
+```
 
+## Complete Metrics Check Script
+
+### PowerShell (Windows)
 ```powershell
 function Check-OCIMetrics {
     param(
-        [string]$CompartmentId,
+        [string]$CompartmentId = "ocid1.tenancy.oc1..aaaaaaaa5vfmx4xoxmfv577ibav5fk3ablvy56yo4arls7lvyrtbvcsohjha",
         [string]$Region = "sa-saopaulo-1"
     )
-    
+
     $env:OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING="True"
-    
+    $env:OCI_CONFIG_FILE="$env:USERPROFILE\.oci\config"
+
     try {
         # List VMs
         Write-Host "`n=== VMs ===" -ForegroundColor Cyan
-        $vms = oci compute instance list -c $CompartmentId | ConvertFrom-Json
+        $vms = oci compute instance list -c $CompartmentId --region $Region 2>&1 | ConvertFrom-Json
         $vms.data | ForEach-Object {
             Write-Host "$($_.'display-name') | $($_.'lifecycle-state') | $($_.shape)"
         }
-        
+
         # CPU Summary
         Write-Host "`n=== CPU Summary (last 1h) ===" -ForegroundColor Cyan
-        $cpu = oci monitoring metric-data summarize-metrics-data -c $CompartmentId `
-            --namespace oci_computeagent --query-text "CpuUtilization[1m].mean()" | ConvertFrom-Json
+        $cpu = oci monitoring metric-data summarize-metrics-data -c $CompartmentId --region $Region `
+            --namespace oci_computeagent --query-text "CpuUtilization[1m].mean()" 2>&1 | ConvertFrom-Json
         $cpu.data | ForEach-Object {
             $vals = $_.'aggregated-datapoints'.value
             $avg = ($vals | Measure-Object -Average).Average
@@ -314,29 +619,206 @@ function Check-OCIMetrics {
             $min = ($vals | Measure-Object -Minimum).Minimum
             Write-Host "$($_.dimensions.resourceDisplayName): Avg=$([math]::Round($avg,2))% Max=$([math]::Round($max,2))% Min=$([math]::Round($min,2))%"
         }
-        
+
         # Memory Summary
         Write-Host "`n=== Memory Summary (last 1h) ===" -ForegroundColor Cyan
-        $mem = oci monitoring metric-data summarize-metrics-data -c $CompartmentId `
-            --namespace oci_computeagent --query-text "MemoryUtilization[1m].mean()" | ConvertFrom-Json
+        $mem = oci monitoring metric-data summarize-metrics-data -c $CompartmentId --region $Region `
+            --namespace oci_computeagent --query-text "MemoryUtilization[1m].mean()" 2>&1 | ConvertFrom-Json
         $mem.data | ForEach-Object {
             $vals = $_.'aggregated-datapoints'.value
             $avg = ($vals | Measure-Object -Average).Average
             Write-Host "$($_.dimensions.resourceDisplayName): Avg=$([math]::Round($avg,2))%"
         }
-        
+
+        # Network Summary
+        Write-Host "`n=== Network Summary (last 1h) ===" -ForegroundColor Cyan
+        $netIn = oci monitoring metric-data summarize-metrics-data -c $CompartmentId --region $Region `
+            --namespace oci_computeagent --query-text "NetworksBytesIn[1m].mean()" 2>&1 | ConvertFrom-Json
+        $netIn.data | ForEach-Object {
+            $vals = $_.'aggregated-datapoints'.value
+            $avg = ($vals | Measure-Object -Average).Average
+            Write-Host "$($_.dimensions.resourceDisplayName) In: $([math]::Round($avg/1024, 2)) KB/s"
+        }
+        $netOut = oci monitoring metric-data summarize-metrics-data -c $CompartmentId --region $Region `
+            --namespace oci_computeagent --query-text "NetworksBytesOut[1m].mean()" 2>&1 | ConvertFrom-Json
+        $netOut.data | ForEach-Object {
+            $vals = $_.'aggregated-datapoints'.value
+            $avg = ($vals | Measure-Object -Average).Average
+            Write-Host "$($_.dimensions.resourceDisplayName) Out: $([math]::Round($avg/1024, 2)) KB/s"
+        }
+
+        # Disk Summary
+        Write-Host "`n=== Disk Summary (last 1h) ===" -ForegroundColor Cyan
+        $diskR = oci monitoring metric-data summarize-metrics-data -c $CompartmentId --region $Region `
+            --namespace oci_computeagent --query-text "DiskBytesRead[1m].mean()" 2>&1 | ConvertFrom-Json
+        $diskR.data | ForEach-Object {
+            $vals = $_.'aggregated-datapoints'.value
+            $avg = ($vals | Measure-Object -Average).Average
+            Write-Host "$($_.dimensions.resourceDisplayName) Read: $([math]::Round($avg/1024, 2)) KB/s"
+        }
+        $diskW = oci monitoring metric-data summarize-metrics-data -c $CompartmentId --region $Region `
+            --namespace oci_computeagent --query-text "DiskBytesWritten[1m].mean()" 2>&1 | ConvertFrom-Json
+        $diskW.data | ForEach-Object {
+            $vals = $_.'aggregated-datapoints'.value
+            $avg = ($vals | Measure-Object -Average).Average
+            Write-Host "$($_.dimensions.resourceDisplayName) Written: $([math]::Round($avg/1024, 2)) KB/s"
+        }
+
     } catch {
         Write-Host "Error: $_" -ForegroundColor Red
     }
 }
 
 # Usage
-Check-OCIMetrics -CompartmentId "ocid1.tenancy.oc1..<YOUR_TENANCY_OCID>"
+Check-OCIMetrics
+```
+
+### Bash (Linux/macOS)
+```bash
+#!/bin/bash
+# check-oci-metrics.sh
+set -e
+
+C="ocid1.tenancy.oc1..aaaaaaaa5vfmx4xoxmfv577ibav5fk3ablvy56yo4arls7lvyrtbvcsohjha"
+REGION="sa-saopaulo-1"
+export OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING=True
+
+echo "=== VMs ==="
+oci compute instance list -c $C --region $REGION \
+  --query 'data[].{Name:"display-name", State:"lifecycle-state", Shape:shape}' \
+  --output table
+
+echo -e "\n=== CPU Summary (last 1h) ==="
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION \
+  --namespace oci_computeagent --query-text "CpuUtilization[1m].mean()"
+
+echo -e "\n=== Memory Summary (last 1h) ==="
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION \
+  --namespace oci_computeagent --query-text "MemoryUtilization[1m].mean()"
+
+echo -e "\n=== Network Summary (last 1h) ==="
+echo "--- Inbound ---"
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION \
+  --namespace oci_computeagent --query-text "NetworksBytesIn[1m].mean()"
+echo "--- Outbound ---"
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION \
+  --namespace oci_computeagent --query-text "NetworksBytesOut[1m].mean()"
+
+echo -e "\n=== Disk Summary (last 1h) ==="
+echo "--- Read ---"
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION \
+  --namespace oci_computeagent --query-text "DiskBytesRead[1m].mean()"
+echo "--- Written ---"
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION \
+  --namespace oci_computeagent --query-text "DiskBytesWritten[1m].mean()"
+
+echo -e "\n=== Load Average (last 1h) ==="
+oci monitoring metric-data summarize-metrics-data -c $C --region $REGION \
+  --namespace oci_computeagent --query-text "LoadAverage[1m].mean()"
+```
+
+### Python (cross-platform)
+```python
+#!/usr/bin/env python3
+"""check_oci_metrics.py — Full OCI metrics check using Python SDK."""
+import oci
+from oci.monitoring.models import SummarizeMetricsDataDetails
+from datetime import datetime, timedelta, timezone
+
+config = oci.config.from_file("~/.oci/config")
+C = config["tenancy"]
+REGION = config["region"]
+
+compute = oci.core.ComputeClient(config)
+monitoring = oci.monitoring.MonitoringClient(config)
+network = oci.core.VirtualNetworkClient(config)
+
+# 1. List VMs
+print("=== VMs ===")
+instances = compute.list_instances(C).data
+for inst in instances:
+    print(f"  {inst.display_name} | {inst.lifecycle_state} | {inst.shape}")
+
+# 2. CPU Summary
+print("\n=== CPU Summary (last 1h) ===")
+details = SummarizeMetricsDataDetails(namespace="oci_computeagent", query="CpuUtilization[1m].mean()")
+cpu = monitoring.summarize_metrics_data(C, details).data
+for metric in cpu:
+    vm = metric.dimensions.get("resourceDisplayName", "?")
+    vals = [p.value for p in metric.aggregated_datapoints]
+    if vals:
+        print(f"  {vm}: avg={sum(vals)/len(vals):.1f}% max={max(vals):.1f}% min={min(vals):.1f}%")
+
+# 3. Memory Summary
+print("\n=== Memory Summary (last 1h) ===")
+details = SummarizeMetricsDataDetails(namespace="oci_computeagent", query="MemoryUtilization[1m].mean()")
+mem = monitoring.summarize_metrics_data(C, details).data
+for metric in mem:
+    vm = metric.dimensions.get("resourceDisplayName", "?")
+    vals = [p.value for p in metric.aggregated_datapoints]
+    if vals:
+        print(f"  {vm}: avg={sum(vals)/len(vals):.1f}%")
+
+# 4. Network Summary
+print("\n=== Network Summary (last 1h) ===")
+for qtext, label in [("NetworksBytesIn[1m].mean()", "In"), ("NetworksBytesOut[1m].mean()", "Out")]:
+    details = SummarizeMetricsDataDetails(namespace="oci_computeagent", query=qtext)
+    net = monitoring.summarize_metrics_data(C, details).data
+    for metric in net:
+        vm = metric.dimensions.get("resourceDisplayName", "?")
+        vals = [p.value for p in metric.aggregated_datapoints]
+        if vals:
+            print(f"  {vm} {label}: {sum(vals)/len(vals)/1024:.1f} KB/s")
+
+# 5. Disk Summary
+print("\n=== Disk Summary (last 1h) ===")
+for qtext, label in [("DiskBytesRead[1m].mean()", "Read"), ("DiskBytesWritten[1m].mean()", "Write")]:
+    details = SummarizeMetricsDataDetails(namespace="oci_computeagent", query=qtext)
+    disk = monitoring.summarize_metrics_data(C, details).data
+    for metric in disk:
+        vm = metric.dimensions.get("resourceDisplayName", "?")
+        vals = [p.value for p in metric.aggregated_datapoints]
+        if vals:
+            print(f"  {vm} {label}: {sum(vals)/len(vals)/1024:.1f} KB/s")
+
+# 6. Load Average
+print("\n=== Load Average (last 1h) ===")
+details = SummarizeMetricsDataDetails(namespace="oci_computeagent", query="LoadAverage[1m].mean()")
+load = monitoring.summarize_metrics_data(C, details).data
+for metric in load:
+    vm = metric.dimensions.get("resourceDisplayName", "?")
+    vals = [p.value for p in metric.aggregated_datapoints]
+    if vals:
+        print(f"  {vm}: avg={sum(vals)/len(vals):.2f}")
+
+# 7. Instance Details
+print("\n=== Instance Details ===")
+for inst in instances:
+    if inst.lifecycle_state != "RUNNING":
+        continue
+    vnic_attachments = compute.list_vnic_attachments(C, instance_id=inst.id).data
+    for va in vnic_attachments:
+        vnic = network.get_vnic(va.vnic_id).data
+        print(f"  {inst.display_name}: {vnic.public_ip} ({vnic.private_ip})")
+        print(f"    Shape: {inst.shape} | Created: {inst.time_created.strftime('%Y-%m-%d %H:%M')}")
+
+# 8. Audit Events (last 1h)
+print("\n=== Audit Events (last 1h) ===")
+audit = oci.audit.AuditClient(config)
+now = datetime.now(timezone.utc)
+events = audit.list_events(C, start_time=now - timedelta(hours=1), end_time=now).data
+print(f"  Found {len(events)} events")
+for e in events[:5]:
+    print(f"  [{e.event_time.strftime('%H:%M:%S')}] {e.event_type.split('.')[-1]} ({e.source})")
 ```
 
 ## Notes
 
+- **PowerShell**: Always use raw JSON output + `ConvertFrom-Json` instead of `--query` for reliable parsing. The `--query` flag with backtick escaping for hyphens (`"display-name"`) does NOT work reliably in PowerShell.
+- **Bash**: `--query` with JMESPath works natively. Use double quotes inside single quotes for hyphenated keys: `'data[].{Name:"display-name"}'`
+- **Python**: The SDK uses `SummarizeMetricsDataDetails` model object (not keyword args) for `summarize_metrics_data()`. Use `network.get_vnic()` (VirtualNetworkClient), not `compute.get_vnic()`. Audit events use `event_type` (not `event_name`) and `source` (not `event_source`).
 - Always set `$env:OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING="True"` on Windows
+- Always specify `--region` explicitly to avoid region mismatch errors
 - Ensure SSH keys are properly configured for VM access
 - Keep your system time synchronized with OCI servers
 - Use the correct region for your VM (e.g., `sa-saopaulo-1` for Brazil)

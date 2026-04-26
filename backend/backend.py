@@ -665,6 +665,47 @@ async def repair_news():
 
 WAQI_TOKEN = os.getenv("WAQI_TOKEN", "demo")
 
+# Reverse geocoding cache: {lat,lon: city_name}
+_reverse_geo_cache = {}
+_REVERSE_GEO_TTL = 3600  # 1 hour cache
+
+
+async def reverse_geocode(lat: float, lon: float) -> str:
+    """Get city name from coordinates using Nominatim (OpenStreetMap)."""
+    key = f"{lat:.4f},{lon:.4f}"
+    cached = _reverse_geo_cache.get(key)
+    if cached and cached["expires"] > time.time():
+        return cached["city"]
+
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            url = "https://nominatim.openstreetmap.org/reverse"
+            params = {
+                "lat": lat,
+                "lon": lon,
+                "format": "json",
+                "zoom": 10,  # city level
+                "accept-language": "pt",
+            }
+            headers = {"User-Agent": "YvyApp/1.0 (environmental-monitoring)"}
+            resp = await client.get(url, params=params, headers=headers)
+            data = resp.json()
+            address = data.get("address", {})
+
+            # Try city, town, village, municipality in order
+            city = (
+                address.get("city")
+                or address.get("town")
+                or address.get("village")
+                or address.get("municipality")
+                or address.get("state")
+                or "Brasil"
+            )
+            _reverse_geo_cache[key] = {"city": city, "expires": time.time() + _REVERSE_GEO_TTL}
+            return city
+    except Exception:
+        return "Brasil"
+
 
 @app.route("/api/weather/air-quality")
 async def get_air_quality():
@@ -684,10 +725,12 @@ async def get_air_quality():
             data = resp.json()
             if data.get("status") == "ok":
                 d = data["data"]
+                city = await reverse_geocode(float(lat), float(lon)) if lat and lon else "Brasil"
                 return jsonify({
                     "aqi": d.get("aqi"),
                     "pm25": d.get("iaqi", {}).get("pm25", {}).get("v"),
                     "humidity": d.get("iaqi", {}).get("h", {}).get("v"),
+                    "city": city,
                 })
             if station != fallback:
                 resp2 = await client.get(
@@ -700,6 +743,7 @@ async def get_air_quality():
                         "aqi": d.get("aqi"),
                         "pm25": d.get("iaqi", {}).get("pm25", {}).get("v"),
                         "humidity": d.get("iaqi", {}).get("h", {}).get("v"),
+                        "city": "Brasil",
                     })
             return jsonify({"aqi": None})
     except Exception:
@@ -723,11 +767,12 @@ async def get_temperature():
             data = resp.json()
             current = data.get("current", {})
             if current:
+                city = await reverse_geocode(float(lat), float(lon))
                 return jsonify({
                     "temp": current.get("temperature_2m"),
                     "feels_like": current.get("apparent_temperature"),
                     "humidity": current.get("relative_humidity_2m"),
-                    "city": "Brasil",
+                    "city": city,
                 })
             return jsonify({"temp": None})
     except Exception:
