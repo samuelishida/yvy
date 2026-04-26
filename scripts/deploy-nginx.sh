@@ -21,21 +21,45 @@ echo "Setting up ACME challenge directory..."
 sudo mkdir -p /var/www/certbot
 sudo chown -R www-data:www-data /var/www/certbot
 
-# 3. Create initial nginx config (HTTP only for SSL cert request)
-echo "Configuring nginx for SSL certificate request..."
+# 3. Create nginx config (HTTP only, serves app directly)
+echo "Configuring nginx..."
 sudo tee /etc/nginx/sites-available/yvy > /dev/null << NGINX_EOF
 server {
     listen 80;
-    server_name $DOMAIN www.$DOMAIN;
+    server_name $DOMAIN www.$DOMAIN _;
+    root /opt/yvy/frontend/build;
+    index index.html;
     
     # ACME challenge for Let's Encrypt
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
     
-    # Temporary redirect to www
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json application/javascript;
+    
+    # Cache static assets
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # Proxy API requests to backend
+    location /api/ {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+    
+    # SPA fallback
     location / {
-        return 301 https://$DOMAIN\$request_uri;
+        try_files \$uri \$uri/ /index.html;
     }
 }
 NGINX_EOF
@@ -60,80 +84,15 @@ sudo certbot certonly --webroot \
     -d "$DOMAIN" \
     -d "www.$DOMAIN"
 
-# 7. Update nginx config with SSL
-echo "Configuring nginx with SSL..."
-sudo tee /etc/nginx/sites-available/yvy > /dev/null << 'NGINX_EOF'
-# HTTP server - redirect to HTTPS
-server {
-    listen 80;
-    server_name yvy.app.br www.yvy.app.br;
-    
-    # ACME challenge for Let's Encrypt
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-    
-    # Redirect all HTTP to HTTPS
-    location / {
-        return 301 https://$server_name$request_uri;
-    }
-}
-
-# HTTPS server
-server {
-    listen 443 ssl http2;
-    server_name yvy.app.br www.yvy.app.br;
-    
-    # SSL certificates
-    ssl_certificate /etc/letsencrypt/live/yvy.app.br/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/yvy.app.br/privkey.pem;
-    
-    # SSL configuration
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers on;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
-    ssl_session_cache shared:SSL:10m;
-    ssl_session_timeout 10m;
-    
-    # Security headers
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    
-    # Root
-    root /opt/yvy/frontend/build;
-    index index.html;
-    
-    # Gzip compression
-    gzip on;
-    gzip_vary on;
-    gzip_min_length 1024;
-    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json application/javascript;
-    
-    # Cache static assets
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-    
-    # Proxy API requests to backend
-    location /api/ {
-        proxy_pass http://127.0.0.1:5000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-    
-    # SPA fallback
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}
-NGINX_EOF
+# 7. Update nginx config with SSL (if cert exists)
+if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+    echo "SSL certificate found, enabling HTTPS..."
+    sudo certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN"
+else
+    echo "SSL certificate not found. Keeping HTTP-only config."
+    echo "After updating DNS A record to point to this server, run:"
+    echo "  sudo certbot --nginx -d $DOMAIN -d www.$DOMAIN"
+fi
 
 # 8. Test and reload nginx with SSL config
 echo "Testing nginx config with SSL..."

@@ -214,6 +214,23 @@
             -d "{{ domain }}" \
             -d "www.{{ domain }}"
         creates: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
+      ignore_errors: true
+      register: cert_result
+      notify: reload nginx
+
+    - name: Aviso se SSL falhou (DNS nao aponta para esta VM)
+      when: cert_result is defined and cert_result.rc is defined and cert_result.rc != 0
+      ansible.builtin.debug:
+        msg: |
+          ⚠️  Certificado SSL nao foi emitido.
+          DNS de {{ domain }} aponta para 200.160.2.95 (nao para {{ ansible_host }}).
+          Apos atualizar o registro A, rode manualmente:
+            sudo certbot --nginx -d {{ domain }} -d www.{{ domain }}
+
+    - name: Ativar HTTPS se certificado foi obtido
+      when: cert_result is defined and cert_result.rc is defined and cert_result.rc == 0
+      ansible.builtin.shell:
+        cmd: certbot --nginx -d {{ domain }} -d www.{{ domain }}
       notify: reload nginx
 
     - name: Configurar renew automático do SSL
