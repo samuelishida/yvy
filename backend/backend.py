@@ -285,6 +285,7 @@ async def cache_get(key: str):
     try:
         return await redis_client.get(key)
     except Exception:
+        # Redis unavailable - skip cache
         return None
 
 
@@ -295,6 +296,7 @@ async def cache_set(key: str, value, ttl: int = CACHE_TTL_DEFAULT):
     try:
         await redis_client.setex(key, ttl, value)
     except Exception:
+        # Redis unavailable - skip cache
         pass
 
 
@@ -307,6 +309,7 @@ async def cache_delete(pattern: str):
         if keys:
             await redis_client.delete(*keys)
     except Exception:
+        # Redis unavailable - skip
         pass
 
 
@@ -315,7 +318,16 @@ async def startup():
     global redis_client, _news_sync_task
     await db_sqlite.init_db()
     logger.info("SQLite connection verified.", extra={"event": "sqlite_connect_ok"})
-    redis_client = aioredis.from_url(REDIS_URL, socket_connect_timeout=5, socket_timeout=5)
+    
+    # Try Redis connection (optional)
+    try:
+        redis_client = aioredis.from_url(REDIS_URL, socket_connect_timeout=5, socket_timeout=5)
+        await redis_client.ping()
+        logger.info("Redis connected.", extra={"event": "redis_connect_ok"})
+    except Exception as e:
+        redis_client = None
+        logger.warning(f"Redis unavailable - caching disabled. Error: {e}", extra={"event": "redis_connect_failed"})
+    
     asyncio.get_event_loop().create_task(_fires_sync_loop())
     _news_sync_task = asyncio.get_event_loop().create_task(_news_sync_loop())
 
