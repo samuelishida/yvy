@@ -31,7 +31,7 @@
         enabled: true
 
     - name: Garantir swap para VM 1GB
-      ansible.builtin.command:
+      ansible.builtin.shell:
         cmd: |
           swapon --show | grep -q /swapfile || {
             fallocate -l 2G /swapfile &&
@@ -40,7 +40,6 @@
             swapon /swapfile &&
             echo '/swapfile none swap sw 0 0' >> /etc/fstab
           }
-        warn: false
       changed_when: false
 
     - name: Verificar se nvm esta instalado
