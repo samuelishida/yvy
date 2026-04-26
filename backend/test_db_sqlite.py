@@ -163,6 +163,7 @@ async def test_has_recent_news(db):
         "title": "Old News",
         "description": "Old article",
         "publishedAt": old,
+        "ingested_at": old,
         "source_name": "Example",
     }
     await db_sqlite.upsert_news(article)

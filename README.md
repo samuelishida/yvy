@@ -163,55 +163,43 @@ CI:
 
 ## Deploy OCI (baremetal)
 
-Deploy oficial: Terraform + Ansible, sem containers.
+Deploy via **OCI CLI + Ansible** em VM existente (sem Terraform — evita limites do Always Free).
 
-### Fluxo completo
+### Fluxo GitHub Actions
 
-1. **Terraform** cria VCN/subnet/regras de firewall/VM
-2. **Cloud-init** prepara runtime (Python, Node, Redis, SQLite)
-3. **Ansible** aplica setup da aplicação e serviços systemd
-4. **Serviços ativos**: `yvy-backend`, `yvy-frontend`
+1. **OCI CLI** descobre VM `yvy-server` em execução
+2. **Ansible** aplica setup da aplicação e serviços systemd
+3. **Health check** valida backend + frontend
 
 ### Deploy rápido via OCI CLI (VM existente)
 
 ```bash
 # 1. Configure variáveis
-INSTANCE_ID="ocid1.instance.oc1..<SEU_INSTANCE_OCID>"
-VM_IP=$(oci compute instance list-vnics --instance-id "$INSTANCE_ID" \
-  --query 'data[0]."public-ip"' --raw-output)
+INSTANCE_ID=$(oci compute instance list -c $TENANCY_OCID --lifecycle-state RUNNING \
+  --query 'data[?"display-name"==`yvy-server`][0].id' --raw-output)
+VM_IP=$(oci network vnic get --vnic-id \
+  "$(oci compute vnic-attachment list -c $TENANCY_OCID --instance-id "$INSTANCE_ID" \
+    --query 'data[0]."vnic-id"' --raw-output)" \
+  --query 'data."public-ip"' --raw-output)
 SSH="ssh -i ~/.ssh/oci_yvy -o StrictHostKeyChecking=no ubuntu@$VM_IP"
 
-# 2. Adicione swap (1GB VM precisa para npm build)
-$SSH "sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile \
-  && sudo mkswap /swapfile && sudo swapon /swapfile \
-  && echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab"
-
-# 3. Instale dependências de runtime
-$SSH "sudo apt-get update && sudo apt-get install -y git python3 python3-venv \
-  python3-pip redis-server sqlite3"
-
-# 4. Instale Node 18 via nvm
-$SSH 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash'
-$SSH 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" \
-  && nvm install 18'
-
-# 5. Clone/atualize o repositório
-$SSH "if [ -d /opt/yvy ]; then cd /opt/yvy && git pull; \
+# 2. Clone/atualize o repositório
+$SSH "if [ -d /opt/yvy ]; then cd /opt/yvy && sudo git pull; \
   else sudo mkdir -p /opt/yvy && sudo chown ubuntu:ubuntu /opt/yvy \
   && git clone https://github.com/samuelishida/yvy.git /opt/yvy; fi"
 
-# 6. Gere .env e configure CORS
+# 3. Gere .env e configure CORS
 $SSH "cd /opt/yvy && bash scripts/generate-secrets.sh"
 $SSH "sed -i 's|CORS_ORIGINS=.*|CORS_ORIGINS=http://$VM_IP:5001,http://localhost:5001|' /opt/yvy/.env"
 
-# 7. Setup backend
+# 4. Setup backend (venv + deps)
 $SSH "cd /opt/yvy && bash scripts/setup-local.sh"
 
-# 8. Instale deps do frontend
+# 5. Instale deps do frontend
 $SSH 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" \
   && cd /opt/yvy/frontend && rm -rf node_modules package-lock.json && npm install'
 
-# 9. Crie e inicie serviços systemd
+# 6. Crie e inicie serviços systemd
 $SSH 'sudo tee /etc/systemd/system/yvy-backend.service > /dev/null << EOF
 [Unit]
 Description=Yvy Backend Service
@@ -245,7 +233,6 @@ Environment=HOME=/home/ubuntu
 Environment=YVY_LOCAL_DEV=1
 Environment=PORT=5001
 Environment=BROWSER=none
-Environment=PATH=/home/ubuntu/.nvm/versions/node/v18.20.8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/usr/bin/bash /opt/yvy/scripts/run-frontend.sh
 Restart=always
 RestartSec=10
@@ -254,13 +241,49 @@ WantedBy=multi-user.target
 EOF'
 
 $SSH "sudo systemctl daemon-reload && sudo systemctl enable yvy-backend yvy-frontend \
-  && sudo systemctl start yvy-backend && sleep 3 \
-  && sudo systemctl start yvy-frontend"
+  && sudo systemctl restart yvy-backend && sleep 3 \
+  && sudo systemctl restart yvy-frontend"
 
-# 10. Verifique
-curl -s http://$VM_IP:5000/ | head -1
+# 7. Verifique
+curl -s http://$VM_IP:5000/health
 curl -s -o /dev/null -w '%{http_code}' http://$VM_IP:5001/
 ```
+
+### Deploy via GitHub Actions (automático)
+
+O workflow `.github/workflows/deploy-oci.yml` é acionado em push para `main`/`master`:
+1. Instala OCI CLI + Ansible no runner
+2. Descobre a VM `yvy-server` em execução via OCI CLI
+3. Aguarda cloud-init concluir
+4. Executa Ansible playbook
+5. Valida health check
+
+**Secrets necessários no GitHub** (Settings → Secrets and variables → Actions):
+
+| Secret | Descrição |
+|--------|-----------|
+| `OCI_TENANCY_OCID` | OCID da tenancy |
+| `OCI_USER_OCID` | OCID do usuário |
+| `OCI_FINGERPRINT` | Fingerprint da API Key |
+| `OCI_PRIVATE_KEY` | Conteúdo da chave privada `oci_api_key.pem` |
+| `OCI_REGION` | Região (ex: `sa-saopaulo-1`) |
+| `OCI_COMPARTMENT_OCID` | OCID do compartment (opcional, usa tenancy se vazio) |
+| `OCI_SSH_PRIVATE_KEY` | Conteúdo de `~/.ssh/oci_yvy` |
+
+### Terraform (infraestrutura inicial)
+
+Use Terraform **apenas na primeira vez** para criar a VM:
+
+```bash
+cd infra
+cp terraform.tfvars.example terraform.tfvars
+# Preencha com seus valores OCI
+terraform init
+terraform plan -out=tfplan
+terraform apply tfplan
+```
+
+Após a VM criada, todos os deploys subsequentes usam OCI CLI + Ansible.
 
 ### Arquivos de referência
 

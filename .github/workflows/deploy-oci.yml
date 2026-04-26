@@ -7,81 +7,10 @@ on:
       - master
   workflow_dispatch:
 
-env:
-  TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
-  TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
-  TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-  TF_VAR_private_key_path: ./oci_api_key.pem
-  TF_VAR_region: ${{ secrets.OCI_REGION || 'sa-saopaulo-1' }}
-  TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID || secrets.OCI_TENANCY_OCID }}
-  TF_VAR_ssh_public_key_path: ./oci_ssh_key.pub
-
 jobs:
-  terraform:
-    name: Terraform Infra
+  deploy:
+    name: Deploy via OCI CLI + Ansible
     runs-on: ubuntu-latest
-    outputs:
-      public_ip: ${{ steps.tf_outputs.outputs.public_ip }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.9.0"
-
-      - name: Write OCI API Key
-        run: |
-          printf '%s\n' "${{ secrets.OCI_PRIVATE_KEY }}" > infra/oci_api_key.pem
-          chmod 600 infra/oci_api_key.pem
-          head -1 infra/oci_api_key.pem | grep -q 'BEGIN' || {
-            echo "ERROR: Private key format invalid. Ensure secret has literal newlines."
-            exit 1
-          }
-
-      - name: Verify OCI credentials
-        working-directory: ./infra
-        run: |
-          echo "Region: $TF_VAR_region"
-          echo "Tenancy: ${TF_VAR_tenancy_ocid:0:20}..."
-          echo "Key file exists: $(test -f oci_api_key.pem && echo yes || echo no)"
-
-      - name: Write SSH Public Key
-        run: |
-          echo "${{ secrets.OCI_SSH_PUBLIC_KEY }}" > infra/oci_ssh_key.pub
-
-      - name: Terraform Init
-        working-directory: ./infra
-        run: terraform init
-
-      - name: Terraform Plan
-        working-directory: ./infra
-        run: terraform plan -out=tfplan
-
-      - name: Terraform Apply
-        working-directory: ./infra
-        run: terraform apply -auto-approve tfplan
-
-      - name: Extract Outputs
-        id: tf_outputs
-        working-directory: ./infra
-        run: |
-          PUBLIC_IP=$(terraform output -raw instance_public_ip)
-          echo "public_ip=$PUBLIC_IP" >> "$GITHUB_OUTPUT"
-          echo "Instance IP: $PUBLIC_IP"
-
-      - name: Save Terraform State
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-state
-          path: infra/terraform.tfstate
-          retention-days: 30
-
-  ansible:
-    name: Ansible Deploy
-    runs-on: ubuntu-latest
-    needs: terraform
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -91,22 +20,65 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Ansible
+      - name: Install OCI CLI + Ansible
         run: |
-          pip install ansible
+          pip install oci-cli ansible
+
+      - name: Write OCI API Key
+        run: |
+          mkdir -p ~/.oci
+          printf '%s\n' "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+
+      - name: Configure OCI CLI
+        run: |
+          cat > ~/.oci/config << EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_FINGERPRINT }}
+          key_file=~/.oci/oci_api_key.pem
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=${{ secrets.OCI_REGION || 'sa-saopaulo-1' }}
+          EOF
+
+      - name: Find existing VM
+        id: find_vm
+        run: |
+          COMPARTMENT=${{ secrets.OCI_COMPARTMENT_OCID || secrets.OCI_TENANCY_OCID }}
+          echo "Looking for yvy-server in compartment..."
+          INSTANCE_JSON=$(oci compute instance list -c "$COMPARTMENT" --lifecycle-state RUNNING \
+            --query 'data[?"display-name"==`yvy-server`]' --raw-output 2>&1)
+          
+          INSTANCE_ID=$(echo "$INSTANCE_JSON" | python3 -c "import sys,json; data=json.load(sys.stdin); print(data[0]['id'] if data else '')" 2>/dev/null || echo "")
+          
+          if [ -z "$INSTANCE_ID" ]; then
+            echo "❌ No running yvy-server found. Create one via Terraform first, or check compartment OCID."
+            exit 1
+          fi
+          
+          echo "Found instance: $INSTANCE_ID"
+          
+          # Get public IP
+          VNIC_JSON=$(oci compute vnic-attachment list -c "$COMPARTMENT" --instance-id "$INSTANCE_ID" --query 'data[0]."vnic-id"' --raw-output 2>&1)
+          PUBLIC_IP=$(oci network vnic get --vnic-id "$VNIC_JSON" --query 'data."public-ip"' --raw-output 2>&1)
+          
+          echo "VM IP: $PUBLIC_IP"
+          echo "public_ip=$PUBLIC_IP" >> "$GITHUB_OUTPUT"
+          echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
 
       - name: Write SSH Private Key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.OCI_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ needs.terraform.outputs.public_ip }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh-keyscan -H ${{ steps.find_vm.outputs.public_ip }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Wait for VM to be ready (cloud-init)
         run: |
           echo "Waiting for VM to finish cloud-init..."
           for i in $(seq 1 30); do
-            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 ubuntu@${{ needs.terraform.outputs.public_ip }} "cloud-init status --wait 2>/dev/null; echo READY" 2>/dev/null | grep -q READY && break
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 ubuntu@${{ steps.find_vm.outputs.public_ip }} \
+              "cloud-init status --wait 2>/dev/null; echo READY" 2>/dev/null | grep -q READY && break
             echo "Attempt $i/30 - not ready yet..."
             sleep 10
           done
@@ -118,7 +90,7 @@ jobs:
         run: |
           cat > inventory.ini <<EOF
           [yvy]
-          ${{ needs.terraform.outputs.public_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa
+          ${{ steps.find_vm.outputs.public_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa
           EOF
 
           ansible-playbook -i inventory.ini playbook.yml -v
@@ -127,10 +99,10 @@ jobs:
         run: |
           echo "Aguardando aplicação ficar pronta..."
           for i in $(seq 1 12); do
-            HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://${{ needs.terraform.outputs.public_ip }}:5001/health 2>/dev/null || echo "000")
+            HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://${{ steps.find_vm.outputs.public_ip }}:5001/health 2>/dev/null || echo "000")
             if [ "$HTTP_CODE" = "200" ]; then
               echo "✅ Yvy deployado com sucesso!"
-              echo "🌐 URL: http://${{ needs.terraform.outputs.public_ip }}:5001"
+              echo "🌐 URL: http://${{ steps.find_vm.outputs.public_ip }}:5001"
               exit 0
             fi
             echo "Attempt $i/12 - HTTP $HTTP_CODE, waiting..."
