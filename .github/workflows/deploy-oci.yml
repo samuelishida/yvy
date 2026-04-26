@@ -116,10 +116,11 @@ jobs:
         run: |
           echo "Aguardando aplicação ficar pronta..."
           for i in $(seq 1 12); do
-            HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://${{ steps.find_vm.outputs.public_ip }}:5001/health 2>/dev/null || echo "000")
+            HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 https://yvy.app.br/ 2>/dev/null || echo "000")
             if [ "$HTTP_CODE" = "200" ]; then
               echo "✅ Yvy deployado com sucesso!"
-              echo "🌐 URL: http://${{ steps.find_vm.outputs.public_ip }}:5001"
+              echo "🌐 URL: https://yvy.app.br/"
+              echo "🔧 API:  https://yvy.app.br/api/"
               exit 0
             fi
             echo "Attempt $i/12 - HTTP $HTTP_CODE, waiting..."
