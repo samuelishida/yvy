@@ -226,7 +226,6 @@ function MetricsRow({ airQuality, temperature, t }) {
           <p className="text-[9px] sm:text-sm font-semibold text-white">{t('home.airQuality')}</p>
           <p className="hidden sm:block text-xs text-slate-400">PM2.5: {airQuality ? airQuality.pm25 : '--'}</p>
           <p className={`text-[9px] sm:text-xs font-medium ${aqiLabelColor}`}>{airQuality ? aqiLabel : ''}</p>
-          <p className="text-[8px] sm:text-xs text-slate-400">{airQuality?.city || ''}</p>
         </div>
       </div>
       <div className="w-px h-10 sm:h-16 bg-white/10" />
@@ -345,7 +344,7 @@ export default function Home() {
         .then((r) => r.json())
         .then((d) => {
           if (d.aqi != null) {
-            setAirQuality({ aqi: d.aqi, pm25: d.pm25 ?? '-', humidity: d.humidity ?? '-', city: d.city });
+            setAirQuality({ aqi: d.aqi, pm25: d.pm25 ?? '-', humidity: d.humidity ?? '-' });
           }
         })
         .catch(() => {});
