@@ -26,7 +26,10 @@
 .navbar-logo {
   height: 42px;
   width: auto;
+  max-width: 180px;
   display: block;
+  object-fit: cover;
+  object-position: left center;
 }
 
 .brand-leaf {
