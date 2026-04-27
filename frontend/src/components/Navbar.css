@@ -37,9 +37,9 @@
 }
 
 .navbar-logo--text {
-  height: 50px;
+  height: 64px;
   width: auto;
-  max-width: 280px;
+  max-width: 300px;
 }
 
 /* Esconde texto em telas estreitas (mobile) */

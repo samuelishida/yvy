@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import logoBrazil from '../Assets/yvy_logo_brazil.svg';
-import logoText from '../Assets/yvy_logo_text.svg';
+import logoTextPt from '../Assets/yvy_logo_text.svg';
+import logoTextEn from '../Assets/yvy_logo_text_en.svg';
 import './Navbar.css';
 
 export default function Navbar() {
@@ -11,12 +12,13 @@ export default function Navbar() {
   const { lang, switchLang, t } = useI18n();
 
   const close = () => setOpen(false);
+  const logoText = lang === 'pt' ? logoTextPt : logoTextEn;
 
   return (
     <nav className="navbar">
       <div className="navbar-brand">
         <img src={logoBrazil} alt="Yvy Brasil" className="navbar-logo navbar-logo--brazil" />
-        <img src={logoText} alt="Yvy Observabilidade Ambiental Brasil" className="navbar-logo navbar-logo--text" />
+        <img src={logoText} alt={lang === 'pt' ? 'Yvy Observabilidade Ambiental Brasil' : 'Yvy Environmental Observability Brazil'} className="navbar-logo navbar-logo--text" />
       </div>
 
       <div className={`nav-links ${open ? 'nav-links--open' : ''}`}>
