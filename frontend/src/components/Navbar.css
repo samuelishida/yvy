@@ -26,10 +26,27 @@
 .navbar-logo {
   height: 42px;
   width: auto;
-  max-width: 180px;
   display: block;
-  object-fit: cover;
-  object-position: left center;
+  object-fit: contain;
+}
+
+.navbar-logo--brazil {
+  height: 42px;
+  width: 42px;
+  border-radius: 8px;
+}
+
+.navbar-logo--text {
+  height: 42px;
+  width: auto;
+  max-width: 200px;
+}
+
+/* Esconde texto em telas estreitas (mobile) */
+@media (max-width: 300px) {
+  .navbar-logo--text {
+    display: none;
+  }
 }
 
 .brand-leaf {
