@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useI18n } from '../i18n';
+import logo from '../Assets/yvy_logo_v4.svg';
 import './Navbar.css';
 
 export default function Navbar() {
@@ -13,11 +14,7 @@ export default function Navbar() {
   return (
     <nav className="navbar">
       <div className="navbar-brand">
-        <span className="brand-leaf">🌿</span>
-        <div className="brand-text">
-          <span className="brand-name">Yvy</span>
-          <span className="brand-sub">{t('nav.brandSub')}</span>
-        </div>
+        <img src={logo} alt="Yvy" className="navbar-logo" />
       </div>
 
       <div className={`nav-links ${open ? 'nav-links--open' : ''}`}>

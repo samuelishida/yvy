@@ -1,7 +1,7 @@
 # OCI CLI Skill: Check VM Metrics
 
 ## Overview
-This skill helps you check Oracle Cloud Infrastructure (OCI) VM metrics and manage OCI resources. Provides **PowerShell** (Windows), **Bash** (Linux/macOS), and **Python** (cross-platform) commands.
+This skill helps you check Oracle Cloud Infrastructure (OCI) VM metrics and manage OCI resources. Provides **PowerShell** (Windows), **Bash** (Linux/macOS), and **Python** (cross-platform) commands. On Windows, prefer Python when OpenSSH permissions or shell quoting get in the way.
 
 ## Quick Command Reference
 
@@ -80,6 +80,12 @@ EOF
 # Set env vars
 export OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING=True
 ```
+
+### Windows recovery notes
+
+- If `ssh` fails on Windows with `bad permissions`, fix the private-key ACLs with `icacls` or use Python `paramiko` instead of OpenSSH.
+- OCI serial console creation requires an **RSA** public key. `ssh-ed25519` keys are rejected for console connections.
+- If a micro VM still reports `RUNNING` but SSH banner exchange times out, verify state with the OCI CLI or SDK, then recover with `RESET` if needed.
 
 ### 3. SSH Key Configuration
 **PowerShell:**
@@ -585,6 +591,27 @@ $env:OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING="True"
 **Bash:**
 ```bash
 export OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING=True
+```
+
+### Windows SSH / serial console recovery
+
+If the VM is `RUNNING` in OCI but SSH hangs on Windows:
+
+1. Verify the instance state with Python or `oci compute instance get`.
+2. Test port 22 with `Test-NetConnection <IP> -Port 22`.
+3. If SSH still hangs, create an OCI serial console connection with an RSA key and use Python `paramiko` if OpenSSH key ACLs block access.
+4. Once back on the VM, add swap before restarting scraper jobs.
+
+Typical recovery commands on the VM:
+
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+grep -qxF '/swapfile none swap sw 0 0' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+swapon --show
+free -h
 ```
 
 ## Complete Metrics Check Script
