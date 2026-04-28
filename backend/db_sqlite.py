@@ -73,7 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_news_published ON news(publishedAt);
 """
 
 _pool: asyncio.Queue[aiosqlite.Connection] | None = None
-_pool_size = 3
+_pool_size = 7
 
 
 async def _create_connection() -> aiosqlite.Connection:

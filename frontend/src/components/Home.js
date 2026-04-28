@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMapEvents } from 'react-leaflet';
+import React, { useEffect, useMemo, useState } from 'react';
+import { MapContainer, TileLayer, CircleMarker, Circle, Popup, useMapEvents } from 'react-leaflet';
 import { Thermometer, TreePine, Flame } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { getCache, setCache } from '../utils/cache';
@@ -7,10 +7,34 @@ import 'leaflet/dist/leaflet.css';
 import '../Home.css';
 
 const FIRE_STYLES = {
-  nominal: { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.85, radius: 5 },
-  high:    { color: '#f97316', fillColor: '#f97316', fillOpacity: 0.8,  radius: 4 },
-  low:     { color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 0.4,  radius: 3 },
+  nominal: { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.85, radius: 5, weight: 1 },
+  high:    { color: '#f97316', fillColor: '#f97316', fillOpacity: 0.8,  radius: 4, weight: 1 },
+  low:     { color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 0.4,  radius: 3, weight: 1 },
 };
+
+const FIRE_STYLES_HI = {
+  nominal: { color: '#fff', fillColor: '#ef4444', fillOpacity: 1,   radius: 9,  weight: 2 },
+  high:    { color: '#fff', fillColor: '#f97316', fillOpacity: 1,   radius: 8,  weight: 2 },
+  low:     { color: '#fff', fillColor: '#fbbf24', fillOpacity: 0.9, radius: 7,  weight: 2 },
+};
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371, rad = Math.PI / 180;
+  const p1 = lat1 * rad, p2 = lat2 * rad;
+  const a = Math.sin((lat2 - lat1) * rad / 2) ** 2
+          + Math.cos(p1) * Math.cos(p2) * Math.sin((lon2 - lon1) * rad / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function alertForFire(fire, alerts) {
+  let best = null, bestDist = Infinity;
+  for (const a of alerts) {
+    if (!a.center) continue;
+    const d = haversineKm(fire.lat, fire.lon, a.center[0], a.center[1]);
+    if (d <= (a.radius_km || 15) && d < bestDist) { bestDist = d; best = a.id; }
+  }
+  return best;
+}
 
 function classLabel(clazz, t) {
   if (!clazz) return t('home.unknown');
@@ -148,21 +172,8 @@ const ALERT_TYPE_KEYS = {
   pm25: 'alertPm25',
 };
 
-function AlertsPanel() {
+function AlertsPanel({ alerts, activeAlertId, onAlertEnter, onAlertLeave }) {
   const { t } = useI18n();
-  const [alerts, setAlerts] = useState([]);
-
-  useEffect(() => {
-    const fetchAlerts = () => {
-      fetch('/api/alerts')
-        .then(r => r.json())
-        .then(d => setAlerts(d.alerts || []))
-        .catch(err => console.error('Failed to fetch alerts:', err));
-    };
-    fetchAlerts();
-    const id = setInterval(fetchAlerts, 60000);
-    return () => clearInterval(id);
-  }, []);
 
   return (
     <div className="panel">
@@ -183,7 +194,12 @@ function AlertsPanel() {
         {alerts.length === 0 ? (
           <div className="alert-empty">{t('home.noAlerts')}</div>
         ) : alerts.map((a, i) => (
-          <div key={a.id || i} className="alert-row">
+          <div
+            key={a.id || i}
+            className={`alert-row${activeAlertId === a.id ? ' alert-row--active' : ''}`}
+            onMouseEnter={() => onAlertEnter(a.id)}
+            onMouseLeave={onAlertLeave}
+          >
             <div className={`alert-tick ${a.tick}`} />
             <div className="alert-body">
               <div className="alert-title">
@@ -201,9 +217,24 @@ function AlertsPanel() {
   );
 }
 
-function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, loading, error, t, airQuality, temperature }) {
+function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, loading, error, t, airQuality, temperature, alerts, activeAlertId, onFireOver, onFireOut }) {
   const [satellite, setSatellite] = useState(true);
   const [visibleCount, setVisibleCount] = useState(null);
+
+  const activeAlert = useMemo(() => alerts?.find(a => a.id === activeAlertId) || null, [alerts, activeAlertId]);
+
+  const highlightedFires = useMemo(() => {
+    if (!activeAlert?.center || !fires) return null;
+    const [alat, alon] = activeAlert.center;
+    const rkm = (activeAlert.radius_km || 15) * 1.25;
+    const s = new Set();
+    fires.forEach((f, i) => { if (haversineKm(f.lat, f.lon, alat, alon) <= rkm) s.add(i); });
+    return s;
+  }, [activeAlert, fires]);
+
+  const ringColor = activeAlert
+    ? (activeAlert.tick === 'crit' ? '#ef4444' : activeAlert.tick === 'warn' ? '#f97316' : '#2dd4ff')
+    : '#2dd4ff';
 
   const tileUrl = satellite
     ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
@@ -269,10 +300,33 @@ function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, se
               </Popup>
             </CircleMarker>
           ))}
+          {showFires && activeAlert?.center && (
+            <Circle
+              center={activeAlert.center}
+              radius={(activeAlert.radius_km || 15) * 1250}
+              pathOptions={{ color: ringColor, fillColor: ringColor, fillOpacity: 0.04, weight: 1.5, opacity: 0.65, dashArray: '6 4', className: 'alert-highlight-ring' }}
+            />
+          )}
           {showFires && fires && fires.map((fire, idx) => {
-            const s = fireStyle(fire.confidence);
+            const hi = highlightedFires?.has(idx);
+            const styles = hi ? FIRE_STYLES_HI : FIRE_STYLES;
+            const s = (() => {
+              const key = (fire.confidence || 'low').toLowerCase();
+              if (key === 'nominal' || key === 'h') return styles.nominal;
+              if (key === 'high') return styles.high;
+              return styles.low;
+            })();
             return (
-              <CircleMarker key={`f-${idx}`} center={[fire.lat, fire.lon]} pathOptions={s} radius={s.radius}>
+              <CircleMarker
+                key={`f-${idx}`}
+                center={[fire.lat, fire.lon]}
+                pathOptions={s}
+                radius={s.radius}
+                eventHandlers={{
+                  mouseover: () => onFireOver(alertForFire(fire, alerts || [])),
+                  mouseout:  onFireOut,
+                }}
+              >
                 <Popup>
                   <strong>{t('home.heatFocus')}</strong><br />
                   {t('home.confidence')}: {fire.confidence}<br />
@@ -371,6 +425,23 @@ export default function Home() {
   const [temperature, setTemperature] = useState(null);
   const [showDeforest, setShowDeforest] = useState(true);
   const [showFires,    setShowFires]    = useState(true);
+  const [alerts,       setAlerts]      = useState([]);
+  const [alertHoverId, setAlertHoverId] = useState(null); // from alert panel
+  const [fireAlertId,  setFireAlertId]  = useState(null); // from fire circle hover
+
+  const activeAlertId = alertHoverId || fireAlertId;
+
+  useEffect(() => {
+    const fetchAlerts = () => {
+      fetch('/api/alerts')
+        .then(r => r.json())
+        .then(d => setAlerts(d.alerts || []))
+        .catch(() => {});
+    };
+    fetchAlerts();
+    const id = setInterval(fetchAlerts, 60000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     fetch('/api/data')
@@ -422,10 +493,19 @@ export default function Home() {
           t={t}
           airQuality={airQuality}
           temperature={temperature}
+          alerts={alerts}
+          activeAlertId={activeAlertId}
+          onFireOver={id => id && setFireAlertId(id)}
+          onFireOut={() => setFireAlertId(null)}
         />
         <div className="sidebar">
           <BiomePanel />
-          <AlertsPanel />
+          <AlertsPanel
+            alerts={alerts}
+            activeAlertId={activeAlertId}
+            onAlertEnter={id => setAlertHoverId(id)}
+            onAlertLeave={() => setAlertHoverId(null)}
+          />
         </div>
       </div>
     </>

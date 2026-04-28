@@ -164,6 +164,10 @@ def _cluster_alerts(fires: list[dict]) -> list[dict]:
     for cluster in clusters[:5]:
         centroid_lat = sum(f["lat"] for f in cluster) / len(cluster)
         centroid_lon = sum(f["lon"] for f in cluster) / len(cluster)
+        radius_km = round(
+            max((_haversine_km(centroid_lat, centroid_lon, f["lat"], f["lon"]) for f in cluster), default=5.0) or 5.0,
+            1,
+        )
         meta = _meta_for_fire(centroid_lat, centroid_lon)
         alerts.append({
             "id": f"cluster_{centroid_lat:.2f}_{centroid_lon:.2f}",
@@ -171,6 +175,8 @@ def _cluster_alerts(fires: list[dict]) -> list[dict]:
             "tick": "crit",
             "meta": meta,
             "state": f"{len(cluster)} focos",
+            "center": [round(centroid_lat, 4), round(centroid_lon, 4)],
+            "radius_km": radius_km,
             "generated_at": now.isoformat(),
             "ts": _ts_label(now),
         })
@@ -185,6 +191,10 @@ def _night_fire_alerts(fires: list[dict]) -> list[dict]:
     for cluster in clusters[:5]:
         centroid_lat = sum(f["lat"] for f in cluster) / len(cluster)
         centroid_lon = sum(f["lon"] for f in cluster) / len(cluster)
+        radius_km = round(
+            max((_haversine_km(centroid_lat, centroid_lon, f["lat"], f["lon"]) for f in cluster), default=5.0) or 5.0,
+            1,
+        )
         meta = _meta_for_fire(centroid_lat, centroid_lon)
         alerts.append({
             "id": f"night_{centroid_lat:.2f}_{centroid_lon:.2f}",
@@ -192,6 +202,8 @@ def _night_fire_alerts(fires: list[dict]) -> list[dict]:
             "tick": "warn",
             "meta": meta,
             "state": f"{len(cluster)} focos",
+            "center": [round(centroid_lat, 4), round(centroid_lon, 4)],
+            "radius_km": radius_km,
             "generated_at": now.isoformat(),
             "ts": _ts_label(now),
         })
@@ -208,21 +220,28 @@ def _indigenous_land_alerts(fires: list[dict]) -> list[dict]:
         if info:
             name = info["name"]
             if name not in by_ti:
-                by_ti[name] = {"info": info, "count": 0}
-            by_ti[name]["count"] += 1
+                by_ti[name] = {"info": info, "lats": [], "lons": []}
+            by_ti[name]["lats"].append(fire["lat"])
+            by_ti[name]["lons"].append(fire["lon"])
 
     alerts = []
-    for ti_name, data in sorted(by_ti.items(), key=lambda x: -x[1]["count"])[:5]:
+    for ti_name, data in sorted(by_ti.items(), key=lambda x: -len(x[1]["lats"]))[:5]:
         info = data["info"]
         state_abbr = info.get("state_abbr", "BR")
         state_name = info.get("state_name", "Brasil")
+        lats, lons = data["lats"], data["lons"]
+        clat = sum(lats) / len(lats)
+        clon = sum(lons) / len(lons)
+        radius_km = round(max((_haversine_km(clat, clon, la, lo) for la, lo in zip(lats, lons)), default=5.0) or 5.0, 1)
         meta = f"{state_name} · {ti_name}"
         alerts.append({
             "id": f"ti_{ti_name[:20].replace(' ', '_')}",
             "type": "indigenous_land",
             "tick": "crit",
             "meta": meta,
-            "state": f"{state_abbr} · {data['count']} focos",
+            "state": f"{state_abbr} · {len(lats)} focos",
+            "center": [round(clat, 4), round(clon, 4)],
+            "radius_km": radius_km,
             "generated_at": now.isoformat(),
             "ts": _ts_label(now),
         })
@@ -239,21 +258,28 @@ def _conservation_unit_alerts(fires: list[dict]) -> list[dict]:
         if info:
             name = info["name"]
             if name not in by_uc:
-                by_uc[name] = {"info": info, "count": 0}
-            by_uc[name]["count"] += 1
+                by_uc[name] = {"info": info, "lats": [], "lons": []}
+            by_uc[name]["lats"].append(fire["lat"])
+            by_uc[name]["lons"].append(fire["lon"])
 
     alerts = []
-    for uc_name, data in sorted(by_uc.items(), key=lambda x: -x[1]["count"])[:5]:
+    for uc_name, data in sorted(by_uc.items(), key=lambda x: -len(x[1]["lats"]))[:5]:
         info = data["info"]
         state_abbr = info.get("state_abbr", "BR")
         category = info.get("category", "UC")
+        lats, lons = data["lats"], data["lons"]
+        clat = sum(lats) / len(lats)
+        clon = sum(lons) / len(lons)
+        radius_km = round(max((_haversine_km(clat, clon, la, lo) for la, lo in zip(lats, lons)), default=5.0) or 5.0, 1)
         meta = f"{category} · {uc_name[:30]}"
         alerts.append({
             "id": f"uc_{uc_name[:20].replace(' ', '_')}",
             "type": "conservation_unit",
             "tick": "crit",
             "meta": meta,
-            "state": f"{state_abbr} · {data['count']} focos",
+            "state": f"{state_abbr} · {len(lats)} focos",
+            "center": [round(clat, 4), round(clon, 4)],
+            "radius_km": radius_km,
             "generated_at": now.isoformat(),
             "ts": _ts_label(now),
         })

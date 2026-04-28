@@ -8,6 +8,17 @@
   align-items: start;
 }
 
+/* Alert highlight ring animation */
+@keyframes alert-pulse {
+  0%   { opacity: 0.8; }
+  50%  { opacity: 0.4; }
+  100% { opacity: 0.8; }
+}
+
+.alert-highlight-ring {
+  animation: alert-pulse 2s ease-in-out infinite;
+}
+
 /* ── Map Stage ────────────────────────────────────────── */
 .map-stage {
   position: relative;
@@ -367,6 +378,17 @@
   gap: 12px;
   padding: 10px 0;
   font-size: 12px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+
+.alert-row:hover { background: rgba(255, 255, 255, 0.02); }
+
+.alert-row--active {
+  background: rgba(255, 255, 255, 0.08);
+  border-left-color: var(--accent-cyan);
+  padding-left: 8px;
 }
 
 .alert-row + .alert-row { border-top: 1px solid var(--line); }
