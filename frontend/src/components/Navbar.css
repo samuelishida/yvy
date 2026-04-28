@@ -2,7 +2,6 @@
 .navbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 0 24px;
   height: 64px;
   background: linear-gradient(180deg, rgba(4, 16, 31, 0.92), rgba(4, 16, 31, 0.78));
@@ -67,6 +66,7 @@
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 4px;
+  margin: 0 auto;
 }
 
 /* ── Nav pill items ───────────────────────────────────── */
@@ -221,6 +221,7 @@
     padding: 8px 12px 14px;
     gap: 2px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    margin: 0;
   }
 
   .nav-links--open { display: flex; }
