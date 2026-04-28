@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Circle, Popup, useMapEvents } from 'react-leaflet';
 import { Thermometer, TreePine, Flame } from 'lucide-react';
 import { useI18n } from '../i18n';
@@ -10,12 +10,6 @@ const FIRE_STYLES = {
   nominal: { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.85, radius: 5, weight: 1 },
   high:    { color: '#f97316', fillColor: '#f97316', fillOpacity: 0.8,  radius: 4, weight: 1 },
   low:     { color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 0.4,  radius: 3, weight: 1 },
-};
-
-const FIRE_STYLES_HI = {
-  nominal: { color: '#fff', fillColor: '#ef4444', fillOpacity: 1,   radius: 9,  weight: 2 },
-  high:    { color: '#fff', fillColor: '#f97316', fillOpacity: 1,   radius: 8,  weight: 2 },
-  low:     { color: '#fff', fillColor: '#fbbf24', fillOpacity: 0.9, radius: 7,  weight: 2 },
 };
 
 function haversineKm(lat1, lon1, lat2, lon2) {
@@ -74,6 +68,35 @@ function VisibleFiresCounter({ fires, showFires, onVisibleCountChange }) {
     const bounds = map.getBounds();
     onVisibleCountChange(fires.filter(f => bounds.contains([f.lat, f.lon])).length);
   }, [fires, showFires]); // eslint-disable-line
+  return null;
+}
+
+function FireHoverLock({ fires, hoveredFireIdx, lockedFireIdx, onHoverEnd, onClearLock }) {
+  const map = useMapEvents({
+    mousemove: (e) => {
+      if (lockedFireIdx != null) return;
+      if (hoveredFireIdx == null) return;
+      const fire = fires?.[hoveredFireIdx];
+      if (!fire) {
+        onHoverEnd();
+        return;
+      }
+      const cursor = map.latLngToContainerPoint(e.latlng);
+      const firePoint = map.latLngToContainerPoint([fire.lat, fire.lon]);
+      const baseRadius = fireStyle(fire.confidence).radius;
+      const lockRadius = Math.max(baseRadius + 6, 10);
+      if (cursor.distanceTo(firePoint) > lockRadius) {
+        onHoverEnd();
+      }
+    },
+    mouseout: () => {
+      if (lockedFireIdx != null) return;
+      if (hoveredFireIdx != null) onHoverEnd();
+    },
+    click: () => {
+      if (lockedFireIdx != null) onClearLock();
+    },
+  });
   return null;
 }
 
@@ -217,7 +240,7 @@ function AlertsPanel({ alerts, activeAlertId, onAlertEnter, onAlertLeave }) {
   );
 }
 
-function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, loading, error, t, airQuality, temperature, alerts, activeAlertId, onFireOver, onFireOut }) {
+function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, loading, error, t, airQuality, temperature, alerts, activeAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock }) {
   const [satellite, setSatellite] = useState(true);
   const [visibleCount, setVisibleCount] = useState(null);
 
@@ -286,6 +309,13 @@ function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, se
         >
           <TileLayer key={satellite ? 'sat' : 'osm'} attribution={tileAttr} url={tileUrl} />
           <VisibleFiresCounter fires={fires} showFires={showFires} onVisibleCountChange={setVisibleCount} />
+          <FireHoverLock
+            fires={fires}
+            hoveredFireIdx={hoveredFireIdx}
+            lockedFireIdx={lockedFireIdx}
+            onHoverEnd={onFireHoverEnd}
+            onClearLock={onClearFireLock}
+          />
           {showDeforest && records && records.slice(0, 500).map((rec, idx) => (
             <CircleMarker
               key={`d-${idx}`}
@@ -309,33 +339,36 @@ function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, se
           )}
           {showFires && fires && fires.map((fire, idx) => {
             const hi = highlightedFires?.has(idx);
-            const styles = hi ? FIRE_STYLES_HI : FIRE_STYLES;
-            const s = (() => {
-              const key = (fire.confidence || 'low').toLowerCase();
-              if (key === 'nominal' || key === 'h') return styles.nominal;
-              if (key === 'high') return styles.high;
-              return styles.low;
-            })();
+            const s = fireStyle(fire.confidence);
+            const fireAlertId = alertForFire(fire, alerts || []);
             return (
-              <CircleMarker
-                key={`f-${idx}`}
-                center={[fire.lat, fire.lon]}
-                pathOptions={s}
-                radius={s.radius}
-                eventHandlers={{
-                  mouseover: () => onFireOver(alertForFire(fire, alerts || [])),
-                  mouseout:  onFireOut,
-                }}
-              >
-                <Popup>
-                  <strong>{t('home.heatFocus')}</strong><br />
-                  {t('home.confidence')}: {fire.confidence}<br />
-                  {t('home.date')}: {fire.acq_date} {fire.acq_time}<br />
-                  {t('home.satellite')}: {fire.satellite}<br />
-                  {t('home.brightnessTemp')}: {fire.bright_ti4}K<br />
-                  {t('home.sourceNasa')}
-                </Popup>
-              </CircleMarker>
+              <React.Fragment key={`f-${idx}`}>
+                <CircleMarker
+                  center={[fire.lat, fire.lon]}
+                  pathOptions={s}
+                  radius={s.radius}
+                  eventHandlers={{
+                    mouseover: () => onFireOver(fireAlertId, idx),
+                    click: (e) => onFireClick(fireAlertId, idx, e),
+                  }}
+                >
+                  <Popup>
+                    <strong>{t('home.heatFocus')}</strong><br />
+                    {t('home.confidence')}: {fire.confidence}<br />
+                    {t('home.date')}: {fire.acq_date} {fire.acq_time}<br />
+                    {t('home.satellite')}: {fire.satellite}<br />
+                    {t('home.brightnessTemp')}: {fire.bright_ti4}K<br />
+                    {t('home.sourceNasa')}
+                  </Popup>
+                </CircleMarker>
+                {hi && (
+                  <CircleMarker
+                    center={[fire.lat, fire.lon]}
+                    pathOptions={{ color: '#fff', fillColor: s.fillColor, fillOpacity: 1, radius: s.radius + 3, weight: 2 }}
+                    interactive={false}
+                  />
+                )}
+              </React.Fragment>
             );
           })}
         </MapContainer>
@@ -428,8 +461,65 @@ export default function Home() {
   const [alerts,       setAlerts]      = useState([]);
   const [alertHoverId, setAlertHoverId] = useState(null); // from alert panel
   const [fireAlertId,  setFireAlertId]  = useState(null); // from fire circle hover
+  const [hoveredFireIdx, setHoveredFireIdx] = useState(null); // index of currently hovered fire marker
+  const [lockedFireIdx, setLockedFireIdx] = useState(null); // index locked by click
+  const [lockedFireAlertId, setLockedFireAlertId] = useState(null); // alert locked by click
+  const fireHoverOutTimeoutRef = useRef(null);
 
-  const activeAlertId = alertHoverId || fireAlertId;
+  const activeAlertId = lockedFireAlertId || alertHoverId || fireAlertId;
+
+  const handleFireOver = (id, idx) => {
+    if (lockedFireIdx != null && lockedFireIdx !== idx) return;
+    if (fireHoverOutTimeoutRef.current) {
+      clearTimeout(fireHoverOutTimeoutRef.current);
+      fireHoverOutTimeoutRef.current = null;
+    }
+    setHoveredFireIdx(idx);
+    setFireAlertId(id);
+  };
+
+  const clearFireHover = () => {
+    if (lockedFireIdx != null) return;
+    if (fireHoverOutTimeoutRef.current) {
+      clearTimeout(fireHoverOutTimeoutRef.current);
+    }
+    fireHoverOutTimeoutRef.current = setTimeout(() => {
+      setHoveredFireIdx(null);
+      setFireAlertId(null);
+      fireHoverOutTimeoutRef.current = null;
+    }, 80);
+  };
+
+  const handleFireClick = (id, idx, e) => {
+    if (e?.originalEvent?.stopPropagation) e.originalEvent.stopPropagation();
+    if (lockedFireIdx === idx) {
+      setLockedFireIdx(null);
+      setLockedFireAlertId(null);
+      return;
+    }
+    if (id == null) {
+      setLockedFireIdx(null);
+      setLockedFireAlertId(null);
+      return;
+    }
+    setLockedFireIdx(idx);
+    setLockedFireAlertId(id);
+    setHoveredFireIdx(null);
+    setFireAlertId(null);
+  };
+
+  const clearFireLock = () => {
+    setLockedFireIdx(null);
+    setLockedFireAlertId(null);
+    setHoveredFireIdx(null);
+    setFireAlertId(null);
+  };
+
+  useEffect(() => () => {
+    if (fireHoverOutTimeoutRef.current) {
+      clearTimeout(fireHoverOutTimeoutRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     const fetchAlerts = () => {
@@ -495,8 +585,12 @@ export default function Home() {
           temperature={temperature}
           alerts={alerts}
           activeAlertId={activeAlertId}
-          onFireOver={id => id && setFireAlertId(id)}
-          onFireOut={() => setFireAlertId(null)}
+          hoveredFireIdx={hoveredFireIdx}
+          lockedFireIdx={lockedFireIdx}
+          onFireOver={handleFireOver}
+          onFireHoverEnd={clearFireHover}
+          onFireClick={handleFireClick}
+          onClearFireLock={clearFireLock}
         />
         <div className="sidebar">
           <BiomePanel />
