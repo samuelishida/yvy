@@ -12,6 +12,8 @@ function App() {
   return (
     <I18nProvider>
       <Router>
+        <div className="bg-atmosphere" aria-hidden="true" />
+        <div className="bg-grid" aria-hidden="true" />
         <div className="app">
           <Navbar />
           <main className="main-content">

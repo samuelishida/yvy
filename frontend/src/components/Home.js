@@ -1,18 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMapEvents } from 'react-leaflet';
-import {
-  Thermometer,
-  TreePine,
-  Flame,
-} from 'lucide-react';
+import { Thermometer, TreePine, Flame } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { getCache, setCache } from '../utils/cache';
 import 'leaflet/dist/leaflet.css';
+import '../Home.css';
 
 const FIRE_STYLES = {
   nominal: { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.85, radius: 5 },
-  high: { color: '#f97316', fillColor: '#f97316', fillOpacity: 0.8, radius: 4 },
-  low: { color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 0.4, radius: 3 },
+  high:    { color: '#f97316', fillColor: '#f97316', fillOpacity: 0.8,  radius: 4 },
+  low:     { color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 0.4,  radius: 3 },
 };
 
 function classLabel(clazz, t) {
@@ -35,256 +32,309 @@ function fireStyle(confidence) {
   return FIRE_STYLES.low;
 }
 
-function GaugeCircle({ value, max = 100, size = 120, strokeWidth = 10, color = '#22d3ee', label, centerText }) {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const pct = Math.min(1, Math.max(0, value / max));
-  const offset = circumference * (1 - pct);
-
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="relative" style={{ width: size, height: size }}>
-        <svg width={size} height={size} className="-rotate-90 absolute inset-0">
-          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#1e293b" strokeWidth={strokeWidth} />
-          <circle
-            cx={size / 2} cy={size / 2} r={radius} fill="none"
-            stroke={color} strokeWidth={strokeWidth}
-            strokeDasharray={circumference} strokeDashoffset={offset}
-            strokeLinecap="round" className="transition-all duration-700 ease-out"
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-bold text-white leading-none">{centerText ?? value}</span>
-        </div>
-      </div>
-      {label && <span className="text-xs text-slate-400">{label}</span>}
-    </div>
-  );
-}
-
-function GlassCard({ children, className = '' }) {
-  return (
-    <div
-      className={`bg-slate-900/50 backdrop-blur-md border border-white/10 rounded-3xl ${className}`}
-    >
-      {children}
-    </div>
-  );
-}
-
 function VisibleFiresCounter({ fires, showFires, onVisibleCountChange }) {
   const map = useMapEvents({
     moveend: () => {
       if (!showFires || !fires) return;
       const bounds = map.getBounds();
-      const visible = fires.filter(f =>
-        bounds.contains([f.lat, f.lon])
-      );
-      onVisibleCountChange(visible.length);
+      onVisibleCountChange(fires.filter(f => bounds.contains([f.lat, f.lon])).length);
     },
     zoomend: () => {
       if (!showFires || !fires) return;
       const bounds = map.getBounds();
-      const visible = fires.filter(f =>
-        bounds.contains([f.lat, f.lon])
-      );
-      onVisibleCountChange(visible.length);
+      onVisibleCountChange(fires.filter(f => bounds.contains([f.lat, f.lon])).length);
     },
   });
   useEffect(() => {
     if (!showFires || !fires) return;
     const bounds = map.getBounds();
-    const visible = fires.filter(f =>
-      bounds.contains([f.lat, f.lon])
-    );
-    onVisibleCountChange(visible.length);
-  }, [fires, showFires]);
+    onVisibleCountChange(fires.filter(f => bounds.contains([f.lat, f.lon])).length);
+  }, [fires, showFires]); // eslint-disable-line
   return null;
 }
 
-function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, loading, error, t, onVisibleFiresChange }) {
-  const mapCenter = [-14.235, -51.925];
-  const mapZoom = 4;
+function Sparkline({ data, color = '#2dd4ff', height = 28 }) {
+  const w = 200;
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * w;
+    const y = height - ((v - min) / range) * height;
+    return `${x},${y}`;
+  }).join(' ');
+  const id = `sg${color.replace(/[^a-z0-9]/gi, '')}`;
+  return (
+    <svg viewBox={`0 0 ${w} ${height}`} className="stat-spark" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon points={`0,${height} ${pts} ${w},${height}`} fill={`url(#${id})`} />
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function GaugeRing({ value, max, color, size = 64 }) {
+  const r = (size - 8) / 2;
+  const c = 2 * Math.PI * r;
+  const pct = Math.min(1, Math.max(0, value / max));
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="5" />
+      <circle
+        cx={size / 2} cy={size / 2} r={r} fill="none"
+        stroke={color} strokeWidth="5"
+        strokeDasharray={c} strokeDashoffset={c * (1 - pct)}
+        strokeLinecap="round"
+        style={{ transition: 'stroke-dashoffset 1s ease', filter: `drop-shadow(0 0 4px ${color})` }}
+      />
+    </svg>
+  );
+}
+
+function BiomePanel() {
+  const [biomes, setBiomes] = useState([]);
+  const [totalFires, setTotalFires] = useState(0);
+
+  useEffect(() => {
+    fetch('/api/biomes')
+      .then(r => r.json())
+      .then(d => {
+        setBiomes(d.biomes || []);
+        setTotalFires(d.total_fires || 0);
+      })
+      .catch(err => {
+        console.error('Failed to fetch biomes:', err);
+      });
+  }, []);
+
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <div className="panel-title">
+          <span className="panel-icon"><TreePine size={14} /></span>
+          <span className="panel-title-text">Focos por bioma</span>
+        </div>
+        <span className="panel-meta">24H · BR</span>
+      </div>
+      <div className="panel-body" style={{ paddingTop: 4, paddingBottom: 8 }}>
+        {biomes
+          .sort((a, b) => b.count - a.count)
+          .map((b, i) => (
+          <div key={i} className="biome-row">
+            <div className="biome-name">{b.name}</div>
+            <div className="biome-bar">
+              <div className="biome-bar-fill" style={{ width: `${b.pct}%`, background: b.color }} />
+            </div>
+            <div className="biome-val">{b.count.toLocaleString('pt-BR')}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AlertsPanel() {
+  const alerts = [
+    { tick: 'crit', title: 'Cluster de alta confiança',  meta: 'Pará · Novo Progresso',   state: 'PA · 14 focos',   ts: '02m' },
+    { tick: 'warn', title: 'Avanço de queimada noturna', meta: 'Mato Grosso · Querência', state: 'MT · 8 focos',    ts: '11m' },
+    { tick: 'crit', title: 'Foco em Terra Indígena',     meta: 'Rondônia · Karipuna',     state: 'RO · 3 focos',   ts: '23m' },
+    { tick: 'info', title: 'Polígono PRODES atualizado', meta: 'Amazonas · Lábrea',       state: 'AM · 12 km²',    ts: '47m' },
+    { tick: 'warn', title: 'PM2.5 acima do limiar',      meta: 'Acre · Rio Branco',       state: 'AC · 138 µg/m³', ts: '1h'  },
+  ];
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <div className="panel-title">
+          <span className="panel-icon" style={{ color: '#fb923c' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          </span>
+          <span className="panel-title-text">Alertas ao vivo</span>
+        </div>
+        <span className="panel-meta">5 ATIVOS</span>
+      </div>
+      <div className="panel-body" style={{ paddingTop: 4, paddingBottom: 8 }}>
+        {alerts.map((a, i) => (
+          <div key={i} className="alert-row">
+            <div className={`alert-tick ${a.tick}`} />
+            <div className="alert-body">
+              <div className="alert-title">
+                <span>{a.title}</span>
+                <span className="ts">{a.ts}</span>
+              </div>
+              <div className="alert-meta">
+                {a.meta} <span className="sep">/</span> {a.state}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, loading, error, t, airQuality, temperature }) {
   const [satellite, setSatellite] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(null);
 
   const tileUrl = satellite
     ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
     : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-  const tileAttribution = satellite
+  const tileAttr = satellite
     ? '&copy; Esri, Earthstar Geographics'
     : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 
+  const count   = visibleCount ?? fires?.length ?? 0;
+  const aqiVal  = airQuality ? airQuality.aqi : 0;
+  const humVal  = temperature ? temperature.humidity : 0;
+  const aqiColor = aqiVal <= 50 ? '#4ade80' : aqiVal <= 100 ? '#fbbf24' : '#ef4444';
+
   return (
-    <div className="relative w-full rounded-3xl overflow-hidden border border-white/10" style={{ minHeight: '80vh' }}>
-      {/* Map header */}
-      <div className="absolute top-0 left-0 right-0 z-[500] flex items-center justify-between px-5 py-3 bg-gradient-to-b from-slate-950/80 to-transparent">
-        <div className="flex items-center gap-2">
-          <TreePine size={16} className="text-cyan-400" />
-          <h2 className="text-sm font-semibold text-white">{t('home.mapTitle')}</h2>
-        </div>
-        <div className="flex items-center gap-2">
+    <div className="map-stage">
+      {/* Header overlay */}
+      <div className="map-overlay-top">
+        <div className="layer-toggles">
           <button
+            className={`layer-toggle${showDeforest ? ' on-cyan' : ''}`}
             onClick={() => setShowDeforest(!showDeforest)}
-            className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full transition-colors ${
-              showDeforest ? 'bg-cyan-500/30 text-cyan-300' : 'bg-slate-800/70 text-slate-500'
-            }`}
           >
-            <span className={`w-1.5 h-1.5 rounded-full ${showDeforest ? 'bg-cyan-400' : 'bg-slate-600'}`} />
-            PRODES
+            <span className="lt-dot" /> PRODES
           </button>
           <button
+            className={`layer-toggle${showFires ? ' on-red' : ''}`}
             onClick={() => setShowFires(!showFires)}
-            className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full transition-colors ${
-              showFires ? 'bg-red-500/30 text-red-300' : 'bg-slate-800/70 text-slate-500'
-            }`}
           >
-            <Flame size={11} />
-            FIRMS
+            <Flame size={10} /> FIRMS
           </button>
           <button
+            className={`layer-toggle${satellite ? ' on-violet' : ''}`}
             onClick={() => setSatellite(!satellite)}
-            className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full transition-colors ${
-              satellite ? 'bg-indigo-500/30 text-indigo-300' : 'bg-slate-800/70 text-slate-500'
-            }`}
           >
-            <span className={`w-1.5 h-1.5 rounded-full ${satellite ? 'bg-indigo-400' : 'bg-slate-600'}`} />
-            Satelite
+            <span className="lt-dot" /> Satélite
           </button>
         </div>
       </div>
 
       {/* Map */}
-      {loading && (
-        <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm bg-slate-900">
-          {t('home.loading')}
-        </div>
-      )}
-      {error && (
-        <div className="absolute inset-0 flex items-center justify-center text-red-400 text-sm bg-slate-900">
-          {t('home.error')}: {error}
-        </div>
-      )}
+      {loading && <div className="map-loading">{t('home.loading')}</div>}
+      {error   && <div className="map-error">{t('home.error')}: {error}</div>}
       {!loading && !error && (
-        <MapContainer center={mapCenter} zoom={mapZoom} scrollWheelZoom={true} className="w-full h-full" style={{ minHeight: '82vh' }}>
-          <TileLayer
-            key={satellite ? 'sat' : 'osm'}
-            attribution={tileAttribution}
-            url={tileUrl}
-          />
-          <VisibleFiresCounter fires={fires} showFires={showFires} onVisibleCountChange={onVisibleFiresChange} />
-          {showDeforest &&
-            records &&
-            records.slice(0, 500).map((record, idx) => (
-              <CircleMarker
-                key={`d-${idx}`}
-                center={[record.lat, record.lon]}
-                pathOptions={{ color: record.color || '#00b4d8', fillColor: record.color, fillOpacity: 0.5 }}
-                radius={3}
-              >
+        <MapContainer
+          center={[-14.235, -51.925]}
+          zoom={4}
+          scrollWheelZoom
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+        >
+          <TileLayer key={satellite ? 'sat' : 'osm'} attribution={tileAttr} url={tileUrl} />
+          <VisibleFiresCounter fires={fires} showFires={showFires} onVisibleCountChange={setVisibleCount} />
+          {showDeforest && records && records.slice(0, 500).map((rec, idx) => (
+            <CircleMarker
+              key={`d-${idx}`}
+              center={[rec.lat, rec.lon]}
+              pathOptions={{ color: rec.color || '#2dd4ff', fillColor: rec.color, fillOpacity: 0.5 }}
+              radius={3}
+            >
+              <Popup>
+                <strong>{classLabel(rec.clazz, t)}</strong><br />
+                {t('home.source')}: PRODES/INPE<br />
+                Lat: {rec.lat.toFixed(4)}, Lng: {rec.lon.toFixed(4)}
+              </Popup>
+            </CircleMarker>
+          ))}
+          {showFires && fires && fires.map((fire, idx) => {
+            const s = fireStyle(fire.confidence);
+            return (
+              <CircleMarker key={`f-${idx}`} center={[fire.lat, fire.lon]} pathOptions={s} radius={s.radius}>
                 <Popup>
-                  <strong>{classLabel(record.clazz, t)}</strong><br />
-                  {t('home.source')}: PRODES/INPE<br />
-                  Lat: {record.lat.toFixed(4)}, Lng: {record.lon.toFixed(4)}
+                  <strong>{t('home.heatFocus')}</strong><br />
+                  {t('home.confidence')}: {fire.confidence}<br />
+                  {t('home.date')}: {fire.acq_date} {fire.acq_time}<br />
+                  {t('home.satellite')}: {fire.satellite}<br />
+                  {t('home.brightnessTemp')}: {fire.bright_ti4}K<br />
+                  {t('home.sourceNasa')}
                 </Popup>
               </CircleMarker>
-            ))}
-          {showFires &&
-            fires &&
-            fires.map((fire, idx) => {
-              const style = fireStyle(fire.confidence);
-              return (
-                <CircleMarker key={`f-${idx}`} center={[fire.lat, fire.lon]} pathOptions={style} radius={style.radius}>
-                  <Popup>
-                    <strong>{t('home.heatFocus')}</strong><br />
-                    {t('home.confidence')}: {fire.confidence}<br />
-                    {t('home.date')}: {fire.acq_date} {fire.acq_time}<br />
-                    {t('home.satellite')}: {fire.satellite}<br />
-                    {t('home.brightnessTemp')}: {fire.bright_ti4}K<br />
-                    {t('home.sourceNasa')}
-                  </Popup>
-                </CircleMarker>
-              );
-            })}
+            );
+          })}
         </MapContainer>
       )}
-    </div>
-  );
-}
 
-function MetricsRow({ airQuality, temperature, t }) {
-  const aqiVal = airQuality ? airQuality.aqi : 0;
-  const humVal = temperature ? temperature.humidity : 0;
-  const aqiColor = aqiVal <= 50 ? '#22d3ee' : aqiVal <= 100 ? '#facc15' : '#ef4444';
-  const aqiLabel = aqiVal <= 50 ? 'Boa' : aqiVal <= 100 ? 'Moderada' : 'Ruim';
-  const aqiLabelColor = aqiVal <= 50 ? 'text-emerald-400' : aqiVal <= 100 ? 'text-yellow-400' : 'text-red-400';
+      {/* Floating: fires — top right */}
+      <div className="fl-card fl-stats">
+        <div className="fl-eyebrow">
+          <span className="dot" style={{ background: '#ef4444', boxShadow: '0 0 6px #ef4444' }} />
+          {t('home.heatFocus')}
+        </div>
+        <div className="fl-big-number" style={{ color: '#fda4af' }}>
+          {count.toLocaleString('pt-BR')}
+          <span className="unit">focos</span>
+        </div>
+        <a
+          href="https://firms.modaps.eosdis.nasa.gov/map/?lang=pt"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="fl-link"
+        >
+          <span>NASA FIRMS</span>
+          <span>↗</span>
+        </a>
+      </div>
 
-  return (
-    <GlassCard className="p-2 sm:p-4 flex items-center justify-around gap-2 sm:gap-3">
-      <div className="flex flex-col items-center gap-1 sm:gap-3">
-        <GaugeCircle value={aqiVal} max={300} size={52} strokeWidth={5} color={aqiColor} centerText={airQuality ? aqiVal : '--'} />
-        <div className="text-center">
-          <p className="text-[9px] sm:text-sm font-semibold text-white">{t('home.airQuality')}</p>
-          <p className="hidden sm:block text-xs text-slate-400">PM2.5: {airQuality ? airQuality.pm25 : '--'}</p>
-          <p className={`text-[9px] sm:text-xs font-medium ${aqiLabelColor}`}>{airQuality ? aqiLabel : ''}</p>
+      {/* Floating: metrics — bottom left */}
+      <div className="fl-card fl-metrics">
+        <div className="metric-gauge">
+          <div className="metric-gauge-svg">
+            <GaugeRing value={aqiVal} max={300} color={aqiColor} size={64} />
+            <div className="metric-gauge-num">{airQuality ? aqiVal : '—'}</div>
+          </div>
+          <div className="metric-meta">
+            <div className="metric-label">{t('home.airQuality')}</div>
+            <div className="metric-sub">PM2.5 · {airQuality ? airQuality.pm25 : '—'}</div>
+          </div>
+        </div>
+        <div className="metric-divider" />
+        <div className="metric-gauge">
+          <div className="metric-gauge-svg">
+            <GaugeRing value={humVal} max={100} color="#3b82f6" size={64} />
+            <div className="metric-gauge-num">{humVal || '—'}</div>
+          </div>
+          <div className="metric-meta">
+            <div className="metric-label">{t('home.humidity')}</div>
+            <div className="metric-sub">{temperature?.city || 'Local'}</div>
+          </div>
         </div>
       </div>
-      <div className="w-px h-10 sm:h-16 bg-white/10" />
-      <div className="flex flex-col items-center gap-1 sm:gap-3">
-        <GaugeCircle value={humVal} max={100} size={52} strokeWidth={5} color="#3b82f6" centerText={humVal ? `${humVal}` : '--'} />
-        <div className="text-center">
-          <p className="text-[9px] sm:text-sm font-semibold text-white">{t('home.humidity')}</p>
-          <p className="text-[8px] sm:text-xs text-slate-400">{temperature?.city || ''}</p>
-        </div>
-      </div>
-    </GlassCard>
-  );
-}
 
-function TemperatureCard({ temperature, t }) {
-  return (
-    <GlassCard className="p-2 sm:p-4 flex flex-col items-center justify-center gap-1 sm:gap-2 text-center">
-      <div className="flex items-center gap-1 text-slate-400">
-        <Thermometer size={11} className="text-orange-400" />
-        <span className="text-[9px] sm:text-[10px] font-medium uppercase tracking-wider">{t('home.temperature')}</span>
-      </div>
-      <div className="flex flex-col items-center gap-0.5 sm:gap-1">
-        <span className="text-xl sm:text-3xl font-bold text-white tracking-tight">
-          {temperature ? temperature.temp.toFixed(1) : '--'}
-          <span className="text-sm sm:text-lg text-orange-400 ml-0.5">°C</span>
-        </span>
-        {temperature && (
-          <span className="text-[9px] sm:text-xs text-slate-400">
-            {t('home.feelsLike')}: {temperature.feels_like.toFixed(1)}°
+      {/* Floating: temperature — bottom right */}
+      <div className="fl-card fl-temp">
+        <div className="fl-eyebrow">
+          <Thermometer size={10} style={{ color: '#fb923c' }} />
+          <span style={{ color: 'var(--ink-3)', letterSpacing: '0.15em', textTransform: 'uppercase', fontSize: 9, fontFamily: 'var(--font-mono)' }}>
+            {t('home.temperature')}
           </span>
+        </div>
+        <div className="fl-temp__big">
+          {temperature ? temperature.temp.toFixed(1) : '—'}
+          <span className="deg">°C</span>
+        </div>
+        {temperature && (
+          <div className="fl-temp__feels">
+            {t('home.feelsLike')}: {temperature.feels_like.toFixed(1)}°
+          </div>
         )}
         {temperature?.city && (
-          <span className="text-[8px] sm:text-[10px] text-slate-500">{temperature.city}</span>
+          <div className="fl-temp__city">{temperature.city}</div>
         )}
       </div>
-    </GlassCard>
-  );
-}
-
-function FiresCard({ fires, visibleCount, lastSync, t }) {
-  return (
-    <GlassCard className="p-2 sm:p-4 flex flex-col items-center justify-center gap-1 sm:gap-3 text-center">
-      <div className="flex flex-col items-center gap-0.5">
-        <span className="text-lg sm:text-2xl font-bold text-orange-300 leading-none">
-          {(visibleCount ?? fires?.length ?? 0).toLocaleString('pt-BR')}
-        </span>
-        <span className="text-[8px] sm:text-[9px] text-slate-300 uppercase tracking-wider">
-          {t('home.totalOnMap')}
-        </span>
-      </div>
-      <a
-        href="https://firms.modaps.eosdis.nasa.gov/map/?lang=pt"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-[9px] sm:text-[10px] text-cyan-400 hover:text-cyan-300 transition-colors"
-      >
-        {t('home.viewOnFirms')}
-      </a>
-    </GlassCard>
+    </div>
   );
 }
 
@@ -293,75 +343,42 @@ const DEFAULT_LON = -51.925;
 
 export default function Home() {
   const { t } = useI18n();
-  const [records, setRecords] = useState(null);
-  const [fires, setFires] = useState(null);
-  const [firesLastSync, setFiresLastSync] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [airQuality, setAirQuality] = useState(null);
+  const [records,     setRecords]     = useState(null);
+  const [fires,       setFires]       = useState(null);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState(null);
+  const [airQuality,  setAirQuality]  = useState(null);
   const [temperature, setTemperature] = useState(null);
   const [showDeforest, setShowDeforest] = useState(true);
-  const [showFires, setShowFires] = useState(true);
+  const [showFires,    setShowFires]    = useState(true);
 
   useEffect(() => {
     fetch('/api/data')
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
-        return r.json();
-      })
-      .then((d) => {
-        setRecords(Array.isArray(d) ? d : []);
-        setLoading(false);
-      })
-      .catch((e) => {
-        setError(e.message);
-        setLoading(false);
-      });
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`); return r.json(); })
+      .then(d => { setRecords(Array.isArray(d) ? d : []); setLoading(false); })
+      .catch(e => { setError(e.message); setLoading(false); });
 
-    // Load FIRMS from cache first, then fetch fresh data
-    const cachedFires = getCache('fires', 10);
-    if (cachedFires) {
-      setFires(cachedFires.fires || []);
-      setFiresLastSync(cachedFires.last_sync || null);
-    }
+    const cached = getCache('fires', 10);
+    if (cached) setFires(cached.fires || []);
     fetch('/api/fires')
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((d) => {
-        const firesData = d.fires || [];
-        setFires(firesData);
-        setFiresLastSync(d.last_sync || null);
-        setCache('fires', { fires: firesData, last_sync: d.last_sync });
-      })
-      .catch(() => {
-        if (!cachedFires) setFires([]);
-      });
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(d => { const f = d.fires || []; setFires(f); setCache('fires', { fires: f, last_sync: d.last_sync }); })
+      .catch(() => { if (!cached) setFires([]); });
 
     const fetchWeather = (lat, lon) => {
       fetch(`/api/weather/air-quality?lat=${lat}&lon=${lon}`)
-        .then((r) => r.json())
-        .then((d) => {
-          if (d.aqi != null) {
-            setAirQuality({ aqi: d.aqi, pm25: d.pm25 ?? '-', humidity: d.humidity ?? '-' });
-          }
-        })
+        .then(r => r.json())
+        .then(d => { if (d.aqi != null) setAirQuality({ aqi: d.aqi, pm25: d.pm25 ?? '-', humidity: d.humidity ?? '-' }); })
         .catch(() => {});
-
       fetch(`/api/weather/temperature?lat=${lat}&lon=${lon}`)
-        .then((r) => r.json())
-        .then((d) => {
-          if (d.temp != null) {
-            setTemperature({ temp: d.temp, feels_like: d.feels_like, humidity: d.humidity, city: d.city });
-          }
-        })
+        .then(r => r.json())
+        .then(d => { if (d.temp != null) setTemperature({ temp: d.temp, feels_like: d.feels_like, humidity: d.humidity, city: d.city }); })
         .catch(() => {});
     };
 
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude),
+        p  => fetchWeather(p.coords.latitude, p.coords.longitude),
         () => fetchWeather(DEFAULT_LAT, DEFAULT_LON),
         { timeout: 5000 }
       );
@@ -370,11 +387,9 @@ export default function Home() {
     }
   }, []);
 
-  const [visibleFiresCount, setVisibleFiresCount] = useState(null);
-
   return (
-    <div className="min-h-screen p-4 lg:p-6">
-      <div className="w-full max-w-[1920px] mx-auto relative">
+    <>
+      <div className="home-main">
         <MapaCard
           records={records}
           fires={fires}
@@ -385,22 +400,14 @@ export default function Home() {
           loading={loading}
           error={error}
           t={t}
-          firesLastSync={firesLastSync}
-          onVisibleFiresChange={setVisibleFiresCount}
+          airQuality={airQuality}
+          temperature={temperature}
         />
-        {/* Floating widgets - right column */}
-        <div className="absolute top-16 right-2 z-[500] flex flex-col gap-2 w-32 sm:top-20 sm:right-4 sm:gap-3 sm:w-52">
-          <FiresCard fires={fires} visibleCount={visibleFiresCount} lastSync={firesLastSync} t={t} />
-        </div>
-        {/* Floating widget - bottom left */}
-        <div className="absolute bottom-8 left-2 z-[500] w-40 sm:bottom-10 sm:left-4 sm:w-60">
-          <MetricsRow airQuality={airQuality} temperature={temperature} t={t} />
-        </div>
-        {/* Floating widget - bottom right */}
-        <div className="absolute bottom-8 right-2 z-[500] w-32 sm:bottom-10 sm:right-4 sm:w-52">
-          <TemperatureCard temperature={temperature} t={t} />
+        <div className="sidebar">
+          <BiomePanel />
+          <AlertsPanel />
         </div>
       </div>
-    </div>
+    </>
   );
 }

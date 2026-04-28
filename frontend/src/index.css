@@ -2,6 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Design tokens ────────────────────────────────────── */
+:root {
+  --bg-deep:          #04101f;
+  --bg-base:          #061626;
+  --bg-elevated:      #0a1d33;
+
+  --ink-1:            #e6f0ff;
+  --ink-2:            #a8b8cf;
+  --ink-3:            #6a7a93;
+  --ink-4:            #455467;
+
+  --line:             rgba(255, 255, 255, 0.07);
+  --line-strong:      rgba(255, 255, 255, 0.14);
+
+  --accent-cyan:      #2dd4ff;
+  --accent-cyan-dim:  rgba(45, 212, 255, 0.18);
+  --accent-green:     #4ade80;
+  --accent-green-dim: rgba(74, 222, 128, 0.18);
+  --accent-amber:     #fbbf24;
+  --accent-orange:    #fb923c;
+  --accent-red:       #ef4444;
+  --accent-violet:    #a78bfa;
+
+  /* legacy compat aliases used by other components */
+  --bg-surface:     var(--bg-elevated);
+  --bg-card:        var(--bg-elevated);
+  --bg-card-hover:  #0d2440;
+  --accent:         var(--accent-cyan);
+  --accent-dim:     var(--accent-cyan-dim);
+  --accent-border:  rgba(45, 212, 255, 0.25);
+  --accent-glow:    rgba(45, 212, 255, 0.18);
+  --green:          var(--accent-green);
+  --green-dim:      var(--accent-green-dim);
+  --green-border:   rgba(74, 222, 128, 0.28);
+  --orange:         var(--accent-orange);
+  --text-primary:   var(--ink-1);
+  --text-secondary: var(--ink-2);
+  --text-muted:     var(--ink-3);
+  --border-subtle:  var(--line);
+  --border-medium:  var(--line-strong);
+  --radius-sm:      8px;
+  --radius-md:      12px;
+  --radius-lg:      16px;
+  --radius-xl:      20px;
+  --shadow-card:    0 4px 24px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.2);
+  --shadow-hover:   0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25);
+  --shadow-glow:    0 0 24px rgba(45,212,255,0.12);
+  --transition:     0.22s ease;
+
+  --font-display: 'Inter Tight', 'Inter', system-ui, sans-serif;
+  --font-body:    'Inter Tight', 'Inter', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+}
+
 *,
 *::before,
 *::after {
@@ -12,30 +66,74 @@
 
 html {
   font-size: 16px;
+  scroll-behavior: smooth;
+  height: 100%;
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: #050b18;
-  color: #e2e8f0;
+  font-family: var(--font-body);
+  background-color: var(--bg-deep);
+  color: var(--ink-1);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+  line-height: 1.5;
+  font-feature-settings: 'ss01', 'cv11';
+  text-rendering: optimizeLegibility;
 }
 
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-::-webkit-scrollbar-track {
-  background: #0d1525;
-}
-::-webkit-scrollbar-thumb {
-  background: #00b4d8;
-  border-radius: 3px;
+/* ── Atmospheric background ───────────────────────────── */
+.bg-atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 1200px 600px at 80% -10%, rgba(45, 212, 255, 0.08), transparent 60%),
+    radial-gradient(ellipse 900px 500px at 10% 100%, rgba(74, 222, 128, 0.05), transparent 60%),
+    radial-gradient(ellipse 600px 400px at 50% 50%, rgba(167, 139, 250, 0.03), transparent 70%),
+    var(--bg-deep);
 }
 
+.bg-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(45, 212, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(45, 212, 255, 0.04) 1px, transparent 1px);
+  background-size: 80px 80px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black, transparent 90%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black, transparent 90%);
+}
+
+/* ── Scrollbar ────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(45, 212, 255, 0.35); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(45, 212, 255, 0.6); }
+
+/* ── Links ────────────────────────────────────────────── */
 a {
-  color: #00b4d8;
+  color: var(--accent-cyan);
   text-decoration: none;
+  transition: color var(--transition);
+}
+a:hover { color: #7ce8ff; }
+
+/* ── Focus ring ───────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Glass utility ────────────────────────────────────── */
+.glass {
+  background: linear-gradient(160deg, rgba(8, 22, 40, 0.86) 0%, rgba(4, 14, 26, 0.82) 100%);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }

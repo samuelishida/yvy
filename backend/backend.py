@@ -21,6 +21,7 @@ from quart import Quart, request, abort, jsonify
 from quart_cors import cors
 
 import db_sqlite
+import biome_lookup
 
 load_dotenv()
 
@@ -311,6 +312,12 @@ async def startup():
     await db_sqlite.init_db()
     logger.info("SQLite connection verified.", extra={"event": "sqlite_connect_ok"})
     
+    # Load biome boundaries for point-in-polygon classification
+    try:
+        biome_lookup.load_biomes()
+    except Exception as e:
+        logger.warning("Failed to load biome data – biome lookup disabled: %s", e, exc_info=True)
+    
     # Try Redis connection (optional)
     try:
         redis_client = aioredis.from_url(REDIS_URL, socket_connect_timeout=5, socket_timeout=5)
@@ -565,6 +572,32 @@ async def add_security_headers(response):
 @app.route("/health")
 async def health():
     return jsonify({"status": "healthy", "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()})
+
+
+@app.route("/api/biomes")
+async def get_biomes():
+    """Return fire counts per biome using IBGE shapefile + FIRMS data."""
+    enforce_api_auth()
+    await enforce_rate_limit()
+
+    # Try cache first
+    cached = await cache_get("biomes:all")
+    if cached:
+        return jsonify(json.loads(cached))
+
+    # Get all fires from Brazil bounds
+    fires = await db_sqlite.find_fires(
+        sw_lat=-34.0, ne_lat=5.5, sw_lng=-74.0, ne_lng=-34.0,
+        limit=MAX_RESULTS
+    )
+
+    result = biome_lookup.classify_fires(fires)
+
+    last_sync = await cache_get("fires:last_sync")
+    response = {"biomes": result, "total_fires": len(fires), "last_sync": last_sync}
+
+    await cache_set("biomes:all", json.dumps(response), CACHE_TTL_FIRMS)
+    return jsonify(response)
 
 
 @app.errorhandler(404)

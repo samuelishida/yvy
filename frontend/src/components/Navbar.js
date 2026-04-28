@@ -17,8 +17,14 @@ export default function Navbar() {
   return (
     <nav className="navbar">
       <div className="navbar-brand">
-        <img src={logoBrazil} alt="Yvy Brasil" className="navbar-logo navbar-logo--brazil" />
-        <img src={logoText} alt={lang === 'pt' ? 'Yvy Observabilidade Ambiental Brasil' : 'Yvy Environmental Observability Brazil'} className="navbar-logo navbar-logo--text" />
+        <div className="brand-mark">
+          <img src={logoBrazil} alt="Yvy Brasil" className="navbar-logo--brazil" />
+        </div>
+        <img
+          src={logoText}
+          alt={lang === 'pt' ? 'Yvy Observabilidade Ambiental Brasil' : 'Yvy Environmental Observability Brazil'}
+          className="navbar-logo navbar-logo--text"
+        />
       </div>
 
       <div className={`nav-links ${open ? 'nav-links--open' : ''}`}>
@@ -52,13 +58,19 @@ export default function Navbar() {
         </Link>
       </div>
 
-      <button
-        className="lang-toggle"
-        onClick={() => switchLang(lang === 'pt' ? 'en' : 'pt')}
-        title={lang === 'pt' ? 'Switch to English' : 'Mudar para Português'}
-      >
-        {lang === 'pt' ? 'PT' : 'EN'}
-      </button>
+      <div className="topbar-right">
+        <div className="live-pill" aria-label="Live data">
+          <span className="live-dot" />
+          Live
+        </div>
+        <button
+          className="lang-toggle"
+          onClick={() => switchLang(lang === 'pt' ? 'en' : 'pt')}
+          title={lang === 'pt' ? 'Switch to English' : 'Mudar para Português'}
+        >
+          {lang === 'pt' ? 'PT' : 'EN'}
+        </button>
+      </div>
 
       <button
         className="hamburger"

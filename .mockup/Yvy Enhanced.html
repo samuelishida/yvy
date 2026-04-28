@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Yvy — Observabilidade Ambiental</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="bg-atmosphere"></div>
+  <div class="bg-grid"></div>
+  <div class="bg-noise"></div>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="map-layer.jsx"></script>
+  <script type="text/babel" src="sidebar.jsx"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    function TopBar() {
+      const [active, setActive] = useState('inicio');
+      const items = [
+        { id: 'inicio',    label: 'Início',         icon: '◆' },
+        { id: 'noticias',  label: 'Notícias',       icon: '◇' },
+        { id: 'dashboard', label: 'Dashboard',      icon: '◢' },
+        { id: 'mapas',     label: 'Mapas Temáticos', icon: '◐' },
+      ];
+      return (
+        <header className="topbar">
+          <div className="brand">
+            <div className="brand-mark">
+              <img src="assets/yvy_logo_brazil.svg" alt="Yvy" />
+            </div>
+            <div className="brand-text">
+              <div className="brand-name">Yvy</div>
+              <div className="brand-sub">Observabilidade ambiental</div>
+            </div>
+          </div>
+
+          <nav className="nav">
+            {items.map(it => (
+              <div key={it.id}
+                   className={`nav-item ${active === it.id ? 'active' : ''}`}
+                   onClick={() => setActive(it.id)}>
+                <span className="nav-dot"></span>
+                {it.label}
+              </div>
+            ))}
+          </nav>
+
+          <div className="topbar-right">
+            <div className="live-pill">
+              <span className="live-dot"></span>
+              Ao vivo · INPE
+            </div>
+            <button className="lang-pill">PT</button>
+          </div>
+        </header>
+      );
+    }
+
+    function Ticker() {
+      const items = [
+        { tag: 'AMZ', val: '+847 km²', cls: 'tk-up' },
+        { tag: 'PM2.5 SP', val: '80 µg/m³', cls: 'tk-up' },
+        { tag: 'TEMP SP', val: '21.2 °C', cls: '' },
+        { tag: 'FOCOS BR', val: '3.686', cls: 'tk-up' },
+        { tag: 'PRODES PA', val: '12.4 km²', cls: 'tk-up' },
+        { tag: 'UMID. SP', val: '86%', cls: 'tk-down' },
+        { tag: 'FIRMS NPP', val: 'sync 02m', cls: '' },
+        { tag: 'CO₂ MLO', val: '424 ppm', cls: 'tk-up' },
+        { tag: 'AMZ FLUXO', val: '−2.1 GtC/yr', cls: 'tk-up' },
+        { tag: 'CERRADO', val: '+512 focos', cls: 'tk-up' },
+      ];
+      const dup = [...items, ...items];
+      return (
+        <div className="ticker">
+          <div className="ticker-label">● Live feed</div>
+          <div className="ticker-track">
+            {dup.map((it, i) => (
+              <span key={i} className="ticker-item">
+                <span className="tk-tag">{it.tag}</span>
+                <span className={`tk-val ${it.cls}`}>{it.val}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function MapStage() {
+      const [showFires, setShowFires] = useState(true);
+      const [showProdes, setShowProdes] = useState(true);
+      const [satellite, setSatellite] = useState(true);
+
+      return (
+        <section className="map-stage">
+          <div className="map-canvas">
+            <MapSatellite />
+            <DeforestPatches show={showProdes} />
+            <FireDots showFires={showFires} />
+          </div>
+
+          <div className="map-overlay-top">
+            <div className="map-title">
+              <div>
+                <div className="map-title-eyebrow">Mapa em tempo real</div>
+                <div className="map-title-text">Desmatamento & queimadas</div>
+              </div>
+            </div>
+
+            <div className="layer-toggles">
+              <button className={`layer-toggle ${showProdes ? 'on-cyan' : ''}`}
+                      onClick={() => setShowProdes(!showProdes)}>
+                <span className="lt-dot"></span> PRODES
+              </button>
+              <button className={`layer-toggle ${showFires ? 'on-red' : ''}`}
+                      onClick={() => setShowFires(!showFires)}>
+                <span className="lt-dot"></span> FIRMS
+              </button>
+              <button className={`layer-toggle ${satellite ? 'on-violet' : ''}`}
+                      onClick={() => setSatellite(!satellite)}>
+                <span className="lt-dot"></span> Satélite
+              </button>
+            </div>
+          </div>
+
+          <div className="zoom-stack">
+            <button className="zoom-btn">+</button>
+            <button className="zoom-btn">−</button>
+          </div>
+
+          <div className="zoom-scale">
+            <span>500 km</span>
+            <span className="zoom-scale-bar"></span>
+            <span>z 4</span>
+          </div>
+
+          {/* Right floating: total fires */}
+          <div className="fl-card fl-stats">
+            <div className="fl-eyebrow">
+              <span className="dot" style={{ background:'#ef4444', boxShadow:'0 0 6px #ef4444' }}></span>
+              Total no mapa
+            </div>
+            <div className="fl-big-number">3.686<span className="unit">focos</span></div>
+            <div className="fl-row">
+              <span className="label">Confiança alta</span>
+              <span className="val">412</span>
+            </div>
+            <div className="fl-row">
+              <span className="label">Última sync</span>
+              <span className="val" style={{ color:'#67e8f9' }}>02 min</span>
+            </div>
+            <div className="fl-link">
+              <span>Ver no FIRMS</span>
+              <span>↗</span>
+            </div>
+          </div>
+
+          {/* Bottom-left metrics */}
+          <div className="fl-card fl-metrics">
+            <div className="metric-gauge">
+              <div className="metric-gauge-svg">
+                <GaugeRing value={80} max={300} color="#fbbf24" size={64} />
+                <div className="metric-gauge-num">80</div>
+              </div>
+              <div className="metric-meta">
+                <div className="metric-label">Qualidade do Ar</div>
+                <div className="metric-sub">PM2.5 · 80</div>
+                <span className="metric-tag" style={{ background:'rgba(251,191,36,0.15)', color:'#fbbf24' }}>Moderada</span>
+              </div>
+            </div>
+            <div className="metric-divider"></div>
+            <div className="metric-gauge">
+              <div className="metric-gauge-svg">
+                <GaugeRing value={86} max={100} color="#3b82f6" size={64} />
+                <div className="metric-gauge-num">86</div>
+              </div>
+              <div className="metric-meta">
+                <div className="metric-label">Umidade</div>
+                <div className="metric-sub">São Paulo</div>
+                <span className="metric-tag" style={{ background:'rgba(59,130,246,0.15)', color:'#93c5fd' }}>%</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom-right temp */}
+          <div className="fl-card fl-temp">
+            <div className="fl-eyebrow" style={{ justifyContent:'center', color:'#fb923c' }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M14 14V5a2 2 0 0 0-4 0v9a4 4 0 1 0 4 0z"/>
+              </svg>
+              Temperatura
+            </div>
+            <div className="big">21.2<span className="deg">°C</span></div>
+            <div className="feels">Sensação térmica · 23.5°</div>
+            <div className="city">São Paulo</div>
+          </div>
+        </section>
+      );
+    }
+
+    function App() {
+      return (
+        <div className="app">
+          <TopBar />
+          <Ticker />
+          <main className="main">
+            <MapStage />
+            <aside className="sidebar">
+              <HeroStats />
+              <BiomePanel />
+              <AlertsPanel />
+            </aside>
+          </main>
+          <div className="source-row">
+            <div className="sources">
+              <span><b>Fontes</b> · TerraBrasilis PRODES · NASA FIRMS · Open-Meteo · WAQI</span>
+            </div>
+            <div>v2.0 · Yvy.app.br</div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
