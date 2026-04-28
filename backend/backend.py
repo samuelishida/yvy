@@ -17,7 +17,7 @@ from threading import Lock
 import httpx
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
-from quart import Quart, request, abort, jsonify
+from quart import Quart, request, abort, jsonify, current_app
 from quart_cors import cors
 
 import db_sqlite
@@ -29,8 +29,21 @@ import conservation_units_lookup
 load_dotenv()
 
 # Redis cache TTL (seconds)
-CACHE_TTL_DEFAULT = 300  # 5 min
-CACHE_TTL_FIRMS = 60     # 1 min (frequently updated)
+CACHE_TTL_DEFAULT  = 300   # 5 min
+CACHE_TTL_FIRMS    = 60    # 1 min (frequently updated)
+CACHE_TTL_WEATHER  = 900   # 15 min
+CACHE_TTL_DATA     = 900   # 15 min
+
+def _load_json_file(filename: str) -> bytes:
+    path = os.path.join(os.path.dirname(__file__), filename)
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except Exception:
+        return b"{}"
+
+_INDIGENOUS_DATA   = _load_json_file("indigenous_lands.json")
+_CONSERVATION_DATA = _load_json_file("conservation_units.json")
 
 BRAZIL_BOUNDS = {
     "min_lat": -34.0,
@@ -803,6 +816,12 @@ async def get_air_quality():
     lat = request.args.get("lat")
     lon = request.args.get("lon")
     station = request.args.get("station", "")
+
+    cache_key = f"weather:aqi:{round(float(lat),1)}:{round(float(lon),1)}" if lat and lon else "weather:aqi:brasil"
+    cached = await cache_get(cache_key)
+    if cached:
+        return current_app.response_class(cached, mimetype="application/json")
+
     if not station and lat and lon:
         station = f"@{lat},{lon}"
     elif not station:
@@ -812,29 +831,22 @@ async def get_air_quality():
         url = f"https://api.waqi.info/feed/{station}/?token={WAQI_TOKEN}"
         resp = await _http_client.get(url, timeout=10.0)
         data = resp.json()
+        result = None
         if data.get("status") == "ok":
             d = data["data"]
             city = await reverse_geocode(float(lat), float(lon)) if lat and lon else "Brasil"
-            return jsonify({
-                "aqi": d.get("aqi"),
-                "pm25": d.get("iaqi", {}).get("pm25", {}).get("v"),
-                "humidity": d.get("iaqi", {}).get("h", {}).get("v"),
-                "city": city,
-            })
-        if station != fallback:
-            resp2 = await _http_client.get(
-                f"https://api.waqi.info/feed/{fallback}/?token={WAQI_TOKEN}", timeout=10.0
-            )
+            result = {"aqi": d.get("aqi"), "pm25": d.get("iaqi", {}).get("pm25", {}).get("v"), "humidity": d.get("iaqi", {}).get("h", {}).get("v"), "city": city}
+        elif station != fallback:
+            resp2 = await _http_client.get(f"https://api.waqi.info/feed/{fallback}/?token={WAQI_TOKEN}", timeout=10.0)
             data2 = resp2.json()
             if data2.get("status") == "ok":
                 d = data2["data"]
                 city = await reverse_geocode(float(lat), float(lon)) if lat and lon else "Brasil"
-                return jsonify({
-                    "aqi": d.get("aqi"),
-                    "pm25": d.get("iaqi", {}).get("pm25", {}).get("v"),
-                    "humidity": d.get("iaqi", {}).get("h", {}).get("v"),
-                    "city": city,
-                })
+                result = {"aqi": d.get("aqi"), "pm25": d.get("iaqi", {}).get("pm25", {}).get("v"), "humidity": d.get("iaqi", {}).get("h", {}).get("v"), "city": city}
+        if result:
+            body = json.dumps(result)
+            await cache_set(cache_key, body, ttl=CACHE_TTL_WEATHER)
+            return current_app.response_class(body, mimetype="application/json")
         return jsonify({"aqi": None})
     except Exception:
         return jsonify({"aqi": None})
@@ -845,11 +857,17 @@ async def get_temperature():
     await enforce_rate_limit()
     lat = request.args.get("lat", "-14.235")
     lon = request.args.get("lon", "-51.925")
+
+    cache_key = f"weather:temp:{round(float(lat),1)}:{round(float(lon),1)}"
+    cached = await cache_get(cache_key)
+    if cached:
+        return current_app.response_class(cached, mimetype="application/json")
+
     url = (
         f"https://api.open-meteo.com/v1/forecast"
         f"?latitude={lat}&longitude={lon}"
-        f"&current=temperature_2m,relative_humidity_2m,apparent_temperature"
-        f"&timezone=America/Sao_Paulo"
+        f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m,wind_direction_10m"
+        f"&wind_speed_unit=kmh&timezone=America/Sao_Paulo"
     )
     try:
         resp = await _http_client.get(url, timeout=10.0)
@@ -857,15 +875,32 @@ async def get_temperature():
         current = data.get("current", {})
         if current:
             city = await reverse_geocode(float(lat), float(lon))
-            return jsonify({
+            result = {
                 "temp": current.get("temperature_2m"),
                 "feels_like": current.get("apparent_temperature"),
                 "humidity": current.get("relative_humidity_2m"),
+                "wind_speed": current.get("wind_speed_10m"),
+                "wind_direction": current.get("wind_direction_10m"),
                 "city": city,
-            })
+            }
+            body = json.dumps(result)
+            await cache_set(cache_key, body, ttl=CACHE_TTL_WEATHER)
+            return current_app.response_class(body, mimetype="application/json")
         return jsonify({"temp": None})
     except Exception:
         return jsonify({"temp": None})
+
+
+@app.route("/api/indigenous-lands")
+async def get_indigenous_lands():
+    await enforce_rate_limit()
+    return current_app.response_class(_INDIGENOUS_DATA, mimetype="application/json")
+
+
+@app.route("/api/conservation-units")
+async def get_conservation_units():
+    await enforce_rate_limit()
+    return current_app.response_class(_CONSERVATION_DATA, mimetype="application/json")
 
 
 @app.errorhandler(Exception)
@@ -905,8 +940,13 @@ async def get_data():
     else:
         sw_lat, ne_lat, sw_lng, ne_lng = -90.0, 90.0, -180.0, 180.0
 
+    data_cache_key = f"data:{round(sw_lat,1)}:{round(ne_lat,1)}:{round(sw_lng,1)}:{round(ne_lng,1)}"
+    cached_data = await cache_get(data_cache_key)
+    if cached_data:
+        return current_app.response_class(cached_data, mimetype="application/json")
+
     data = await db_sqlite.find_deforestation(sw_lat, ne_lat, sw_lng, ne_lng, limit=MAX_RESULTS)
-    return jsonify([{
+    records_list = [{
         "name": item["name"],
         "lat": item["lat"],
         "lon": item["lon"],
@@ -915,7 +955,10 @@ async def get_data():
         "periods": item.get("periods", "N/A"),
         "source": item.get("source", "TerraBrasilis"),
         "timestamp": item.get("timestamp", ""),
-    } for item in data])
+    } for item in data]
+    body = json.dumps(records_list)
+    await cache_set(data_cache_key, body, ttl=CACHE_TTL_DATA)
+    return current_app.response_class(body, mimetype="application/json")
 
 
 def _shutdown_handler(signum, frame):

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Circle, Popup, useMapEvents } from 'react-leaflet';
-import { Thermometer, TreePine, Flame } from 'lucide-react';
+import { MapContainer, TileLayer, CircleMarker, Circle, Popup, GeoJSON, useMapEvents } from 'react-leaflet';
+import { TreePine, Flame } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { getCache, setCache } from '../utils/cache';
 import 'leaflet/dist/leaflet.css';
@@ -100,6 +100,82 @@ function FireHoverLock({ fires, hoveredFireIdx, lockedFireIdx, onHoverEnd, onCle
   return null;
 }
 
+function windDir(deg) {
+  if (deg == null) return '—';
+  const dirs = ['N','NE','L','SE','S','SO','O','NO'];
+  return dirs[Math.round(deg / 45) % 8];
+}
+
+function boundsToGeoJSON(raw) {
+  return {
+    type: 'FeatureCollection',
+    features: Object.entries(raw).map(([name, d]) => ({
+      type: 'Feature',
+      properties: { name, state_abbr: d.state_abbr, municipality: d.municipality, category: d.category, full_name: d.full_name },
+      geometry: { type: 'MultiPolygon', coordinates: d.rings.map(r => [r]) },
+    })),
+  };
+}
+
+function GaugeRing({ value, max, color, size = 64 }) {
+  const r = (size - 8) / 2;
+  const c = 2 * Math.PI * r;
+  const pct = Math.min(1, Math.max(0, value / max));
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="5" />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth="5"
+        strokeDasharray={c} strokeDashoffset={c * (1 - pct)} strokeLinecap="round"
+        style={{ transition: 'stroke-dashoffset 1s ease', filter: `drop-shadow(0 0 4px ${color})` }}
+      />
+    </svg>
+  );
+}
+
+function DraggableCard({ className, style, children }) {
+  const [offset, setOffset] = useState(null);
+  const isDragging = useRef(false);
+  const startData = useRef(null);
+  const elRef = useRef(null);
+
+  const onMouseDown = (e) => {
+    if (e.button !== 0) return;
+    const el = elRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const parent = el.offsetParent?.getBoundingClientRect() || { top: 0, left: 0 };
+    startData.current = {
+      mouseX: e.clientX, mouseY: e.clientY,
+      top:  offset ? offset.top  : rect.top  - parent.top,
+      left: offset ? offset.left : rect.left - parent.left,
+      moved: false,
+    };
+    isDragging.current = true;
+  };
+
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!isDragging.current || !startData.current) return;
+      const dx = e.clientX - startData.current.mouseX;
+      const dy = e.clientY - startData.current.mouseY;
+      if (!startData.current.moved && Math.hypot(dx, dy) < 4) return;
+      startData.current.moved = true;
+      setOffset({ top: startData.current.top + dy, left: startData.current.left + dx });
+    };
+    const onUp = () => { isDragging.current = false; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, []);
+
+  const posStyle = offset ? { top: offset.top, left: offset.left, right: 'auto', bottom: 'auto' } : {};
+  return (
+    <div ref={elRef} className={className} style={{ ...style, ...posStyle, cursor: 'grab', userSelect: 'none' }} onMouseDown={onMouseDown}>
+      {children}
+    </div>
+  );
+}
+
 function Sparkline({ data, color = '#2dd4ff', height = 28 }) {
   const w = 200;
   const max = Math.max(...data);
@@ -125,23 +201,6 @@ function Sparkline({ data, color = '#2dd4ff', height = 28 }) {
   );
 }
 
-function GaugeRing({ value, max, color, size = 64 }) {
-  const r = (size - 8) / 2;
-  const c = 2 * Math.PI * r;
-  const pct = Math.min(1, Math.max(0, value / max));
-  return (
-    <svg viewBox={`0 0 ${size} ${size}`} style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="5" />
-      <circle
-        cx={size / 2} cy={size / 2} r={r} fill="none"
-        stroke={color} strokeWidth="5"
-        strokeDasharray={c} strokeDashoffset={c * (1 - pct)}
-        strokeLinecap="round"
-        style={{ transition: 'stroke-dashoffset 1s ease', filter: `drop-shadow(0 0 4px ${color})` }}
-      />
-    </svg>
-  );
-}
 
 function BiomePanel() {
   const { t } = useI18n();
@@ -240,7 +299,7 @@ function AlertsPanel({ alerts, activeAlertId, onAlertEnter, onAlertLeave }) {
   );
 }
 
-function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, loading, error, t, airQuality, temperature, alerts, activeAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock }) {
+function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, loading, error, t, airQuality, temperature, alerts, activeAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave }) {
   const [satellite, setSatellite] = useState(true);
   const [visibleCount, setVisibleCount] = useState(null);
 
@@ -294,6 +353,18 @@ function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, se
           >
             <span className="lt-dot" /> Satélite
           </button>
+          <button
+            className={`layer-toggle${showIndigenous ? ' on-amber' : ''}`}
+            onClick={() => setShowIndigenous(!showIndigenous)}
+          >
+            <span className="lt-dot" /> TI
+          </button>
+          <button
+            className={`layer-toggle${showConservation ? ' on-green' : ''}`}
+            onClick={() => setShowConservation(!showConservation)}
+          >
+            <span className="lt-dot" /> UC
+          </button>
         </div>
       </div>
 
@@ -337,10 +408,40 @@ function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, se
               pathOptions={{ color: ringColor, fillColor: ringColor, fillOpacity: 0.04, weight: 1.5, opacity: 0.65, dashArray: '6 4', className: 'alert-highlight-ring' }}
             />
           )}
+          {showIndigenous && indigenousGeo && (
+            <GeoJSON
+              key="indigenous"
+              data={indigenousGeo}
+              style={() => ({ color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.12, weight: 1.5, opacity: 0.6 })}
+              onEachFeature={(feature, layer) => {
+                const p = feature.properties;
+                layer.bindPopup(`<strong>🏕 ${p.name}</strong><br/>Terra Indígena · ${p.state_abbr || ''}<br/><small>${p.municipality || ''}</small>`);
+              }}
+            />
+          )}
+          {showConservation && conservationGeo && (
+            <GeoJSON
+              key="conservation"
+              data={conservationGeo}
+              style={() => ({ color: '#4ade80', fillColor: '#4ade80', fillOpacity: 0.1, weight: 1.5, opacity: 0.55 })}
+              onEachFeature={(feature, layer) => {
+                const p = feature.properties;
+                layer.bindPopup(`<strong>🌿 ${p.name}</strong><br/>${p.category || 'UC'} · ${p.state_abbr || ''}`);
+              }}
+            />
+          )}
           {showFires && fires && fires.map((fire, idx) => {
             const hi = highlightedFires?.has(idx);
             const s = fireStyle(fire.confidence);
             const fireAlertId = alertForFire(fire, alerts || []);
+            const fireAlert = alerts?.find(a => a.id === fireAlertId) || null;
+            const landTag = fireAlert && (() => {
+              if (fireAlert.type === 'indigenous_land')   return { cls: 'indigenous',   label: `Terra Indígena: ${fireAlert.meta}` };
+              if (fireAlert.type === 'conservation_unit') return { cls: 'conservation', label: `UC: ${fireAlert.meta}` };
+              if (fireAlert.type === 'night_fire')        return { cls: 'night-fire',   label: 'Foco Noturno' };
+              if (fireAlert.type === 'prodes')            return { cls: 'prodes',       label: `PRODES: ${fireAlert.meta}` };
+              return null;
+            })();
             return (
               <React.Fragment key={`f-${idx}`}>
                 <CircleMarker
@@ -357,7 +458,15 @@ function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, se
                     {t('home.confidence')}: {fire.confidence}<br />
                     {t('home.date')}: {fire.acq_date} {fire.acq_time}<br />
                     {t('home.satellite')}: {fire.satellite}<br />
-                    {t('home.brightnessTemp')}: {fire.bright_ti4}K<br />
+                    {t('home.brightnessTemp')}: {fire.bright_ti4}K
+                    {landTag && (
+                      <>
+                        <br />
+                        <span className={`fire-land-tag ${landTag.cls}`}>{landTag.label}</span>
+                        {fireAlert.state && <><br /><span style={{ fontSize: 10, color: '#888' }}>{fireAlert.state}</span></>}
+                      </>
+                    )}
+                    <br />
                     {t('home.sourceNasa')}
                   </Popup>
                 </CircleMarker>
@@ -375,7 +484,7 @@ function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, se
       )}
 
       {/* Floating: fires — top right */}
-      <div className="fl-card fl-stats">
+      <DraggableCard className="fl-card fl-stats">
         <div className="fl-eyebrow">
           <span className="dot" style={{ background: '#ef4444', boxShadow: '0 0 6px #ef4444' }} />
           {t('home.heatFocus')}
@@ -393,54 +502,67 @@ function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, se
           <span>NASA FIRMS</span>
           <span>↗</span>
         </a>
-      </div>
+      </DraggableCard>
 
-      {/* Floating: metrics — bottom left */}
-      <div className="fl-card fl-metrics">
-        <div className="metric-gauge">
-          <div className="metric-gauge-svg">
-            <GaugeRing value={aqiVal} max={300} color={aqiColor} size={64} />
-            <div className="metric-gauge-num">{airQuality ? aqiVal : '—'}</div>
+      {/* Floating: 4-gauge weather card — bottom left */}
+      <DraggableCard className="fl-card fl-weather">
+        <div className="fl-weather__header">
+          <div className="fl-eyebrow">
+            <span className="dot" style={{ background: '#fb923c', boxShadow: '0 0 6px #fb923c' }} />
+            CLIMA
           </div>
-          <div className="metric-meta">
-            <div className="metric-label">{t('home.airQuality')}</div>
-            <div className="metric-sub">PM2.5 · {airQuality ? airQuality.pm25 : '—'}</div>
+          {temperature?.city && <span className="fl-weather__city">{temperature.city}</span>}
+        </div>
+        <div className="fl-weather__gauges">
+          <div className="fl-weather__gauge">
+            <div className="fl-weather__gauge-svg">
+              <GaugeRing value={aqiVal} max={300} color={aqiColor} size={56} />
+              <div className="fl-weather__gauge-num" style={{ color: aqiColor }}>{airQuality ? aqiVal : '—'}</div>
+            </div>
+            <div className="fl-weather__gauge-label">AQI</div>
+            <div className="fl-weather__gauge-sub">{airQuality ? `PM2.5·${airQuality.pm25}` : '—'}</div>
+          </div>
+          <div className="fl-weather__gauge">
+            <div className="fl-weather__gauge-svg">
+              <GaugeRing value={humVal} max={100} color="#3b82f6" size={56} />
+              <div className="fl-weather__gauge-num">{humVal || '—'}</div>
+            </div>
+            <div className="fl-weather__gauge-label">{t('home.humidity')}</div>
+            <div className="fl-weather__gauge-sub">%</div>
+          </div>
+          <div className="fl-weather__gauge">
+            <div className="fl-weather__gauge-svg">
+              <GaugeRing value={temperature ? Math.max(temperature.temp, 0) : 0} max={45} color="#fb923c" size={56} />
+              <div className="fl-weather__gauge-num">{temperature ? temperature.temp.toFixed(0) : '—'}</div>
+            </div>
+            <div className="fl-weather__gauge-label">Temp</div>
+            <div className="fl-weather__gauge-sub">{temperature ? `SC ${temperature.feels_like.toFixed(0)}°` : '—'}</div>
+          </div>
+          <div className="fl-weather__gauge">
+            <div className="fl-weather__gauge-svg">
+              <GaugeRing value={temperature?.wind_speed ?? 0} max={80} color="#2dd4ff" size={56} />
+              <div className="fl-weather__gauge-num">{temperature?.wind_speed != null ? Math.round(temperature.wind_speed) : '—'}</div>
+            </div>
+            <div className="fl-weather__gauge-label">Vento</div>
+            <div className="fl-weather__gauge-sub">{windDir(temperature?.wind_direction)}</div>
           </div>
         </div>
-        <div className="metric-divider" />
-        <div className="metric-gauge">
-          <div className="metric-gauge-svg">
-            <GaugeRing value={humVal} max={100} color="#3b82f6" size={64} />
-            <div className="metric-gauge-num">{humVal || '—'}</div>
-          </div>
-          <div className="metric-meta">
-            <div className="metric-label">{t('home.humidity')}</div>
-            <div className="metric-sub">{temperature?.city || 'Local'}</div>
-          </div>
-        </div>
-      </div>
+      </DraggableCard>
 
-      {/* Floating: temperature — bottom right */}
-      <div className="fl-card fl-temp">
-        <div className="fl-eyebrow">
-          <Thermometer size={10} style={{ color: '#fb923c' }} />
-          <span style={{ color: 'var(--ink-3)', letterSpacing: '0.15em', textTransform: 'uppercase', fontSize: 9, fontFamily: 'var(--font-mono)' }}>
-            {t('home.temperature')}
-          </span>
-        </div>
-        <div className="fl-temp__big">
-          {temperature ? temperature.temp.toFixed(1) : '—'}
-          <span className="deg">°C</span>
-        </div>
-        {temperature && (
-          <div className="fl-temp__feels">
-            {t('home.feelsLike')}: {temperature.feels_like.toFixed(1)}°
-          </div>
-        )}
-        {temperature?.city && (
-          <div className="fl-temp__city">{temperature.city}</div>
-        )}
-      </div>
+      {/* Floating: biome panel — top left */}
+      <DraggableCard className="fl-panel-biome">
+        <BiomePanel />
+      </DraggableCard>
+
+      {/* Floating: alerts panel — right, below fires count */}
+      <DraggableCard className="fl-panel-alerts">
+        <AlertsPanel
+          alerts={alerts}
+          activeAlertId={activeAlertId}
+          onAlertEnter={onAlertEnter}
+          onAlertLeave={onAlertLeave}
+        />
+      </DraggableCard>
     </div>
   );
 }
@@ -450,21 +572,28 @@ const DEFAULT_LON = -51.925;
 
 export default function Home() {
   const { t } = useI18n();
-  const [records,     setRecords]     = useState(null);
-  const [fires,       setFires]       = useState(null);
-  const [loading,     setLoading]     = useState(true);
-  const [error,       setError]       = useState(null);
-  const [airQuality,  setAirQuality]  = useState(null);
-  const [temperature, setTemperature] = useState(null);
-  const [showDeforest, setShowDeforest] = useState(true);
-  const [showFires,    setShowFires]    = useState(true);
-  const [alerts,       setAlerts]      = useState([]);
-  const [alertHoverId, setAlertHoverId] = useState(null); // from alert panel
-  const [fireAlertId,  setFireAlertId]  = useState(null); // from fire circle hover
-  const [hoveredFireIdx, setHoveredFireIdx] = useState(null); // index of currently hovered fire marker
-  const [lockedFireIdx, setLockedFireIdx] = useState(null); // index locked by click
-  const [lockedFireAlertId, setLockedFireAlertId] = useState(null); // alert locked by click
+  const [records,        setRecords]        = useState(null);
+  const [fires,          setFires]          = useState(null);
+  const [loading,        setLoading]        = useState(false);
+  const [error,          setError]          = useState(null);
+  const [airQuality,     setAirQuality]     = useState(null);
+  const [temperature,    setTemperature]    = useState(null);
+  const [showDeforest,   setShowDeforest]   = useState(false);
+  const [showFires,      setShowFires]      = useState(true);
+  const [showIndigenous, setShowIndigenous] = useState(false);
+  const [showConservation, setShowConservation] = useState(false);
+  const [indigenousGeo,  setIndigenousGeo]  = useState(null);
+  const [conservationGeo, setConservationGeo] = useState(null);
+  const [alerts,         setAlerts]         = useState([]);
+  const [alertHoverId,   setAlertHoverId]   = useState(null);
+  const [fireAlertId,    setFireAlertId]    = useState(null);
+  const [hoveredFireIdx, setHoveredFireIdx] = useState(null);
+  const [lockedFireIdx,  setLockedFireIdx]  = useState(null);
+  const [lockedFireAlertId, setLockedFireAlertId] = useState(null);
   const fireHoverOutTimeoutRef = useRef(null);
+  const deforestFetchedRef  = useRef(false);
+  const indiFetchedRef      = useRef(false);
+  const consFetchedRef      = useRef(false);
 
   const activeAlertId = lockedFireAlertId || alertHoverId || fireAlertId;
 
@@ -533,28 +662,48 @@ export default function Home() {
     return () => clearInterval(id);
   }, []);
 
+  // Fire data (cached 4h)
   useEffect(() => {
-    fetch('/api/data')
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`); return r.json(); })
-      .then(d => { setRecords(Array.isArray(d) ? d : []); setLoading(false); })
-      .catch(e => { setError(e.message); setLoading(false); });
-
-    const cached = getCache('fires', 10);
+    const cached = getCache('fires', 240);
     if (cached) setFires(cached.fires || []);
     fetch('/api/fires')
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(d => { const f = d.fires || []; setFires(f); setCache('fires', { fires: f, last_sync: d.last_sync }); })
       .catch(() => { if (!cached) setFires([]); });
+  }, []);
 
+  // Weather (cached 15min in localStorage)
+  useEffect(() => {
     const fetchWeather = (lat, lon) => {
-      fetch(`/api/weather/air-quality?lat=${lat}&lon=${lon}`)
-        .then(r => r.json())
-        .then(d => { if (d.aqi != null) setAirQuality({ aqi: d.aqi, pm25: d.pm25 ?? '-', humidity: d.humidity ?? '-' }); })
-        .catch(() => {});
-      fetch(`/api/weather/temperature?lat=${lat}&lon=${lon}`)
-        .then(r => r.json())
-        .then(d => { if (d.temp != null) setTemperature({ temp: d.temp, feels_like: d.feels_like, humidity: d.humidity, city: d.city }); })
-        .catch(() => {});
+      const latK = lat.toFixed(1), lonK = lon.toFixed(1);
+      const aqiKey = `weather_aqi_${latK}_${lonK}`;
+      const tempKey = `weather_temp_${latK}_${lonK}`;
+
+      const cachedAqi = getCache(aqiKey, 15);
+      if (cachedAqi) { setAirQuality(cachedAqi); }
+      else {
+        fetch(`/api/weather/air-quality?lat=${lat}&lon=${lon}`)
+          .then(r => r.json())
+          .then(d => {
+            if (d.aqi != null) {
+              const aq = { aqi: d.aqi, pm25: d.pm25 ?? '-', humidity: d.humidity ?? '-' };
+              setAirQuality(aq); setCache(aqiKey, aq);
+            }
+          }).catch(() => {});
+      }
+
+      const cachedTemp = getCache(tempKey, 15);
+      if (cachedTemp) { setTemperature(cachedTemp); }
+      else {
+        fetch(`/api/weather/temperature?lat=${lat}&lon=${lon}`)
+          .then(r => r.json())
+          .then(d => {
+            if (d.temp != null) {
+              const temp = { temp: d.temp, feels_like: d.feels_like, humidity: d.humidity, city: d.city, wind_speed: d.wind_speed, wind_direction: d.wind_direction };
+              setTemperature(temp); setCache(tempKey, temp);
+            }
+          }).catch(() => {});
+      }
     };
 
     if (navigator.geolocation) {
@@ -568,40 +717,70 @@ export default function Home() {
     }
   }, []);
 
+  // Lazy-load PRODES deforestation points (only when layer enabled)
+  useEffect(() => {
+    if (!showDeforest || deforestFetchedRef.current) return;
+    deforestFetchedRef.current = true;
+    const cached = getCache('prodes_records', 15);
+    if (cached) { setRecords(cached); return; }
+    setLoading(true);
+    fetch('/api/data')
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(d => { const rows = Array.isArray(d) ? d : []; setRecords(rows); setCache('prodes_records', rows); setLoading(false); })
+      .catch(e => { setError(e.message); setLoading(false); });
+  }, [showDeforest]);
+
+  // Lazy-load indigenous lands boundary
+  useEffect(() => {
+    if (!showIndigenous || indiFetchedRef.current) return;
+    indiFetchedRef.current = true;
+    fetch('/api/indigenous-lands')
+      .then(r => r.json())
+      .then(d => setIndigenousGeo(boundsToGeoJSON(d)))
+      .catch(() => {});
+  }, [showIndigenous]);
+
+  // Lazy-load conservation units boundary
+  useEffect(() => {
+    if (!showConservation || consFetchedRef.current) return;
+    consFetchedRef.current = true;
+    fetch('/api/conservation-units')
+      .then(r => r.json())
+      .then(d => setConservationGeo(boundsToGeoJSON(d)))
+      .catch(() => {});
+  }, [showConservation]);
+
   return (
-    <>
-      <div className="home-main">
-        <MapaCard
-          records={records}
-          fires={fires}
-          showDeforest={showDeforest}
-          showFires={showFires}
-          setShowDeforest={setShowDeforest}
-          setShowFires={setShowFires}
-          loading={loading}
-          error={error}
-          t={t}
-          airQuality={airQuality}
-          temperature={temperature}
-          alerts={alerts}
-          activeAlertId={activeAlertId}
-          hoveredFireIdx={hoveredFireIdx}
-          lockedFireIdx={lockedFireIdx}
-          onFireOver={handleFireOver}
-          onFireHoverEnd={clearFireHover}
-          onFireClick={handleFireClick}
-          onClearFireLock={clearFireLock}
-        />
-        <div className="sidebar">
-          <BiomePanel />
-          <AlertsPanel
-            alerts={alerts}
-            activeAlertId={activeAlertId}
-            onAlertEnter={id => setAlertHoverId(id)}
-            onAlertLeave={() => setAlertHoverId(null)}
-          />
-        </div>
-      </div>
-    </>
+    <div className="home-main">
+      <MapaCard
+        records={records}
+        fires={fires}
+        showDeforest={showDeforest}
+        showFires={showFires}
+        setShowDeforest={setShowDeforest}
+        setShowFires={setShowFires}
+        showIndigenous={showIndigenous}
+        setShowIndigenous={setShowIndigenous}
+        showConservation={showConservation}
+        setShowConservation={setShowConservation}
+        indigenousGeo={indigenousGeo}
+        conservationGeo={conservationGeo}
+        loading={loading}
+        error={error}
+        t={t}
+        airQuality={airQuality}
+        temperature={temperature}
+        alerts={alerts}
+        activeAlertId={activeAlertId}
+        hoveredFireIdx={hoveredFireIdx}
+        lockedFireIdx={lockedFireIdx}
+        onFireOver={handleFireOver}
+        onFireHoverEnd={clearFireHover}
+        onFireClick={handleFireClick}
+        onClearFireLock={clearFireLock}
+        onAlertEnter={id => setAlertHoverId(id)}
+        onAlertLeave={() => setAlertHoverId(null)}
+      />
+    </div>
   );
 }

@@ -1,11 +1,8 @@
 /* ── Home layout ──────────────────────────────────────── */
 .home-main {
   flex: 1;
-  display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 18px;
-  padding: 18px;
-  align-items: start;
+  display: block;
+  overflow: hidden;
 }
 
 /* Alert highlight ring animation */
@@ -22,15 +19,10 @@
 /* ── Map Stage ────────────────────────────────────────── */
 .map-stage {
   position: relative;
-  border-radius: 20px;
   overflow: hidden;
-  border: 1px solid var(--line-strong);
   background: var(--bg-elevated);
-  box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(45, 212, 255, 0.05) inset;
-  min-height: 680px;
-  height: calc(100vh - 114px);
+  height: calc(100vh - 64px);
+  min-height: 500px;
 }
 
 /* Map overlay header */
@@ -93,9 +85,11 @@
 
 .layer-toggle:hover { color: var(--ink-1); background: rgba(255, 255, 255, 0.04); }
 
-.layer-toggle.on-cyan   { color: var(--accent-cyan);   background: rgba(45,212,255,0.1);  border-color: rgba(45,212,255,0.3);  box-shadow: 0 0 14px rgba(45,212,255,0.15); }
-.layer-toggle.on-red    { color: #fda4af;               background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.3);  box-shadow: 0 0 14px rgba(239,68,68,0.15); }
+.layer-toggle.on-cyan   { color: var(--accent-cyan);   background: rgba(45,212,255,0.1);   border-color: rgba(45,212,255,0.3);   box-shadow: 0 0 14px rgba(45,212,255,0.15); }
+.layer-toggle.on-red    { color: #fda4af;               background: rgba(239,68,68,0.12);  border-color: rgba(239,68,68,0.3);   box-shadow: 0 0 14px rgba(239,68,68,0.15); }
 .layer-toggle.on-violet { color: var(--accent-violet);  background: rgba(167,139,250,0.12); border-color: rgba(167,139,250,0.3); box-shadow: 0 0 14px rgba(167,139,250,0.15); }
+.layer-toggle.on-amber  { color: var(--accent-amber);   background: rgba(251,191,36,0.12);  border-color: rgba(251,191,36,0.3);  box-shadow: 0 0 14px rgba(251,191,36,0.12); }
+.layer-toggle.on-green  { color: var(--accent-green);   background: rgba(74,222,128,0.12);  border-color: rgba(74,222,128,0.3);  box-shadow: 0 0 14px rgba(74,222,128,0.12); }
 
 .lt-dot {
   width: 6px;
@@ -213,96 +207,136 @@
 
 .fl-link:hover { background: rgba(45, 212, 255, 0.16); border-color: rgba(45, 212, 255, 0.45); color: var(--accent-cyan); }
 
-/* Metrics — bottom left */
-.fl-metrics {
+/* 4-gauge weather card — bottom left */
+.fl-weather {
   bottom: 18px;
   left: 18px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 18px;
+  padding: 14px 16px;
 }
 
-.metric-gauge {
+.fl-weather__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.fl-weather__city {
+  font-size: 10px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.fl-weather__gauges {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.fl-weather__gauge {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
-.metric-gauge-svg {
+.fl-weather__gauge-svg {
   position: relative;
-  width: 64px;
-  height: 64px;
+  width: 56px;
+  height: 56px;
 }
 
-.metric-gauge-num {
-  font-weight: 600;
+.fl-weather__gauge-num {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--ink-1);
   letter-spacing: -0.02em;
 }
 
-.metric-meta  { text-align: center; }
-.metric-label { font-size: 11px; font-weight: 600; color: var(--ink-1); letter-spacing: -0.005em; }
-.metric-sub   { font-size: 9px; font-family: var(--font-mono); color: var(--ink-3); letter-spacing: 0.06em; text-transform: uppercase; margin-top: 2px; }
-.metric-divider { width: 1px; height: 56px; background: var(--line); }
+.fl-weather__gauge-label {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
 
-/* Temperature — bottom right */
-.fl-temp {
-  bottom: 18px;
-  right: 18px;
-  width: 180px;
-  padding: 14px 16px;
+.fl-weather__gauge-sub {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  color: var(--ink-4);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   text-align: center;
 }
 
-.fl-temp__big {
-  font-weight: 600;
-  font-family: var(--font-display);
-  font-size: 36px;
-  line-height: 1;
+/* ── Floating panel wrappers (biome + alerts on map) ─── */
+.fl-panel-biome,
+.fl-panel-alerts {
+  position: absolute;
+  z-index: 450;
+  background: linear-gradient(160deg, rgba(8, 22, 40, 0.9) 0%, rgba(4, 14, 26, 0.86) 100%);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
   color: var(--ink-1);
-  letter-spacing: -0.04em;
-  margin-top: 8px;
+  overflow: hidden;
 }
 
-.fl-temp__big .deg {
-  color: var(--accent-orange);
-  font-size: 22px;
-  font-family: var(--font-mono);
-  vertical-align: super;
-  margin-left: 2px;
-  letter-spacing: 0;
+.fl-panel-biome {
+  top: 80px;
+  left: 18px;
+  width: 240px;
 }
 
-.fl-temp__feels {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--ink-3);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin-top: 8px;
-}
-
-.fl-temp__city {
-  font-size: 11px;
-  color: var(--ink-2);
-  margin-top: 4px;
-}
-
-/* ── Sidebar ──────────────────────────────────────────── */
-.sidebar {
+.fl-panel-alerts {
+  top: 280px;
+  right: 18px;
+  width: 248px;
+  /* extend to near bottom of viewport, scroll inside */
+  max-height: calc(100vh - 362px);
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  min-width: 0;
+}
+
+/* Propagate flex column through inner .panel so panel-body scrolls */
+.fl-panel-alerts .panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.fl-panel-alerts .panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.fl-panel-alerts .panel-body::-webkit-scrollbar { width: 3px; }
+.fl-panel-alerts .panel-body::-webkit-scrollbar-track { background: transparent; }
+.fl-panel-alerts .panel-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
+/* Strip inner panel styling when inside a floating panel */
+.fl-panel-biome .panel,
+.fl-panel-alerts .panel {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* ── Panels ───────────────────────────────────────────── */
@@ -435,35 +469,50 @@
 
 .alert-meta .sep { color: var(--ink-4); margin: 0 6px; }
 
+.alert-empty {
+  font-size: 11px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  text-align: center;
+  padding: 16px 0;
+}
+
+/* Draggable card: let inner links/buttons still show pointer */
+.fl-card a, .fl-card button, .fl-panel-biome button, .fl-panel-alerts .alert-row {
+  cursor: pointer;
+}
+
+/* ── Fire popup land tags ─────────────────────────────── */
+.fire-land-tag {
+  display: inline-block;
+  margin-top: 5px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.fire-land-tag.indigenous   { background: rgba(251,146,60,0.15);  color: #fb923c; border: 1px solid rgba(251,146,60,0.3); }
+.fire-land-tag.conservation { background: rgba(74,222,128,0.15);  color: #4ade80; border: 1px solid rgba(74,222,128,0.3); }
+.fire-land-tag.night-fire   { background: rgba(167,139,250,0.15); color: #a78bfa; border: 1px solid rgba(167,139,250,0.3); }
+.fire-land-tag.prodes       { background: rgba(45,212,255,0.12);  color: var(--accent-cyan); border: 1px solid rgba(45,212,255,0.25); }
+
 /* ── Responsive ───────────────────────────────────────── */
 @media (max-width: 1180px) {
-  .home-main {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-  }
-
   .map-stage {
-    height: 75vh;
+    height: calc(100vh - 64px);
     min-height: 480px;
   }
 }
 
 @media (max-width: 720px) {
-  .home-main {
-    padding: 10px;
-    gap: 12px;
-  }
-
-  .sidebar { grid-template-columns: 1fr; }
-
   .map-stage {
-    height: 75vh;
+    height: calc(100vh - 64px);
     min-height: 400px;
   }
+
+  .fl-panel-biome  { display: none; }
+  .fl-panel-alerts { width: 180px; top: 220px; }
 
   .fl-stats          { width: 100px; padding: 6px; font-size: 10px; }
   .fl-big-number     { font-size: 22px; margin-top: 4px; }
@@ -471,17 +520,15 @@
   .fl-eyebrow        { font-size: 8px; gap: 3px; }
   .fl-eyebrow .dot   { width: 3px; height: 3px; }
   .fl-link           { margin-top: 6px; padding: 5px 6px; font-size: 9px; }
-  .fl-temp           { width: 90px; padding: 5px 6px; font-size: 9px; }
-  .fl-temp__big      { font-size: 22px; margin-top: 4px; }
-  .fl-temp__big .deg { font-size: 14px; }
-  .fl-temp__feels    { font-size: 8px; margin-top: 4px; }
-  .fl-temp__city     { font-size: 9px; }
-  .fl-metrics        { padding: 5px 6px; gap: 5px; font-size: 9px; }
-  .metric-gauge-svg  { width: 32px; height: 32px; }
-  .metric-gauge-svg svg { width: 32px !important; height: 32px !important; }
-  .metric-gauge-num  { font-size: 9px; }
-  .metric-label      { font-size: 8px; }
-  .metric-sub        { font-size: 7px; }
-  .metric-divider    { height: 32px; }
+  /* Mobile: compact 4-gauge card */
+  .fl-weather                { padding: 8px 10px; }
+  .fl-weather__header        { margin-bottom: 8px; }
+  .fl-weather__gauges        { gap: 8px; }
+  .fl-weather__gauge-svg     { width: 40px; height: 40px; }
+  .fl-weather__gauge-num     { font-size: 11px; }
+  .fl-weather__gauge-label   { font-size: 7px; }
+  .fl-weather__gauge-sub     { font-size: 7px; }
+  /* Hide alerts panel on mobile to reduce clutter */
+  .fl-panel-alerts           { display: none; }
   .fl-card           { border-radius: 10px; }
 }
