@@ -2,9 +2,26 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import logoBrazil from '../Assets/yvy_logo_brazil.svg';
-import logoTextPt from '../Assets/yvy_logo_text.svg';
-import logoTextEn from '../Assets/yvy_logo_text_en.svg';
 import './Navbar.css';
+
+// Modular SVG Components
+const LogoTextPt = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 1100 500" role="img" className="navbar-logo navbar-logo--text">
+    <title>Yvy Texto</title>
+    <text x="0" y="340" fill="#22d3ee" fontFamily="Outfit, sans-serif" fontSize="240" fontWeight="700">Yvy</text>
+    <text x="500" y="275" fill="#4ade80" fontFamily="Outfit, sans-serif" fontSize="64" fontWeight="500">OBSERVABILIDADE</text>
+    <text x="500" y="350" fill="#4ade80" fontFamily="Outfit, sans-serif" fontSize="64" fontWeight="500">AMBIENTAL</text>
+  </svg>
+);
+
+const LogoTextEn = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 1100 500" role="img" className="navbar-logo navbar-logo--text">
+    <title>Yvy Text EN</title>
+    <text x="0" y="340" fill="#22d3ee" fontFamily="Outfit, sans-serif" fontSize="240" fontWeight="700">Yvy</text>
+    <text x="500" y="275" fill="#4ade80" fontFamily="Outfit, sans-serif" fontSize="64" fontWeight="500">ENVIRONMENTAL</text>
+    <text x="500" y="350" fill="#4ade80" fontFamily="Outfit, sans-serif" fontSize="64" fontWeight="500">OBSERVABILITY</text>
+  </svg>
+);
 
 export default function Navbar() {
   const location = useLocation();
@@ -12,7 +29,6 @@ export default function Navbar() {
   const { lang, switchLang, t } = useI18n();
 
   const close = () => setOpen(false);
-  const logoText = lang === 'pt' ? logoTextPt : logoTextEn;
 
   return (
     <nav className="navbar">
@@ -20,11 +36,7 @@ export default function Navbar() {
         <div className="brand-mark">
           <img src={logoBrazil} alt="Yvy Brasil" className="navbar-logo--brazil" />
         </div>
-        <img
-          src={logoText}
-          alt={lang === 'pt' ? 'Yvy Observabilidade Ambiental Brasil' : 'Yvy Environmental Observability Brazil'}
-          className="navbar-logo navbar-logo--text"
-        />
+        {lang === 'pt' ? <LogoTextPt /> : <LogoTextEn />}
       </div>
 
       <div className={`nav-links ${open ? 'nav-links--open' : ''}`}>
