@@ -73,7 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_news_published ON news(publishedAt);
 """
 
 _pool: asyncio.Queue[aiosqlite.Connection] | None = None
-_pool_size = 5
+_pool_size = 3
 
 
 async def _create_connection() -> aiosqlite.Connection:
@@ -81,8 +81,9 @@ async def _create_connection() -> aiosqlite.Connection:
     conn.row_factory = aiosqlite.Row
     await conn.execute("PRAGMA journal_mode=WAL")
     await conn.execute("PRAGMA synchronous=NORMAL")
-    await conn.execute("PRAGMA cache_size=-64000")  # 64MB
+    await conn.execute("PRAGMA cache_size=-8000")   # 8MB per connection (was 64MB)
     await conn.execute("PRAGMA temp_store=MEMORY")
+    await conn.execute("PRAGMA mmap_size=0")        # disable mmap on low-RAM VM
     return conn
 
 

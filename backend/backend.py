@@ -22,6 +22,9 @@ from quart_cors import cors
 
 import db_sqlite
 import biome_lookup
+import alerts as alert_module
+import indigenous_lands_lookup
+import conservation_units_lookup
 
 load_dotenv()
 
@@ -60,9 +63,13 @@ _RATE_LIMIT_LOCK = Lock()
 _news_cache: dict[str, tuple[float, list[dict]]] = {}
 _NEWS_CACHE_TTL_SECONDS = 60 * 5  # 5 minutes server-side
 
-# News sync background task
+# Background tasks
 _news_sync_task: asyncio.Task | None = None
 _fires_sync_task: asyncio.Task | None = None
+_alerts_sync_task: asyncio.Task | None = None
+
+# Shared HTTP client — created at startup, closed at shutdown
+_http_client: httpx.AsyncClient | None = None
 
 
 class JsonFormatter(logging.Formatter):
@@ -104,24 +111,23 @@ def configure_logger(name):
 logger = configure_logger("yvy.backend")
 
 
-def build_security_headers():
-    return {
-        "X-Content-Type-Options": "nosniff",
-        "X-Frame-Options": "DENY",
-        "Referrer-Policy": "strict-origin-when-cross-origin",
-        "Permissions-Policy": "geolocation=(), microphone=(), camera=(), bluetooth=()",
-        "Content-Security-Policy": (
-            "default-src 'self'; "
-            "img-src 'self' data: https://tile.openstreetmap.org https://*.tile.openstreetmap.org; "
-            "style-src 'self' 'unsafe-inline' https://stackpath.bootstrapcdn.com https://cdn.jsdelivr.net https://unpkg.com; "
-            "script-src 'self' 'unsafe-inline' https://code.jquery.com https://cdn.jsdelivr.net https://unpkg.com; "
-            "font-src 'self' https://stackpath.bootstrapcdn.com; "
-            "connect-src 'self'; "
-            "frame-ancestors 'none'; "
-            "base-uri 'self'; "
-            "form-action 'self'"
-        ),
-    }
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=(), bluetooth=()",
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "img-src 'self' data: https://tile.openstreetmap.org https://*.tile.openstreetmap.org; "
+        "style-src 'self' 'unsafe-inline' https://stackpath.bootstrapcdn.com https://cdn.jsdelivr.net https://unpkg.com; "
+        "script-src 'self' 'unsafe-inline' https://code.jquery.com https://cdn.jsdelivr.net https://unpkg.com; "
+        "font-src 'self' https://stackpath.bootstrapcdn.com; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    ),
+}
 
 
 def parse_cors_origins():
@@ -308,16 +314,28 @@ async def cache_delete(pattern: str):
 
 @app.before_serving
 async def startup():
-    global redis_client, _news_sync_task, _fires_sync_task
+    global redis_client, _news_sync_task, _fires_sync_task, _alerts_sync_task, _http_client
+    _http_client = httpx.AsyncClient(timeout=30.0)
     await db_sqlite.init_db()
     logger.info("SQLite connection verified.", extra={"event": "sqlite_connect_ok"})
-    
+
     # Load biome boundaries for point-in-polygon classification
     try:
         biome_lookup.load_biomes()
     except Exception as e:
         logger.warning("Failed to load biome data – biome lookup disabled: %s", e, exc_info=True)
-    
+
+    # Load indigenous lands and conservation units for alert generation
+    try:
+        indigenous_lands_lookup.load_indigenous_lands()
+    except Exception as e:
+        logger.warning("Failed to load indigenous lands data: %s", e)
+
+    try:
+        conservation_units_lookup.load_conservation_units()
+    except Exception as e:
+        logger.warning("Failed to load conservation units data: %s", e)
+
     # Try Redis connection (optional)
     try:
         redis_client = aioredis.from_url(REDIS_URL, socket_connect_timeout=5, socket_timeout=5)
@@ -326,20 +344,25 @@ async def startup():
     except Exception as e:
         redis_client = None
         logger.warning(f"Redis unavailable - caching disabled. Error: {e}", extra={"event": "redis_connect_failed"})
-    
+
     _fires_sync_task = asyncio.create_task(_fires_sync_loop())
     _news_sync_task = asyncio.create_task(_news_sync_loop())
+    _alerts_sync_task = asyncio.create_task(_alerts_sync_loop())
 
 
 @app.after_serving
 async def shutdown():
+    global _http_client
     await db_sqlite.close_db()
     if redis_client:
         await redis_client.close()
+    if _http_client:
+        await _http_client.aclose()
+        _http_client = None
     from news_sqlite import close_http_client
     await close_http_client()
-    global _news_sync_task, _fires_sync_task
-    for task in (_news_sync_task, _fires_sync_task):
+    global _news_sync_task, _fires_sync_task, _alerts_sync_task
+    for task in (_news_sync_task, _fires_sync_task, _alerts_sync_task):
         if task:
             task.cancel()
             try:
@@ -362,13 +385,11 @@ async def _fetch_firms_data(global_sync: bool = False):
         logger.info("Fetching FIRMS fire data.", extra={"event": "firms_fetch_start", "details": {"url": url, "global": global_sync}})
 
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                resp = await client.get(url)
-                if resp.status_code != 200:
-                    logger.error("FIRMS API returned non-200.", extra={"event": "firms_fetch_failed", "status_code": resp.status_code})
-                    continue
-
-                text = resp.text
+            resp = await _http_client.get(url, timeout=60.0)
+            if resp.status_code != 200:
+                logger.error("FIRMS API returned non-200.", extra={"event": "firms_fetch_failed", "status_code": resp.status_code})
+                continue
+            text = resp.text
         except Exception as exc:
             logger.error("FIRMS fetch exception.", extra={"event": "firms_fetch_error", "details": {"error": str(exc)}})
             continue
@@ -415,8 +436,37 @@ async def _fetch_firms_data(global_sync: bool = False):
     await cache_delete("fires:*")
     logger.debug("Fires cache invalidated")
 
+    # Refresh alert cache after new fire data arrives
+    try:
+        await _refresh_alerts_cache()
+    except Exception as exc:
+        logger.warning("Alert cache refresh failed after FIRMS sync: %s", exc)
+
     logger.info("FIRMS sync complete.", extra={"event": "firms_sync_complete", "details": {"records": total_count, "global": global_sync}})
     return total_count
+
+
+async def _refresh_alerts_cache() -> dict:
+    """Recompute all alerts, store in cache, and return the result."""
+    fires = await db_sqlite.find_fires(
+        sw_lat=BRAZIL_BOUNDS["min_lat"], ne_lat=BRAZIL_BOUNDS["max_lat"],
+        sw_lng=BRAZIL_BOUNDS["min_lon"], ne_lng=BRAZIL_BOUNDS["max_lon"],
+        limit=MAX_RESULTS,
+    )
+    result = await alert_module.generate_all_alerts(fires, _http_client, WAQI_TOKEN)
+    await cache_set("alerts:all", json.dumps(result), ttl=CACHE_TTL_FIRMS * 30)
+    logger.debug("Alerts cache refreshed: %d alerts", result["count"])
+    return result
+
+
+async def _alerts_sync_loop():
+    await asyncio.sleep(60)
+    while True:
+        try:
+            await _refresh_alerts_cache()
+        except Exception as exc:
+            logger.error("Alerts sync loop error: %s", exc)
+        await asyncio.sleep(1800)  # 30 minutes
 
 
 async def _fires_sync_loop():
@@ -446,7 +496,7 @@ async def _fires_sync_loop():
 
 
 async def _news_sync_loop():
-    from news_sqlite import fetch_and_save_news
+    from news_sqlite import fetch_and_save_news  # import once before loop
     await asyncio.sleep(15)
     while True:
         try:
@@ -538,7 +588,7 @@ async def start_request_timer():
 
 @app.after_request
 async def add_security_headers(response):
-    for header_name, header_value in build_security_headers().items():
+    for header_name, header_value in _SECURITY_HEADERS.items():
         response.headers.setdefault(header_name, header_value)
 
     duration_ms = None
@@ -598,6 +648,20 @@ async def get_biomes():
 
     await cache_set("biomes:all", json.dumps(response), CACHE_TTL_FIRMS)
     return jsonify(response)
+
+
+@app.route("/api/alerts")
+async def get_alerts():
+    """Return active environmental alerts (fires, air quality, PRODES)."""
+    enforce_api_auth()
+    await enforce_rate_limit()
+
+    cached = await cache_get("alerts:all")
+    if cached:
+        return jsonify(json.loads(cached))
+
+    result = await _refresh_alerts_cache()
+    return jsonify(result)
 
 
 @app.errorhandler(404)
@@ -711,31 +775,24 @@ async def reverse_geocode(lat: float, lon: float) -> str:
         return cached["city"]
 
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            url = "https://nominatim.openstreetmap.org/reverse"
-            params = {
-                "lat": lat,
-                "lon": lon,
-                "format": "json",
-                "zoom": 10,  # city level
-                "accept-language": "pt",
-            }
-            headers = {"User-Agent": "YvyApp/1.0 (environmental-monitoring)"}
-            resp = await client.get(url, params=params, headers=headers)
-            data = resp.json()
-            address = data.get("address", {})
-
-            # Try city, town, village, municipality in order
-            city = (
-                address.get("city")
-                or address.get("town")
-                or address.get("village")
-                or address.get("municipality")
-                or address.get("state")
-                or "Brasil"
-            )
-            _reverse_geo_cache[key] = {"city": city, "expires": time.time() + _REVERSE_GEO_TTL}
-            return city
+        url = "https://nominatim.openstreetmap.org/reverse"
+        params = {
+            "lat": lat, "lon": lon, "format": "json", "zoom": 10, "accept-language": "pt",
+        }
+        headers = {"User-Agent": "YvyApp/1.0 (environmental-monitoring)"}
+        resp = await _http_client.get(url, params=params, headers=headers, timeout=5.0)
+        data = resp.json()
+        address = data.get("address", {})
+        city = (
+            address.get("city")
+            or address.get("town")
+            or address.get("village")
+            or address.get("municipality")
+            or address.get("state")
+            or "Brasil"
+        )
+        _reverse_geo_cache[key] = {"city": city, "expires": time.time() + _REVERSE_GEO_TTL}
+        return city
     except Exception:
         return "Brasil"
 
@@ -752,12 +809,25 @@ async def get_air_quality():
         station = "brasilia"
     fallback = "brasilia"
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            url = f"https://api.waqi.info/feed/{station}/?token={WAQI_TOKEN}"
-            resp = await client.get(url)
-            data = resp.json()
-            if data.get("status") == "ok":
-                d = data["data"]
+        url = f"https://api.waqi.info/feed/{station}/?token={WAQI_TOKEN}"
+        resp = await _http_client.get(url, timeout=10.0)
+        data = resp.json()
+        if data.get("status") == "ok":
+            d = data["data"]
+            city = await reverse_geocode(float(lat), float(lon)) if lat and lon else "Brasil"
+            return jsonify({
+                "aqi": d.get("aqi"),
+                "pm25": d.get("iaqi", {}).get("pm25", {}).get("v"),
+                "humidity": d.get("iaqi", {}).get("h", {}).get("v"),
+                "city": city,
+            })
+        if station != fallback:
+            resp2 = await _http_client.get(
+                f"https://api.waqi.info/feed/{fallback}/?token={WAQI_TOKEN}", timeout=10.0
+            )
+            data2 = resp2.json()
+            if data2.get("status") == "ok":
+                d = data2["data"]
                 city = await reverse_geocode(float(lat), float(lon)) if lat and lon else "Brasil"
                 return jsonify({
                     "aqi": d.get("aqi"),
@@ -765,21 +835,7 @@ async def get_air_quality():
                     "humidity": d.get("iaqi", {}).get("h", {}).get("v"),
                     "city": city,
                 })
-            if station != fallback:
-                resp2 = await client.get(
-                    f"https://api.waqi.info/feed/{fallback}/?token={WAQI_TOKEN}"
-                )
-                data2 = resp2.json()
-                if data2.get("status") == "ok":
-                    d = data2["data"]
-                    city = await reverse_geocode(float(lat), float(lon)) if lat and lon else "Brasil"
-                    return jsonify({
-                        "aqi": d.get("aqi"),
-                        "pm25": d.get("iaqi", {}).get("pm25", {}).get("v"),
-                        "humidity": d.get("iaqi", {}).get("h", {}).get("v"),
-                        "city": city,
-                    })
-            return jsonify({"aqi": None})
+        return jsonify({"aqi": None})
     except Exception:
         return jsonify({"aqi": None})
 
@@ -796,19 +852,18 @@ async def get_temperature():
         f"&timezone=America/Sao_Paulo"
     )
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(url)
-            data = resp.json()
-            current = data.get("current", {})
-            if current:
-                city = await reverse_geocode(float(lat), float(lon))
-                return jsonify({
-                    "temp": current.get("temperature_2m"),
-                    "feels_like": current.get("apparent_temperature"),
-                    "humidity": current.get("relative_humidity_2m"),
-                    "city": city,
-                })
-            return jsonify({"temp": None})
+        resp = await _http_client.get(url, timeout=10.0)
+        data = resp.json()
+        current = data.get("current", {})
+        if current:
+            city = await reverse_geocode(float(lat), float(lon))
+            return jsonify({
+                "temp": current.get("temperature_2m"),
+                "feels_like": current.get("apparent_temperature"),
+                "humidity": current.get("relative_humidity_2m"),
+                "city": city,
+            })
+        return jsonify({"temp": None})
     except Exception:
         return jsonify({"temp": None})
 

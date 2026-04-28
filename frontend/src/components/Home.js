@@ -97,6 +97,7 @@ function GaugeRing({ value, max, color, size = 64 }) {
 }
 
 function BiomePanel() {
+  const { t } = useI18n();
   const [biomes, setBiomes] = useState([]);
   const [totalFires, setTotalFires] = useState(0);
 
@@ -117,7 +118,7 @@ function BiomePanel() {
       <div className="panel-header">
         <div className="panel-title">
           <span className="panel-icon"><TreePine size={14} /></span>
-          <span className="panel-title-text">Focos por bioma</span>
+          <span className="panel-title-text">{t('home.focosByBiome')}</span>
         </div>
         <span className="panel-meta">24H · BR</span>
       </div>
@@ -138,14 +139,31 @@ function BiomePanel() {
   );
 }
 
+const ALERT_TYPE_KEYS = {
+  cluster: 'alertCluster',
+  night_fire: 'alertNightFire',
+  indigenous_land: 'alertIndigenousLand',
+  conservation_unit: 'alertConservationUnit',
+  prodes: 'alertProdes',
+  pm25: 'alertPm25',
+};
+
 function AlertsPanel() {
-  const alerts = [
-    { tick: 'crit', title: 'Cluster de alta confiança',  meta: 'Pará · Novo Progresso',   state: 'PA · 14 focos',   ts: '02m' },
-    { tick: 'warn', title: 'Avanço de queimada noturna', meta: 'Mato Grosso · Querência', state: 'MT · 8 focos',    ts: '11m' },
-    { tick: 'crit', title: 'Foco em Terra Indígena',     meta: 'Rondônia · Karipuna',     state: 'RO · 3 focos',   ts: '23m' },
-    { tick: 'info', title: 'Polígono PRODES atualizado', meta: 'Amazonas · Lábrea',       state: 'AM · 12 km²',    ts: '47m' },
-    { tick: 'warn', title: 'PM2.5 acima do limiar',      meta: 'Acre · Rio Branco',       state: 'AC · 138 µg/m³', ts: '1h'  },
-  ];
+  const { t } = useI18n();
+  const [alerts, setAlerts] = useState([]);
+
+  useEffect(() => {
+    const fetchAlerts = () => {
+      fetch('/api/alerts')
+        .then(r => r.json())
+        .then(d => setAlerts(d.alerts || []))
+        .catch(err => console.error('Failed to fetch alerts:', err));
+    };
+    fetchAlerts();
+    const id = setInterval(fetchAlerts, 60000);
+    return () => clearInterval(id);
+  }, []);
+
   return (
     <div className="panel">
       <div className="panel-header">
@@ -157,17 +175,19 @@ function AlertsPanel() {
               <line x1="12" y1="17" x2="12.01" y2="17" />
             </svg>
           </span>
-          <span className="panel-title-text">Alertas ao vivo</span>
+          <span className="panel-title-text">{t('home.liveAlerts')}</span>
         </div>
-        <span className="panel-meta">5 ATIVOS</span>
+        <span className="panel-meta">{alerts.length} {t('home.active')}</span>
       </div>
       <div className="panel-body" style={{ paddingTop: 4, paddingBottom: 8 }}>
-        {alerts.map((a, i) => (
-          <div key={i} className="alert-row">
+        {alerts.length === 0 ? (
+          <div className="alert-empty">{t('home.noAlerts')}</div>
+        ) : alerts.map((a, i) => (
+          <div key={a.id || i} className="alert-row">
             <div className={`alert-tick ${a.tick}`} />
             <div className="alert-body">
               <div className="alert-title">
-                <span>{a.title}</span>
+                <span>{t('home.' + (ALERT_TYPE_KEYS[a.type] || a.type))}</span>
                 <span className="ts">{a.ts}</span>
               </div>
               <div className="alert-meta">
