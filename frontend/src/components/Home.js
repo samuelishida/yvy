@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Circle, Popup, GeoJSON, useMapEvents } from 'react-leaflet';
-import { TreePine, Flame } from 'lucide-react';
+import { TreePine, Flame, ChevronDown } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { getCache, setCache } from '../utils/cache';
 import 'leaflet/dist/leaflet.css';
@@ -132,7 +132,10 @@ function GaugeRing({ value, max, color, size = 64 }) {
   );
 }
 
-function DraggableCard({ className, style, children }) {
+function DraggableCard({ className, style, children, title, collapsed: controlledCollapsed, onToggleCollapse }) {
+  const [internalCollapsed, setInternalCollapsed] = useState(false);
+  const collapsed = controlledCollapsed != null ? controlledCollapsed : internalCollapsed;
+  const handleToggle = onToggleCollapse || (() => setInternalCollapsed(c => !c));
   const [offset, setOffset] = useState(null);
   const isDragging = useRef(false);
   const startData = useRef(null);
@@ -170,8 +173,16 @@ function DraggableCard({ className, style, children }) {
 
   const posStyle = offset ? { top: offset.top, left: offset.left, right: 'auto', bottom: 'auto' } : {};
   return (
-    <div ref={elRef} className={className} style={{ ...style, ...posStyle, cursor: 'grab', userSelect: 'none' }} onMouseDown={onMouseDown}>
-      {children}
+    <div ref={elRef} className={`${className}${collapsed ? ' card-collapsed' : ''}`} style={{ ...style, ...posStyle, cursor: 'grab', userSelect: 'none' }} onMouseDown={onMouseDown}>
+      {title && (
+        <div className="card-collapse-bar" onMouseDown={e => e.stopPropagation()} onClick={handleToggle}>
+          <span className="card-collapse-title">{title}</span>
+          <ChevronDown size={14} className={`card-collapse-chevron${collapsed ? ' flipped' : ''}`} />
+        </div>
+      )}
+      <div className={`card-body${collapsed ? ' card-body-hidden' : ''}`}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -237,7 +248,7 @@ function BiomePanel() {
             <div className="biome-bar">
               <div className="biome-bar-fill" style={{ width: `${b.pct}%`, background: b.color }} />
             </div>
-            <div className="biome-val">{b.count.toLocaleString('pt-BR')}</div>
+            <div className="biome-val" style={{ color: b.color || 'var(--ink-2, rgba(255,255,255,0.65))' }}>{b.count.toLocaleString('pt-BR')}</div>
           </div>
         ))}
       </div>
@@ -484,11 +495,7 @@ function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, se
       )}
 
       {/* Floating: fires — top right */}
-      <DraggableCard className="fl-card fl-stats">
-        <div className="fl-eyebrow">
-          <span className="dot" style={{ background: '#ef4444', boxShadow: '0 0 6px #ef4444' }} />
-          {t('home.heatFocus')}
-        </div>
+      <DraggableCard className="fl-card fl-stats" title={t('home.heatFocus')}>
         <div className="fl-big-number" style={{ color: '#fda4af' }}>
           {count.toLocaleString('pt-BR')}
           <span className="unit">focos</span>
@@ -505,14 +512,7 @@ function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, se
       </DraggableCard>
 
       {/* Floating: 4-gauge weather card — bottom left */}
-      <DraggableCard className="fl-card fl-weather">
-        <div className="fl-weather__header">
-          <div className="fl-eyebrow">
-            <span className="dot" style={{ background: '#fb923c', boxShadow: '0 0 6px #fb923c' }} />
-            CLIMA
-          </div>
-          {temperature?.city && <span className="fl-weather__city">{temperature.city}</span>}
-        </div>
+      <DraggableCard className="fl-card fl-weather" title={temperature?.city ? `CLIMA · ${temperature.city}` : 'CLIMA'}>
         <div className="fl-weather__gauges">
           <div className="fl-weather__gauge">
             <div className="fl-weather__gauge-svg">
@@ -550,12 +550,12 @@ function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, se
       </DraggableCard>
 
       {/* Floating: biome panel — top left */}
-      <DraggableCard className="fl-panel-biome">
+      <DraggableCard className="fl-panel-biome" title={t('home.focosByBiome')}>
         <BiomePanel />
       </DraggableCard>
 
       {/* Floating: alerts panel — right, below fires count */}
-      <DraggableCard className="fl-panel-alerts">
+      <DraggableCard className="fl-panel-alerts" title={t('home.liveAlerts')}>
         <AlertsPanel
           alerts={alerts}
           activeAlertId={activeAlertId}
@@ -580,8 +580,8 @@ export default function Home() {
   const [temperature,    setTemperature]    = useState(null);
   const [showDeforest,   setShowDeforest]   = useState(false);
   const [showFires,      setShowFires]      = useState(true);
-  const [showIndigenous, setShowIndigenous] = useState(false);
-  const [showConservation, setShowConservation] = useState(false);
+  const [showIndigenous, setShowIndigenous] = useState(true);
+  const [showConservation, setShowConservation] = useState(true);
   const [indigenousGeo,  setIndigenousGeo]  = useState(null);
   const [conservationGeo, setConservationGeo] = useState(null);
   const [alerts,         setAlerts]         = useState([]);

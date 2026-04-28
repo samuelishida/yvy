@@ -134,7 +134,9 @@
   top: 80px;
   right: 18px;
   width: 210px;
-  padding: 16px;
+}
+.fl-stats .card-body {
+  padding: 12px 16px 16px;
 }
 
 .fl-eyebrow {
@@ -211,7 +213,9 @@
 .fl-weather {
   bottom: 18px;
   left: 18px;
-  padding: 14px 16px;
+}
+.fl-weather .card-body {
+  padding: 4px 16px 14px;
 }
 
 .fl-weather__header {
@@ -404,7 +408,7 @@
 .biome-name   { color: var(--ink-1); font-weight: 500; letter-spacing: -0.005em; }
 .biome-bar    { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.05); overflow: hidden; }
 .biome-bar-fill { height: 100%; border-radius: 3px; transition: width 0.6s cubic-bezier(0.4,0,0.2,1); }
-.biome-val    { font-family: var(--font-mono); font-size: 10px; text-align: right; color: var(--ink-2); letter-spacing: 0.04em; }
+.biome-val    { font-family: var(--font-mono); font-size: 10px; text-align: right; letter-spacing: 0.04em; }
 
 /* ── AlertsPanel ──────────────────────────────────────── */
 .alert-row {
@@ -511,24 +515,54 @@
     min-height: 400px;
   }
 
-  .fl-panel-biome  { display: none; }
+  .fl-panel-biome  { top: 80px; left: 18px; width: 180px; }
   .fl-panel-alerts { width: 180px; top: 220px; }
 
-  .fl-stats          { width: 100px; padding: 6px; font-size: 10px; }
-  .fl-big-number     { font-size: 22px; margin-top: 4px; }
-  .fl-big-number .unit { font-size: 9px; margin-left: 3px; }
-  .fl-eyebrow        { font-size: 8px; gap: 3px; }
-  .fl-eyebrow .dot   { width: 3px; height: 3px; }
-  .fl-link           { margin-top: 6px; padding: 5px 6px; font-size: 9px; }
-  /* Mobile: compact 4-gauge card */
-  .fl-weather                { padding: 8px 10px; }
-  .fl-weather__header        { margin-bottom: 8px; }
+  .fl-stats          { display: none; }
+  /* Mobile: compact weather + biome cards */
+  .fl-weather                { }
+  .fl-weather .card-body     { padding: 4px 10px 10px; }
   .fl-weather__gauges        { gap: 8px; }
   .fl-weather__gauge-svg     { width: 40px; height: 40px; }
   .fl-weather__gauge-num     { font-size: 11px; }
   .fl-weather__gauge-label   { font-size: 7px; }
   .fl-weather__gauge-sub     { font-size: 7px; }
+  /* Mobile: hide biome bars, keep names + colored numbers */
+  .biome-bar                 { display: none; }
+  .biome-val                 { font-size: 11px; font-weight: 600; }
   /* Hide alerts panel on mobile to reduce clutter */
   .fl-panel-alerts           { display: none; }
   .fl-card           { border-radius: 10px; }
+}
+
+/* ── Retractable card collapse bar ────────────────────── */
+.card-collapse-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid var(--line, rgba(255,255,255,0.08));
+  transition: background 0.15s ease;
+}
+.card-collapse-bar:hover {
+  background: rgba(255,255,255,0.04);
+}
+.card-collapse-title {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-3, rgba(255,255,255,0.5));
+}
+.card-collapse-chevron {
+  color: var(--ink-3, rgba(255,255,255,0.5));
+  transition: transform 0.25s ease;
+}
+.card-collapse-chevron.flipped {
+  transform: rotate(-90deg);
+}
+.card-body-hidden {
+  display: none;
 }
