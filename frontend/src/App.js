@@ -1,12 +1,13 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { I18nProvider } from './i18n';
 import Navbar from './components/Navbar';
-import Home from './components/Home';
-import Dashboard from './components/Dashboard';
-import News from './components/News';
-import MapasTemáticos from './components/MapasTemáticos';
 import './App.css';
+
+const Home          = React.lazy(() => import('./components/Home'));
+const Dashboard     = React.lazy(() => import('./components/Dashboard'));
+const News          = React.lazy(() => import('./components/News'));
+const MapasTemáticos = React.lazy(() => import('./components/MapasTemáticos'));
 
 function App() {
   return (
@@ -17,12 +18,14 @@ function App() {
         <div className="app">
           <Navbar />
           <main className="main-content">
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/news" element={<News />} />
-              <Route path="/mapas-tematicos" element={<MapasTemáticos />} />
-            </Routes>
+            <Suspense fallback={<div className="page-loading" />}>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/news" element={<News />} />
+                <Route path="/mapas-tematicos" element={<MapasTemáticos />} />
+              </Routes>
+            </Suspense>
           </main>
         </div>
       </Router>

@@ -123,6 +123,7 @@ const News = () => {
               className="news-image"
               src={article.urlToImage}
               alt={article.title}
+              loading="lazy"
             />
           )}
           <div className="news-content">

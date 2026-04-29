@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Circle, Popup, GeoJSON, useMapEvents } from 'react-leaflet';
 import { TreePine, Flame, ChevronDown } from 'lucide-react';
 import { useI18n } from '../i18n';
@@ -213,7 +213,7 @@ function Sparkline({ data, color = '#2dd4ff', height = 28 }) {
 }
 
 
-function BiomePanel() {
+const BiomePanel = React.memo(function BiomePanel() {
   const { t } = useI18n();
   const [biomes, setBiomes] = useState([]);
   const [totalFires, setTotalFires] = useState(0);
@@ -254,7 +254,7 @@ function BiomePanel() {
       </div>
     </div>
   );
-}
+});
 
 const ALERT_TYPE_KEYS = {
   cluster: 'alertCluster',
@@ -265,7 +265,7 @@ const ALERT_TYPE_KEYS = {
   pm25: 'alertPm25',
 };
 
-function AlertsPanel({ alerts, activeAlertId, onAlertEnter, onAlertLeave }) {
+const AlertsPanel = React.memo(function AlertsPanel({ alerts, activeAlertId, onAlertEnter, onAlertLeave }) {
   const { t } = useI18n();
 
   return (
@@ -308,9 +308,9 @@ function AlertsPanel({ alerts, activeAlertId, onAlertEnter, onAlertLeave }) {
       </div>
     </div>
   );
-}
+});
 
-function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, loading, error, t, airQuality, temperature, alerts, activeAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave }) {
+const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, loading, error, t, airQuality, temperature, alerts, activeAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave }) {
   const [satellite, setSatellite] = useState(true);
   const [visibleCount, setVisibleCount] = useState(null);
 
@@ -565,7 +565,7 @@ function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, se
       </DraggableCard>
     </div>
   );
-}
+});
 
 const DEFAULT_LAT = -14.235;
 const DEFAULT_LON = -51.925;
@@ -637,12 +637,15 @@ export default function Home() {
     setFireAlertId(null);
   };
 
-  const clearFireLock = () => {
+  const clearFireLock = useCallback(() => {
     setLockedFireIdx(null);
     setLockedFireAlertId(null);
     setHoveredFireIdx(null);
     setFireAlertId(null);
-  };
+  }, []);
+
+  const handleAlertEnter = useCallback(id => setAlertHoverId(id), []);
+  const handleAlertLeave = useCallback(() => setAlertHoverId(null), []);
 
   useEffect(() => () => {
     if (fireHoverOutTimeoutRef.current) {
@@ -778,8 +781,8 @@ export default function Home() {
         onFireHoverEnd={clearFireHover}
         onFireClick={handleFireClick}
         onClearFireLock={clearFireLock}
-        onAlertEnter={id => setAlertHoverId(id)}
-        onAlertLeave={() => setAlertHoverId(null)}
+        onAlertEnter={handleAlertEnter}
+        onAlertLeave={handleAlertLeave}
       />
     </div>
   );

@@ -2,6 +2,7 @@ import asyncio
 import csv
 import datetime
 from datetime import timezone
+import gzip
 import ipaddress
 import io
 import json
@@ -123,6 +124,17 @@ def configure_logger(name):
 
 logger = configure_logger("yvy.backend")
 
+
+_CACHE_CONTROL = {
+    "/api/fires":               "public, max-age=60",
+    "/api/biomes":              "public, max-age=60",
+    "/api/alerts":              "public, max-age=1800",
+    "/api/data":                "public, max-age=900",
+    "/api/indigenous-lands":   "public, max-age=86400",
+    "/api/conservation-units": "public, max-age=86400",
+    "/api/weather/air-quality": "public, max-age=900",
+    "/api/weather/temperature": "public, max-age=900",
+}
 
 _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -603,6 +615,26 @@ async def start_request_timer():
 async def add_security_headers(response):
     for header_name, header_value in _SECURITY_HEADERS.items():
         response.headers.setdefault(header_name, header_value)
+
+    # Cache-Control per endpoint
+    cc = _CACHE_CONTROL.get(request.path)
+    if cc and response.status_code == 200:
+        response.headers.setdefault("Cache-Control", cc)
+
+    # Gzip compression for JSON responses > 1 KB
+    accept_enc = request.headers.get("Accept-Encoding", "")
+    if (
+        "gzip" in accept_enc
+        and response.status_code == 200
+        and "json" in (response.content_type or "")
+        and not response.headers.get("Content-Encoding")
+    ):
+        data = await response.get_data()
+        if len(data) > 1024:
+            compressed = gzip.compress(data, compresslevel=6)
+            response.set_data(compressed)
+            response.headers["Content-Encoding"] = "gzip"
+            response.headers["Content-Length"] = str(len(compressed))
 
     duration_ms = None
     with suppress(Exception):

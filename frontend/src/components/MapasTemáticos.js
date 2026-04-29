@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, startTransition } from 'react';
 import { useI18n } from '../i18n';
 import './MapasTemáticos.css';
 
@@ -50,6 +50,7 @@ const MAPS = [
 export default function MapasTemáticos() {
   const [active, setActive] = useState(MAPS[0].id);
   const { t } = useI18n();
+  const activeMap = MAPS.find((m) => m.id === active);
 
   return (
     <div className="home">
@@ -59,7 +60,7 @@ export default function MapasTemáticos() {
             <button
               key={m.id}
               className={`map-btn ${active === m.id ? 'map-btn--active' : ''}`}
-              onClick={() => setActive(m.id)}
+              onClick={() => startTransition(() => setActive(m.id))}
             >
               <span className="map-btn__icon">{m.icon}</span>
               <span className="map-btn__label">{t(m.labelKey)}</span>
@@ -70,18 +71,15 @@ export default function MapasTemáticos() {
       </div>
 
       <div className="map-panel">
-        {MAPS.map((m) => (
-            <iframe
-               key={m.id}
-               src={m.src}
-               title={t(m.labelKey)}
-               className={`map-iframe ${active === m.id ? 'map-iframe--visible' : ''}`}
-               allow="fullscreen"
-               loading="lazy"
-               sandbox={m.id === 'forest' ? "allow-scripts allow-same-origin allow-popups allow-forms allow-modals" : "allow-scripts allow-same-origin allow-popups allow-forms"}
-               referrerPolicy={m.id === 'forest' ? 'strict-origin-when-cross-origin' : 'no-referrer'}
-             />
-        ))}
+        <iframe
+          key={activeMap.id}
+          src={activeMap.src}
+          title={t(activeMap.labelKey)}
+          className="map-iframe map-iframe--visible"
+          allow="fullscreen"
+          sandbox={activeMap.id === 'forest' ? "allow-scripts allow-same-origin allow-popups allow-forms allow-modals" : "allow-scripts allow-same-origin allow-popups allow-forms"}
+          referrerPolicy={activeMap.id === 'forest' ? 'strict-origin-when-cross-origin' : 'no-referrer'}
+        />
       </div>
     </div>
   );
