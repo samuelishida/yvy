@@ -7,7 +7,8 @@ Observabilidade ambiental para monitorar desmatamento e queimadas no Brasil.
 Stack atual:
 - **Frontend**: React 18 + Express (proxy server-side) + Tailwind CSS + Leaflet
 - **Backend**: Quart + Hypercorn (async ASGI)
-- **Banco principal**: SQLite (aiosqlite, WAL mode, connection pool)
+- **Banco principal**: SQLite (aiosqlite, WAL mode, connection pool, JSONB BLOB columns)
+- **SQLite version**: pysqlite3-binary (SQLite 3.51.1) — monkey-patched for JSONB support on older OS
 - **Cache/rate limit**: Redis (redis.asyncio, fallback in-memory)
 - **Dados geoespaciais**: TerraBrasilis (PRODES) e NASA FIRMS
 - **Notícias**: NewsAPI + MyMemory/LibreTranslate/Google Translate chain
@@ -70,6 +71,7 @@ URLs:
 | `make frontend` | Sobe só o frontend |
 | `make stop` | Mata processos locais em background + portas 5000/5001 |
 | `make test` | Roda `test_sqlite_manual.py` (valida schema + queries) |
+| `make migrate` | Migra banco de flat-column para JSONB schema |
 | `make sqlite-access` | Abre `.tables` do banco SQLite |
 
 ## Ingestão de dados
@@ -121,10 +123,17 @@ Express (server.js) — serve React build, proxy /api/*
     ▼
 Quart (backend.py) — async routes on :5000
     │  hypercorn + asyncio workers
-    ├──► SQLite (aiosqlite) — pool de 5 conexões, WAL mode
+    ├──► SQLite (aiosqlite) — pool de 7 conexões, WAL mode
+    │     ├── pysqlite3-binary (SQLite 3.51.1) — JSONB support
     │     ├── fire_data (NASA FIRMS)
+    │     │     scalar: lat, lon, acq_date, ingested_at
+    │     │     JSONB:  confidence, acq_time, satellite, bright_ti4, source
     │     ├── deforestation_data (TerraBrasilis PRODES)
+    │     │     scalar: lat, lon
+    │     │     JSONB:  name, clazz, periods, source, color, timestamp
     │     └── news (artigos com tradução PT/EN)
+    │           scalar: url, publishedAt, ingested_at
+    │           JSONB:  title, description, title_en, description_en, source_name, urlToImage, content
     ├──► Redis (redis.asyncio) — rate limiting + cache
     │     └── fallback: deque in-memory por IP
     ├──► NewsAPI — sync background a cada 15 min
@@ -132,6 +141,47 @@ Quart (backend.py) — async routes on :5000
     └──► NASA FIRMS API — sync background a cada 4h
           └── CSV download → bulk upsert
 ```
+
+### JSONB Schema
+
+O banco usa um modelo híbrido: colunas escalares para campos indexados + coluna `data BLOB` (JSONB binário) para campos flexíveis. Isso combina a performance de queries indexadas com a flexibilidade de schema do JSON.
+
+**Vantagens do JSONB no SQLite (≥ 3.45.0):**
+- Armazenamento binário ~5-10% menor que JSON texto
+- `json_extract()` mais rápido em formato binário
+- `jsonb(?)` converte texto → binário no INSERT
+- `json(data)` converte binário → texto no SELECT
+
+**Expressão indexes em campos JSONB:**
+- `idx_fire_confidence` em `json_extract(data, '$.confidence')`
+- `idx_def_name` em `json_extract(data, '$.name')`
+- `idx_news_source` em `json_extract(data, '$.source_name')`
+
+**⚠️ Importante:** O formato JSONB binário **não é UTF-8 válido**. Sempre use `json(data)` em queries SQL para ler, e `jsonb(?)` para escrever. Nunca faça `json.loads()` direto no BLOB.
+
+### Migração JSONB
+
+Para migrar um banco existente do schema flat-column para JSONB:
+
+```bash
+# Via Make
+make migrate
+
+# Ou direto
+cd backend
+python migrate_to_jsonb.py --db data/yvy.db --vacuum
+```
+
+O script de migração:
+1. Cria backup automático do banco
+2. Detecta schema legado (colunas como `confidence` em `fire_data`)
+3. Cria novas tabelas JSONB, copia dados usando `jsonb()`
+4. Troca tabelas e recria indexes (incluindo expression indexes)
+5. Roda VACUUM para recuperar espaço
+
+O app também auto-migra na inicialização se detectar schema legado.
+
+**Nota sobre SQLite antigo:** Em sistemas com SQLite < 3.45.0 (ex: Ubuntu 22.04 com SQLite 3.37.2), o `pysqlite3-binary` (requerimento em `requirements.txt` para Linux) fornece SQLite 3.51.1. O `db_sqlite.py` faz monkey-patch de `sys.modules["sqlite3"]` antes de importar `aiosqlite`, garantindo suporte a JSONB.
 
 ## Segurança
 
@@ -290,7 +340,7 @@ Após a VM criada, todos os deploys subsequentes usam OCI CLI + Ansible.
 | `AUTH_REQUIRED` | `0` | `1` para exigir API key em produção |
 | `CORS_ORIGINS` | `http://localhost:5001,...` | Origens permitidas para CORS |
 | `LOG_LEVEL` | `INFO` | Nível de log (DEBUG, INFO, WARNING, ERROR) |
-| `SQLITE_PATH` | `backend/data/yvy.db` | Caminho do banco SQLite |
+| `SQLITE_PATH` | `backend/data/yvy.db` | Caminho do banco SQLite (JSONB, WAL mode) |
 | `REDIS_URL` | `redis://localhost:6379/0` | Conexão Redis |
 | `BACKEND_URL` | `http://127.0.0.1:5000` | URL do backend para o proxy |
 | `RATE_LIMIT_REQUESTS` | `60` | Requisições máximas por janela |
