@@ -1,4 +1,4 @@
-.PHONY: setup run backend frontend stop test sqlite-access
+.PHONY: setup run backend frontend stop test migrate sqlite-access
 
 setup:
 	bash scripts/setup-local.sh
@@ -22,6 +22,20 @@ test:
 			exec "$$HOME/.local/share/yvy-venv/Scripts/python.exe" test_sqlite_manual.py; \
 		elif [ -f "$$HOME/.local/share/yvy-venv/bin/python" ]; then \
 			exec "$$HOME/.local/share/yvy-venv/bin/python" test_sqlite_manual.py; \
+		else \
+			echo "No venv python found"; exit 1; \
+		fi'
+
+migrate:
+	cd backend && bash -c '\
+		if [ -f "venv/Scripts/python.exe" ]; then \
+			exec venv/Scripts/python.exe migrate_to_jsonb.py --vacuum --db data/yvy.db; \
+		elif [ -f "venv/bin/python" ]; then \
+			exec venv/bin/python migrate_to_jsonb.py --vacuum --db data/yvy.db; \
+		elif [ -f "$$HOME/.local/share/yvy-venv/Scripts/python.exe" ]; then \
+			exec "$$HOME/.local/share/yvy-venv/Scripts/python.exe" migrate_to_jsonb.py --vacuum --db data/yvy.db; \
+		elif [ -f "$$HOME/.local/share/yvy-venv/bin/python" ]; then \
+			exec "$$HOME/.local/share/yvy-venv/bin/python" migrate_to_jsonb.py --vacuum --db data/yvy.db; \
 		else \
 			echo "No venv python found"; exit 1; \
 		fi'

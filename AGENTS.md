@@ -42,15 +42,53 @@ pytest -v
 Browser :5001 → Express (React build + /api/* proxy + X-API-Key injection)
                       → Quart :5000 (async, hypercorn + asyncio workers)
                             → SQLite (aiosqlite, file-based at SQLITE_PATH)
+                              └─ JSONB BLOB columns for flexible fields
+                              └─ json_extract() for indexed field queries
+                              └─ json() for reading JSONB back to text
                             → Redis :6379 (rate limiting, async redis.asyncio)
                             → NewsAPI + MyMemory (background sync for /api/news)
 ```
 
 - **Express proxy** (`frontend/server.js`) injects `X-API-Key` header server-side so the browser never sees the API key.
 - **Quart backend** (`backend/backend.py`) — async routes, aiosqlite (async SQLite), redis.asyncio (rate limiting), httpx (async HTTP), structured JSON logging.
-- **SQLite layer** (`backend/db_sqlite.py`) — custom async connection pool (asyncio.Queue, 5 connections, WAL mode). Schema auto-created at startup via `init_db()`.
+- **SQLite layer** (`backend/db_sqlite.py`) — custom async connection pool (asyncio.Queue, 7 connections, WAL mode). Schema uses **JSONB BLOB columns** for flexible fields (fire metadata, deforestation attributes, news content). Scalar columns (lat, lon, url, dates) remain for indexed queries. Uses `jsonb()` for writes and `json()`/`json_extract()` for reads. Auto-migrates from legacy flat-column schema on startup.
 - **Rate limiting** uses Redis via `redis.asyncio`. Falls back to in-memory per-process buckets if Redis is down.
 - **ingest_sqlite.py** is an async script using `db_sqlite` module (not pymongo).
+
+### JSONB Schema
+
+Each table uses a hybrid approach:
+- **Scalar columns** for heavily-queried fields (lat, lon, acq_date, url, publishedAt, ingested_at)
+- **`data BLOB`** column storing JSONB binary for all other fields
+
+| Table | Scalar columns | JSONB `data` fields |
+|---|---|---|
+| `fire_data` | lat, lon, acq_date, ingested_at | confidence, acq_time, satellite, bright_ti4, source |
+| `deforestation_data` | lat, lon | name, clazz, periods, source, color, timestamp |
+| `news` | url, publishedAt, ingested_at | title, description, title_en, description_en, source_name, urlToImage, content |
+
+Expression indexes on JSONB fields:
+- `idx_fire_confidence` on `json_extract(data, '$.confidence')`
+- `idx_def_name` on `json_extract(data, '$.name')`
+- `idx_news_source` on `json_extract(data, '$.source_name')`
+
+### Migration
+
+To migrate an existing database from the legacy flat-column schema:
+```bash
+cd backend
+python migrate_to_jsonb.py --db data/yvy.db --vacuum
+```
+
+The migration script:
+1. Creates backup of the database
+2. Detects legacy schema (columns like `confidence` in fire_data)
+3. Creates new JSONB tables, copies data using `jsonb()`
+4. Drops old tables, renames new tables
+5. Recreates indexes including expression indexes
+6. Runs VACUUM to reclaim space
+
+The app also auto-migrates on startup if legacy schema is detected.
 
 ## Key Environment Variables
 
@@ -195,7 +233,8 @@ Production services: `yvy-backend` (systemd), `yvy-frontend` (systemd).
 
 ## Gotchas
 
-- **`test_api.py` is stale** — still uses mongomock and patches `bk.mongo_db`. Use `test_db_sqlite.py` instead.
+- **JSONB BLOB format**: SQLite's `jsonb()` stores data in a binary format that is NOT valid UTF-8. Always use `json(data)` in SQL queries to convert back to text, or `json_extract(data, '$.field')` for individual fields. Never try to `json.loads()` the raw BLOB in Python.
+- **`test_api.py` is stale** — still uses mongomock and patches `bk.mongo_db`. Use `test_sqlite_manual.py` instead.
 - **`requirements-dev.txt` is stale** — still lists motor/pymongo/mongomock. Don't use it.
 - **`.env.example` is stale** — still has MongoDB variables, missing SQLITE_PATH and others.
 - **ingest_sqlite.py** has hardcoded `/app/` paths from Docker era — these need updating for baremetal (`backend/data/`).

@@ -71,15 +71,14 @@ async def _wipe_bad_en_from_db(urls_with_bad_title: list[str], urls_with_bad_des
     if not urls_with_bad_title and not urls_with_bad_desc:
         return
     try:
-        async with db_sqlite._get_conn() as conn:
-            if urls_with_bad_title:
-                placeholders = ",".join("?" for _ in urls_with_bad_title)
-                await conn.execute(f"UPDATE news SET title_en = NULL WHERE url IN ({placeholders})", urls_with_bad_title)
-            if urls_with_bad_desc:
-                placeholders = ",".join("?" for _ in urls_with_bad_desc)
-                await conn.execute(f"UPDATE news SET description_en = NULL WHERE url IN ({placeholders})", urls_with_bad_desc)
-            await conn.commit()
-            logger.info("Cleared corrupted MyMemory translations from %d / %d rows.", len(urls_with_bad_title), len(urls_with_bad_desc))
+        all_urls = list(set(urls_with_bad_title + urls_with_bad_desc))
+        fields_to_clear = []
+        if urls_with_bad_title:
+            fields_to_clear.append("title_en")
+        if urls_with_bad_desc:
+            fields_to_clear.append("description_en")
+        await db_sqlite.clear_news_fields(all_urls, fields_to_clear)
+        logger.info("Cleared corrupted MyMemory translations from %d / %d rows.", len(urls_with_bad_title), len(urls_with_bad_desc))
     except Exception as e:
         logger.error("Failed to clear bad EN fields from DB: %s", e)
 
@@ -103,12 +102,16 @@ async def _repair_bad_translations(limit: int = 50) -> dict:
     try:
         async with db_sqlite._get_conn() as conn:
             # Find rows where either title_en OR description_en is bad or missing
+            # Using json_extract on the JSONB data column
             cursor = await conn.execute(
                 """
-                SELECT url, title, description, title_en, description_en
+                SELECT url, json_extract(data, '$.title') AS title,
+                       json_extract(data, '$.description') AS description,
+                       json_extract(data, '$.title_en') AS title_en,
+                       json_extract(data, '$.description_en') AS description_en
                 FROM news
-                WHERE (title_en IS NULL OR title_en = '' OR title_en LIKE '%MYMEMORY WARNING%')
-                   OR (description_en IS NULL OR description_en = '' OR description_en LIKE '%MYMEMORY WARNING%')
+                WHERE (json_extract(data, '$.title_en') IS NULL OR json_extract(data, '$.title_en') = '' OR json_extract(data, '$.title_en') LIKE '%MYMEMORY WARNING%')
+                   OR (json_extract(data, '$.description_en') IS NULL OR json_extract(data, '$.description_en') = '' OR json_extract(data, '$.description_en') LIKE '%MYMEMORY WARNING%')
                 ORDER BY publishedAt DESC
                 LIMIT ?
                 """,
@@ -171,17 +174,12 @@ async def _repair_bad_translations(limit: int = 50) -> dict:
             return
         
         try:
-            async with db_sqlite._get_conn() as conn:
-                await conn.execute(
-                    """
-                    UPDATE news
-                    SET title_en = COALESCE(?, title_en),
-                        description_en = COALESCE(?, description_en)
-                    WHERE url = ?
-                    """,
-                    (final_te, final_de, url),
-                )
-                await conn.commit()
+            updates = {}
+            if final_te:
+                updates["title_en"] = final_te
+            if final_de:
+                updates["description_en"] = final_de
+            await db_sqlite.update_news_fields(url, updates)
             repaired += 1
             logger.info("Repaired translations for %s (te=%s, de=%s)", url, bool(final_te), bool(final_de))
         except Exception as e:
@@ -199,18 +197,7 @@ async def _get_cached_translations(urls: list[str]) -> dict[str, dict]:
     """Lookup existing DB translations for URLs. Returns {url: {title_en, description_en}}."""
     if not urls:
         return {}
-    placeholders = ",".join("?" for _ in urls)
-    query = f"SELECT url, title_en, description_en FROM news WHERE url IN ({placeholders})"
-    async with db_sqlite._get_conn() as conn:
-        cursor = await conn.execute(query, urls)
-        rows = await cursor.fetchall()
-    return {
-        r["url"]: {
-            "title_en": r["title_en"],
-            "description_en": r["description_en"],
-        }
-        for r in rows if r["title_en"] or r["description_en"]
-    }
+    return await db_sqlite.get_news_fields_by_urls(urls, ["title_en", "description_en"])
 
 
 # ---------------------------------------------------------------------------
@@ -421,32 +408,25 @@ async def fetch_and_save_news():
 # ---------------------------------------------------------------------------
 
 async def _save_en_to_db(articles: list[dict]) -> None:
-    """Write translated EN fields back to DB. Uses COALESCE to avoid overwriting good data.
+    """Write translated EN fields back to DB via JSONB update helpers.
     Skips articles with no title_en or description_en."""
     if not articles:
         return
-    updates = [
-        (a.get("title_en"), a.get("description_en"), a["url"])
-        for a in articles if a.get("title_en") or a.get("description_en")
-    ]
-    if not updates:
-        return
-    try:
-        async with db_sqlite._get_conn() as conn:
-            for te, de, url in updates:
-                await conn.execute(
-                    """
-                    UPDATE news
-                    SET title_en = COALESCE(?, title_en),
-                        description_en = COALESCE(?, description_en)
-                    WHERE url = ?
-                    """,
-                    (te, de, url),
-                )
-            await conn.commit()
-        logger.info("Saved EN translations for %d articles.", len(updates))
-    except Exception as e:
-        logger.error("Failed saving EN to DB: %s", e)
+    count = 0
+    for a in articles:
+        updates = {}
+        if a.get("title_en"):
+            updates["title_en"] = a["title_en"]
+        if a.get("description_en"):
+            updates["description_en"] = a["description_en"]
+        if updates:
+            try:
+                await db_sqlite.update_news_fields(a["url"], updates)
+                count += 1
+            except Exception:
+                pass
+    if count:
+        logger.info("Saved EN translations for %d articles.", count)
 
 
 async def get_news(page=1, page_size=20, lang="pt"):
