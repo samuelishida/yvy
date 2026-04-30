@@ -1,6 +1,8 @@
 *.tif
 mongo_data/
 .env
+.openclaude
+*.*/
 
 # Infraestrutura / Secrets
 infra/terraform.tfvars
