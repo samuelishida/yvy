@@ -17,6 +17,19 @@ Options:
     --dry-run     Show what would be migrated without making changes
     --vacuum      Run VACUUM after migration to reclaim disk space
 """
+
+# Monkey-patch sqlite3 with pysqlite3-binary (bundled SQLite 3.45+)
+# so we get JSONB support even on systems with older SQLite (e.g. Ubuntu 22.04).
+import sys
+try:
+    import pysqlite3 as sqlite3_fallback
+    if sqlite3_fallback.sqlite_version_info >= (3, 45, 0):
+        sys.modules["sqlite3"] = sqlite3_fallback
+    else:
+        raise ImportError(f"pysqlite3 SQLite {sqlite3_fallback.sqlite_version} < 3.45.0")
+except ImportError:
+    pass  # Fall back to stdlib sqlite3 — will fail version check if too old
+
 import argparse
 import json
 import os
