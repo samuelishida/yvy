@@ -6,6 +6,9 @@ Tables use a hybrid approach:
 
 SQLite 3.45.0+ stores JSONB as binary BLOB, ~5-10% smaller than text JSON,
 with faster json_extract() operations on the binary format.
+
+Uses pysqlite3-binary (bundled SQLite 3.45+) when available, falls back
+to stdlib sqlite3. This ensures JSONB support even on older OS packages.
 """
 from __future__ import annotations
 
@@ -14,8 +17,31 @@ import datetime
 import json
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from typing import Any
+
+# Monkey-patch sqlite3 with pysqlite3-binary (bundled SQLite 3.45+)
+# so aiosqlite gets JSONB support even on systems with older SQLite.
+try:
+    import pysqlite3 as sqlite3_fallback
+    if sqlite3_fallback.sqlite_version_info >= (3, 45, 0):
+        sys.modules["sqlite3"] = sqlite3_fallback
+        logging.getLogger(__name__).info(
+            "Using pysqlite3-binary (SQLite %s) for JSONB support",
+            sqlite3_fallback.sqlite_version,
+        )
+    else:
+        raise ImportError(f"pysqlite3 SQLite {sqlite3_fallback.sqlite_version} < 3.45.0")
+except ImportError:
+    import sqlite3 as _stdlib_sqlite3
+    sys.modules["sqlite3"] = _stdlib_sqlite3
+    if _stdlib_sqlite3.sqlite_version_info < (3, 45, 0):
+        logging.getLogger(__name__).warning(
+            "SQLite %s does not support JSONB (need >= 3.45.0). "
+            "Install pysqlite3-binary for JSONB support.",
+            _stdlib_sqlite3.sqlite_version,
+        )
 
 import aiosqlite
 
