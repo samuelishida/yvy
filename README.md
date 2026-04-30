@@ -7,8 +7,8 @@ Observabilidade ambiental para monitorar desmatamento e queimadas no Brasil.
 Stack atual:
 - **Frontend**: React 18 + Express (proxy server-side) + Tailwind CSS + Leaflet
 - **Backend**: Quart + Hypercorn (async ASGI)
-- **Banco principal**: SQLite (aiosqlite, WAL mode, connection pool, JSONB BLOB columns)
-- **SQLite version**: pysqlite3-binary (SQLite 3.51.1) — monkey-patched for JSONB support on older OS
+- **Banco principal**: SQLite (aiosqlite, WAL mode, pool de conexões, colunas JSONB BLOB)
+- **Versão SQLite**: pysqlite3-binary (SQLite 3.51.1) — monkey-patch para suporte a JSONB em OS antigo
 - **Cache/rate limit**: Redis (redis.asyncio, fallback in-memory)
 - **Dados geoespaciais**: TerraBrasilis (PRODES) e NASA FIRMS
 - **Notícias**: NewsAPI + MyMemory/LibreTranslate/Google Translate chain
@@ -124,15 +124,15 @@ Express (server.js) — serve React build, proxy /api/*
 Quart (backend.py) — async routes on :5000
     │  hypercorn + asyncio workers
     ├──► SQLite (aiosqlite) — pool de 7 conexões, WAL mode
-    │     ├── pysqlite3-binary (SQLite 3.51.1) — JSONB support
+    │     ├── pysqlite3-binary (SQLite 3.51.1) — suporte a JSONB
     │     ├── fire_data (NASA FIRMS)
-    │     │     scalar: lat, lon, acq_date, ingested_at
+    │     │     escalar: lat, lon, acq_date, ingested_at
     │     │     JSONB:  confidence, acq_time, satellite, bright_ti4, source
     │     ├── deforestation_data (TerraBrasilis PRODES)
-    │     │     scalar: lat, lon
+    │     │     escalar: lat, lon
     │     │     JSONB:  name, clazz, periods, source, color, timestamp
     │     └── news (artigos com tradução PT/EN)
-    │           scalar: url, publishedAt, ingested_at
+    │           escalar: url, publishedAt, ingested_at
     │           JSONB:  title, description, title_en, description_en, source_name, urlToImage, content
     ├──► Redis (redis.asyncio) — rate limiting + cache
     │     └── fallback: deque in-memory por IP
@@ -152,7 +152,7 @@ O banco usa um modelo híbrido: colunas escalares para campos indexados + coluna
 - `jsonb(?)` converte texto → binário no INSERT
 - `json(data)` converte binário → texto no SELECT
 
-**Expressão indexes em campos JSONB:**
+**Expression indexes em campos JSONB:**
 - `idx_fire_confidence` em `json_extract(data, '$.confidence')`
 - `idx_def_name` em `json_extract(data, '$.name')`
 - `idx_news_source` em `json_extract(data, '$.source_name')`
@@ -189,7 +189,7 @@ O app também auto-migra na inicialização se detectar schema legado.
 - **Rate limiting**: 60 req/min por IP (configurável), Redis + fallback in-memory
 - **CSP**: Restritivo — apenas self, OSM tiles, CDN Bootstrap/jsDelivr/unpkg
 - **CORS**: Baseado em whitelist via `CORS_ORIGINS`
-- **Proxy**: API key injetada server-side pelo Express — nunca exposta ao browser
+- **Proxy**: API key injetada server-side pelo Express — nunca exposta ao navegador
 - **Headers de segurança**: X-Content-Type-Options, X-Frame-Options, Permissions-Policy
 
 ## Testes
