@@ -374,6 +374,19 @@ async def startup():
     _news_sync_task = asyncio.create_task(_news_sync_loop())
     _alerts_sync_task = asyncio.create_task(_alerts_sync_loop())
 
+    from news_sqlite import NEWS_SCRAPER_ENABLED, NEWS_SCRAPER_FALLBACK_THRESHOLD
+    logger.info(
+        "News scraper config.",
+        extra={
+            "event": "news_scraper_config",
+            "details": {
+                "scraper_enabled": NEWS_SCRAPER_ENABLED,
+                "newsapi_configured": bool(os.getenv("NEWS_API_KEY", "").strip()),
+                "fallback_threshold": NEWS_SCRAPER_FALLBACK_THRESHOLD,
+            },
+        },
+    )
+
 
 @app.after_serving
 async def shutdown():
@@ -803,6 +816,24 @@ async def repair_news():
     _news_cache.clear()
 
     return jsonify({"status": "repair_complete", **result})
+
+
+@app.route("/api/admin/news/sync", methods=["POST"])
+async def admin_news_sync():
+    """Manual trigger for news sync from RSS scrapers + optional NewsAPI fallback."""
+    enforce_api_auth()
+    await enforce_rate_limit()
+
+    logger.info("Manual news sync triggered.", extra={"event": "news_manual_sync"})
+    from news_sqlite import fetch_and_save_news
+    articles = await fetch_and_save_news()
+    _news_cache.clear()
+
+    return jsonify({
+        "status": "success",
+        "message": f"News sync complete. {len(articles)} articles available.",
+        "count": len(articles),
+    })
 
 
 WAQI_TOKEN = os.getenv("WAQI_TOKEN", "demo")

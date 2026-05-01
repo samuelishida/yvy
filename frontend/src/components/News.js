@@ -18,6 +18,37 @@ const normalizeArticles = (payload) => {
   return [];
 };
 
+/**
+ * Format an ISO-8601 date string as a human-readable relative or absolute date.
+ * Returns e.g. "há 3 horas" (pt) / "3 hours ago" (en) for recent dates,
+ * or "15 abr" / "Apr 15" for older ones.
+ */
+const formatDate = (isoString, lang) => {
+  if (!isoString) return '';
+  try {
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (lang === 'pt') {
+      if (diffMins < 60) return diffMins <= 1 ? 'agora mesmo' : `há ${diffMins} min`;
+      if (diffHours < 24) return diffHours === 1 ? 'há 1 hora' : `há ${diffHours} horas`;
+      if (diffDays < 7) return diffDays === 1 ? 'ontem' : `há ${diffDays} dias`;
+      return date.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' });
+    } else {
+      if (diffMins < 60) return diffMins <= 1 ? 'just now' : `${diffMins}m ago`;
+      if (diffHours < 24) return diffHours === 1 ? '1 hour ago' : `${diffHours} hours ago`;
+      if (diffDays < 7) return diffDays === 1 ? 'yesterday' : `${diffDays} days ago`;
+      return date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+    }
+  } catch {
+    return '';
+  }
+};
+
 const News = () => {
   const { lang, t } = useI18n();
   const [articles, setArticles] = useState([]);
@@ -116,31 +147,61 @@ const News = () => {
   return (
     <div className="news-container">
       {error && !articles.length && <p className="news-error">{error}</p>}
-      {articles.map((article) => (
-        <div key={article.url} className="news-article">
-          {article.urlToImage && (
-            <img
-              className="news-image"
-              src={article.urlToImage}
-              alt={article.title}
-              loading="lazy"
-            />
-          )}
-          <div className="news-content">
-            <h3>{lang === 'en' && article.title_en ? article.title_en : article.title}</h3>
-            <p>{lang === 'en' && article.description_en ? article.description_en : article.description}</p>
-            <a
-              href={article.url}
-              className="news-btn"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {t('news.readMore')}
-            </a>
+      {articles.map((article) => {
+        const title = lang === 'en' && article.title_en ? article.title_en : article.title;
+        const description = lang === 'en' && article.description_en
+          ? article.description_en
+          : article.description;
+        const sourceName = article.source_name || '';
+        const dateStr = formatDate(article.publishedAt, lang);
+
+        return (
+          <div key={article.url} className="news-article">
+            {article.urlToImage && (
+              <div className="news-image-wrap">
+                <img
+                  className="news-image"
+                  src={article.urlToImage}
+                  alt={title}
+                  loading="lazy"
+                />
+                <div className="news-image-fade" aria-hidden="true" />
+              </div>
+            )}
+            <div className="news-content">
+              {(sourceName || dateStr) && (
+                <div className="news-meta">
+                  {sourceName && (
+                    <span className="news-source">{sourceName}</span>
+                  )}
+                  {sourceName && dateStr && (
+                    <span className="news-dot" aria-hidden="true" />
+                  )}
+                  {dateStr && (
+                    <span className="news-date">{dateStr}</span>
+                  )}
+                </div>
+              )}
+              <h3>{title}</h3>
+              {description && <p>{description}</p>}
+              <a
+                href={article.url}
+                className="news-btn"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {t('news.readMore')}
+              </a>
+            </div>
           </div>
-        </div>
-      ))}
-      {loading && <p className="news-loading">{t('news.loadingMore')}</p>}
+        );
+      })}
+      {loading && (
+        <p className="news-loading">
+          <span className="news-spinner" aria-hidden="true" />
+          {t('news.loadingMore')}
+        </p>
+      )}
     </div>
   );
 };

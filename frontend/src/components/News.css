@@ -64,8 +64,7 @@
 }
 
 /* Gradient fade from image into card body */
-.news-image-wrap::after {
-  content: '';
+.news-image-fade {
   position: absolute;
   bottom: 0;
   left: 0;

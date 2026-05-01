@@ -12,6 +12,8 @@ import db_sqlite
 logger = logging.getLogger(__name__)
 
 NEWS_API_KEY = os.getenv("NEWS_API_KEY", "").strip()
+NEWS_SCRAPER_ENABLED = os.getenv("NEWS_SCRAPER_ENABLED", "1") == "1"
+NEWS_SCRAPER_FALLBACK_THRESHOLD = int(os.getenv("NEWS_SCRAPER_FALLBACK_THRESHOLD", "5"))
 NEWS_API_BASE_URL = "https://newsapi.org/v2"
 MYMEMORY_API_URL = "https://api.mymemory.translated.net/get"
 
@@ -309,58 +311,131 @@ class TranslatorChain:
 # Fetch + save
 # ---------------------------------------------------------------------------
 
-async def fetch_and_save_news():
-    if not NEWS_API_KEY:
-        logger.warning("NEWS_API_KEY not configured. Skipping news fetch.")
+async def _run_rss(client: "httpx.AsyncClient") -> list[dict]:
+    """Run RSS scrapers and return articles (empty list if disabled or failed)."""
+    if not NEWS_SCRAPER_ENABLED:
+        logger.info("NEWS_SCRAPER_ENABLED=0 — skipping RSS scraper.")
+        return []
+    try:
+        from news_scrapers import fetch_all_sources
+        articles = await fetch_all_sources(client=client)
+        logger.info(
+            "RSS scraper yielded %d articles.", len(articles),
+            extra={"event": "rss_scraper_done", "details": {"count": len(articles)}},
+        )
+        return articles
+    except Exception as exc:
+        logger.error("RSS scraper failed entirely: %s", exc, exc_info=True)
         return []
 
+
+async def _fetch_from_newsapi() -> list[dict]:
+    """Fetch articles from NewsAPI. Runs concurrently alongside RSS scrapers."""
+    if not NEWS_API_KEY:
+        return []
+    try:
+        client = _get_client()
+        resp = await client.get(
+            NEWS_API_BASE_URL + "/everything",
+            params={
+                "q": (
+                    'environment OR sustainability OR ecology OR climate OR '
+                    '"meio ambiente" OR sustentabilidade OR ecologia OR biodiversidade'
+                ),
+                "language": "pt",
+                "sortBy": "publishedAt",
+                "pageSize": 20,
+                "apiKey": NEWS_API_KEY,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        articles = data.get("articles", [])
+        # Normalize: NewsAPI puts source info nested under {"source": {"name": ...}}
+        for a in articles:
+            a["title"] = (a.get("title") or "").strip()
+            a["description"] = (a.get("description") or "").strip()
+            if not a.get("source_name"):
+                a["source_name"] = (
+                    (a.get("source") or {}).get("name") or "NewsAPI"
+                )
+        logger.info(
+            "NewsAPI returned %d articles.", len(articles),
+            extra={"event": "newsapi_fetch_ok", "details": {"count": len(articles)}},
+        )
+        return articles
+    except httpx.HTTPStatusError as exc:
+        logger.error("NewsAPI HTTP error: %s", exc)
+    except Exception as exc:
+        logger.error("NewsAPI fetch error: %s", exc)
+    return []
+
+
+async def fetch_and_save_news():
+    """Main news sync entry point.
+
+    Runs RSS scrapers and NewsAPI concurrently, merges results, applies a
+    keyword relevance filter, then translates and saves to DB.
+    """
     try:
         if await has_recent_news():
             logger.info("Recent news already available. Skipping fetch.")
             return await db_sqlite.get_news_page(page=1, page_size=20)
 
-        logger.info("Fetching news from NewsAPI...")
         client = _get_client()
-        resp = await client.get(
-            NEWS_API_BASE_URL + "/everything",
-            params={
-                "q": 'environment OR sustainability OR ecology OR climate OR "meio ambiente" OR sustentabilidade OR ecologia OR biodiversidade',
-                "language": "pt",
-                "sortBy": "publishedAt",
-                "pageSize": 10,
-                "apiKey": NEWS_API_KEY,
-            },
-        )
-        resp.raise_for_status()
-        response = resp.json()
 
-        articles = response.get("articles", [])
+        # ── Run RSS scrapers + NewsAPI concurrently ──────────────────────────
+        rss_task = asyncio.create_task(_run_rss(client))
+        api_task = asyncio.create_task(_fetch_from_newsapi())
+        rss_articles, api_articles = await asyncio.gather(rss_task, api_task)
+
+        # ── Merge, dedup by URL ──────────────────────────────────────────────
+        seen_urls: set[str] = set()
+        raw: list[dict] = []
+        for a in rss_articles:
+            url = a.get("url", "")
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                raw.append(a)
+        for a in api_articles:
+            url = a.get("url", "")
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                raw.append(a)
+
+        # ── Keyword relevance filter ─────────────────────────────────────────
+        from news_scrapers import is_relevant
+        before = len(raw)
+        articles = [a for a in raw if is_relevant(a)]
+        dropped = before - len(articles)
+        if dropped:
+            logger.info(
+                "Keyword filter dropped %d/%d articles.", dropped, before,
+                extra={"event": "news_keyword_filter",
+                       "details": {"before": before, "after": len(articles), "dropped": dropped}},
+            )
+
         if not articles:
-            logger.info("No articles found.")
-            return []
+            logger.info("No relevant articles found from any source.")
+            return await db_sqlite.get_news_page(page=1, page_size=20)
 
         now_iso = datetime.now(timezone.utc).isoformat()
 
-        # Normalize API articles to consistent dict keys
-        for a in articles:
-            a["title"] = (a.get("title") or "").strip()
-            a["description"] = (a.get("description") or "").strip()
-
-        # --- Look for existing DB rows for these URLs ---
+        # ── Translation: reuse cached EN translations where possible ─────────
         urls = [a.get("url", "") for a in articles]
         cached = await _get_cached_translations(urls)
 
-        # --- Build list of texts that actually need translation ---
-        texts_to_translate = []
-        translate_map = []  # [(article_index, field)]
+        texts_to_translate: list[str] = []
+        translate_map: list[tuple[int, str]] = []
+
         for i, article in enumerate(articles):
             cached_en = cached.get(article.get("url", ""), {})
             title = article.get("title", "")
             description = article.get("description", "")
 
-            # Check if cached translation is bad; if so, overwrite it with None
             te = cached_en.get("title_en")
             de = cached_en.get("description_en")
+
             if te and not _is_mymemory_warning(te):
                 article["title_en"] = te
             elif title:
@@ -380,27 +455,33 @@ async def fetch_and_save_news():
                 if val and not _is_mymemory_warning(val):
                     articles[article_i][f"{field}_en"] = val
 
+        # ── Finalize & persist ────────────────────────────────────────────────
         processed = []
         for article in articles:
             if not article.get("title"):
                 extracted = extract_title_from_url(article.get("url", ""))
-                article["title"] = extracted or (article.get("description", "")[:50] + "..." if article.get("description") else "#")
+                article["title"] = (
+                    extracted
+                    or (article.get("description", "")[:50] + "..."
+                        if article.get("description") else "#")
+                )
             article["ingested_at"] = now_iso
             processed.append(article)
 
         await db_sqlite.bulk_upsert_news(processed)
 
-        # Also retroactively fix any bad translations in DB (up to 50 per sync)
+        # Background retroactive translation repair
         asyncio.get_event_loop().create_task(_repair_bad_translations(limit=50))
 
-        logger.info("Processed %d articles.", len(articles))
+        logger.info(
+            "News sync complete: %d articles saved.", len(processed),
+            extra={"event": "news_sync_saved", "details": {"count": len(processed)}},
+        )
         return await db_sqlite.get_news_page(page=1, page_size=20)
-    except httpx.HTTPStatusError as e:
-        logger.error("NewsAPI HTTP error: %s", e)
-        return await db_sqlite.get_news_page(page=1, page_size=20)
+
     except Exception as e:
-        logger.error("Error fetching/saving news: %s", e)
-        return []
+        logger.error("Error in fetch_and_save_news: %s", e, exc_info=True)
+        return await db_sqlite.get_news_page(page=1, page_size=20)
 
 
 # ---------------------------------------------------------------------------
