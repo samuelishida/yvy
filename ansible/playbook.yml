@@ -100,6 +100,14 @@
         group: "{{ yvy_group }}"
         mode: '0755'
 
+    - name: Corrigir ownership do diretorio da aplicacao
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: "{{ yvy_user }}"
+        group: "{{ yvy_group }}"
+        recurse: yes
+
     - name: Clonar repositório Yvy
       ansible.builtin.git:
         repo: "{{ repo_url }}"
