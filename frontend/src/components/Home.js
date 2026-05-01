@@ -350,13 +350,13 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
             className={`layer-toggle${showDeforest ? ' on-cyan' : ''}`}
             onClick={() => setShowDeforest(!showDeforest)}
           >
-            <span className="lt-dot" /> PRODES
+            <span className="lt-dot" /> Desmatamento<span className="lt-sub">PRODES</span>
           </button>
           <button
             className={`layer-toggle${showFires ? ' on-red' : ''}`}
             onClick={() => setShowFires(!showFires)}
           >
-            <Flame size={10} /> FIRMS
+            <Flame size={10} /> Focos de Calor<span className="lt-sub">FIRMS</span>
           </button>
           <button
             className={`layer-toggle${satellite ? ' on-violet' : ''}`}
@@ -368,13 +368,13 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
             className={`layer-toggle${showIndigenous ? ' on-amber' : ''}`}
             onClick={() => setShowIndigenous(!showIndigenous)}
           >
-            <span className="lt-dot" /> TI
+            <span className="lt-dot" /> Terras Indígenas
           </button>
           <button
             className={`layer-toggle${showConservation ? ' on-green' : ''}`}
             onClick={() => setShowConservation(!showConservation)}
           >
-            <span className="lt-dot" /> UC
+            <span className="lt-dot" /> Unid. Conservação
           </button>
         </div>
       </div>
