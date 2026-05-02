@@ -329,53 +329,11 @@ async def _run_rss(client: "httpx.AsyncClient") -> list[dict]:
         return []
 
 
-async def _fetch_from_newsapi() -> list[dict]:
-    """Fetch articles from NewsAPI. Runs concurrently alongside RSS scrapers."""
-    if not NEWS_API_KEY:
-        return []
-    try:
-        client = _get_client()
-        resp = await client.get(
-            NEWS_API_BASE_URL + "/everything",
-            params={
-                "q": (
-                    'environment OR sustainability OR ecology OR climate OR '
-                    '"meio ambiente" OR sustentabilidade OR ecologia OR biodiversidade'
-                ),
-                "language": "pt",
-                "sortBy": "publishedAt",
-                "pageSize": 20,
-                "apiKey": NEWS_API_KEY,
-            },
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        articles = data.get("articles", [])
-        # Normalize: NewsAPI puts source info nested under {"source": {"name": ...}}
-        for a in articles:
-            a["title"] = (a.get("title") or "").strip()
-            a["description"] = (a.get("description") or "").strip()
-            if not a.get("source_name"):
-                a["source_name"] = (
-                    (a.get("source") or {}).get("name") or "NewsAPI"
-                )
-        logger.info(
-            "NewsAPI returned %d articles.", len(articles),
-            extra={"event": "newsapi_fetch_ok", "details": {"count": len(articles)}},
-        )
-        return articles
-    except httpx.HTTPStatusError as exc:
-        logger.error("NewsAPI HTTP error: %s", exc)
-    except Exception as exc:
-        logger.error("NewsAPI fetch error: %s", exc)
-    return []
-
-
 async def fetch_and_save_news():
     """Main news sync entry point.
 
-    Runs RSS scrapers and NewsAPI concurrently, merges results, applies a
-    keyword relevance filter, then translates and saves to DB.
+    Runs RSS scrapers, applies a keyword relevance filter, then translates
+    and saves to DB. No third-party news aggregator API required.
     """
     try:
         if await has_recent_news():
@@ -384,20 +342,11 @@ async def fetch_and_save_news():
 
         client = _get_client()
 
-        # ── Run RSS scrapers + NewsAPI concurrently ──────────────────────────
-        rss_task = asyncio.create_task(_run_rss(client))
-        api_task = asyncio.create_task(_fetch_from_newsapi())
-        rss_articles, api_articles = await asyncio.gather(rss_task, api_task)
+        rss_articles = await _run_rss(client)
 
-        # ── Merge, dedup by URL ──────────────────────────────────────────────
         seen_urls: set[str] = set()
         raw: list[dict] = []
         for a in rss_articles:
-            url = a.get("url", "")
-            if url and url not in seen_urls:
-                seen_urls.add(url)
-                raw.append(a)
-        for a in api_articles:
             url = a.get("url", "")
             if url and url not in seen_urls:
                 seen_urls.add(url)

@@ -63,17 +63,6 @@
   transform: scale(1.02);
 }
 
-/* Gradient fade from image into card body */
-.news-image-fade {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 80px;
-  background: linear-gradient(to bottom, transparent, #0d1525);
-  pointer-events: none;
-}
-
 /* ── Content area ─────────────────────────────────────── */
 .news-content {
   padding: 20px 24px 24px;

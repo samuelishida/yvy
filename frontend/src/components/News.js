@@ -165,7 +165,6 @@ const News = () => {
                   alt={title}
                   loading="lazy"
                 />
-                <div className="news-image-fade" aria-hidden="true" />
               </div>
             )}
             <div className="news-content">
