@@ -530,12 +530,27 @@
     min-height: 400px;
   }
 
-  .fl-panel-biome  { top: 80px; left: 18px; width: 180px; }
-  .fl-panel-alerts { width: 180px; top: 220px; }
+  .map-overlay-top {
+    padding: 8px 10px;
+    align-items: flex-start;
+  }
+  .layer-toggles {
+    flex-wrap: wrap;
+    gap: 4px;
+    justify-content: center;
+  }
+  .layer-toggle {
+    padding: 4px 8px;
+    font-size: 9px;
+  }
+  .lt-sub { display: none; }
+
+  .fl-panel-biome  { top: 110px; left: 8px; width: 160px; }
+  .fl-panel-alerts { width: 160px; top: 220px; right: 8px; }
 
   .fl-stats          { display: none; }
   /* Mobile: compact weather + biome cards */
-  .fl-weather                { }
+  .fl-weather                { left: 8px; bottom: 8px; }
   .fl-weather .card-body     { padding: 4px 10px 10px; }
   .fl-weather__gauges        { gap: 8px; }
   .fl-weather__gauge-svg     { width: 40px; height: 40px; }
