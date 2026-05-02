@@ -350,31 +350,31 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
             className={`layer-toggle${showDeforest ? ' on-cyan' : ''}`}
             onClick={() => setShowDeforest(!showDeforest)}
           >
-            <span className="lt-dot" /> Desmatamento<span className="lt-sub">PRODES</span>
+            <span className="lt-dot" /> {t('home.layerDeforestation')}<span className="lt-sub">PRODES</span>
           </button>
           <button
             className={`layer-toggle${showFires ? ' on-red' : ''}`}
             onClick={() => setShowFires(!showFires)}
           >
-            <Flame size={10} /> Focos de Calor<span className="lt-sub">FIRMS</span>
+            <Flame size={10} /> {t('home.layerFires')}<span className="lt-sub">FIRMS</span>
           </button>
           <button
             className={`layer-toggle${satellite ? ' on-violet' : ''}`}
             onClick={() => setSatellite(!satellite)}
           >
-            <span className="lt-dot" /> Satélite
+            <span className="lt-dot" /> {t('home.layerSatellite')}
           </button>
           <button
             className={`layer-toggle${showIndigenous ? ' on-amber' : ''}`}
             onClick={() => setShowIndigenous(!showIndigenous)}
           >
-            <span className="lt-dot" /> Terras Indígenas
+            <span className="lt-dot" /> {t('home.layerIndigenous')}
           </button>
           <button
             className={`layer-toggle${showConservation ? ' on-green' : ''}`}
             onClick={() => setShowConservation(!showConservation)}
           >
-            <span className="lt-dot" /> Unid. Conservação
+            <span className="lt-dot" /> {t('home.layerConservation')}
           </button>
         </div>
       </div>
