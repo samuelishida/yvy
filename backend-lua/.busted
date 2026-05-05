@@ -1,0 +1,13 @@
+-- .busted — Busted test framework configuration for Yvy backend-lua
+
+return {
+    _all = {
+        verbose = true,
+        coverage = false,
+    },
+    default = {
+        ROOT = {"./tests"},
+        -- Lua path so tests can require app modules
+        LUA_PATH = "./?.lua;./?/init.lua;../?.lua",
+    },
+}

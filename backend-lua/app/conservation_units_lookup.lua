@@ -1,0 +1,70 @@
+-- conservation_units_lookup.lua — UC ICMBio point-in-polygon lookup
+-- Port of backend/conservation_units_lookup.py
+
+local geo   = require("app.geo")
+local cjson = require("cjson")
+
+local _M = {}
+
+local units = {}
+
+function _M.load_conservation_units()
+    local paths = {
+        os.getenv("CONSERVATION_UNITS_PATH") or "",
+        "/opt/yvy/backend-lua/data/conservation_units.json",
+        "/opt/yvy/data/conservation_units.json",
+        "data/conservation_units.json",
+    }
+
+    local data = nil
+    for _, p in ipairs(paths) do
+        if p ~= "" then
+            local f = io.open(p, "r")
+            if f then
+                data = f:read("*a")
+                f:close()
+                break
+            end
+        end
+    end
+
+    if not data then
+        ngx.log(ngx.WARN, "conservation_units.json not found — UC lookup disabled")
+        return
+    end
+
+    local ok, parsed = pcall(cjson.decode, data)
+    if not ok then
+        ngx.log(ngx.WARN, "Failed to parse conservation_units.json")
+        return
+    end
+
+    units = {}
+    for name, meta in pairs(parsed) do
+        local rings = meta.rings
+        local clean_meta = {}
+        for k, v in pairs(meta) do
+            if k ~= "rings" then
+                clean_meta[k] = v
+            end
+        end
+        units[#units + 1] = {name = name, meta = clean_meta, rings = rings}
+    end
+
+    ngx.log(ngx.INFO, "Loaded ", #units, " conservation unit polygons")
+end
+
+function _M.classify_point(lon, lat)
+    for _, entry in ipairs(units) do
+        if geo.point_in_polygon(lon, lat, entry.rings) then
+            local result = {name = entry.name}
+            for k, v in pairs(entry.meta) do
+                result[k] = v
+            end
+            return result
+        end
+    end
+    return nil
+end
+
+return _M

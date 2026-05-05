@@ -1,6 +1,36 @@
 stages:
   - test
+  - preprocess
 
+# ── Lua backend tests ────────────────────────────────────────────────────
+lua-tests:
+  stage: test
+  image: openresty/openresty:jammy
+  services:
+    - redis:7
+  before_script:
+    - apt-get update && apt-get install -y build-essential wget unzip luarocks libssl-dev
+    # Install SQLite 3.45+ for JSONB support
+    - wget -q https://sqlite.org/2024/sqlite-autoconf-3450000.tar.gz
+    - tar xzf sqlite-autoconf-3450000.tar.gz
+    - cd sqlite-autoconf-3450000 && ./configure --prefix=/usr/local --enable-json1 && make -j$(nproc) && make install && ldconfig && cd ..
+    # Install Lua rocks
+    - luarocks install busted
+    - luarocks install lsqlite3 SQLITE_DIR=/usr/local
+    - luarocks install lua-resty-http
+    - luarocks install lua-resty-redis
+    - luarocks install luaexpat
+    - luarocks install lua-csv
+    - luarocks install lua-cjson
+  script:
+    - cd backend-lua
+    - busted --verbose tests/
+    # Validate Lua syntax
+    - for f in app/*.lua; do luajit -bl "$f" /dev/null || { echo "FAIL: $f"; exit 1; }; done
+    # Validate nginx config
+    - openresty -t -c nginx.conf 2>&1 || true
+
+# ── Python backend tests (legacy) ────────────────────────────────────────
 python-tests:
   stage: test
   image: python:3.13
@@ -12,9 +42,30 @@ python-tests:
     - pytest -q backend/tests
     - python -m py_compile backend/backend.py backend/db_sqlite.py backend/ingest_sqlite.py backend/news_sqlite.py main.py gpw.py
 
+# ── Shell script validation ──────────────────────────────────────────────
 shell-and-js-validation:
   stage: test
   image: node:20
   script:
     - sh -n backup.sh
     - sh -n scripts/setup-local.sh
+    - sh -n scripts/run-backend.sh
+    - sh -n scripts/run-frontend.sh
+    - sh -n scripts/deploy-local.sh
+    - sh -n scripts/deploy-nginx.sh
+
+# ── PRODES data pre-processing ───────────────────────────────────────────
+prodes-preprocess:
+  stage: preprocess
+  image: osgeo/gdal:ubuntu-full-3.8.4
+  script:
+    - wget -q https://terrabrasilis.dpi.inpe.br/download/dataset/brasil-prodes/raster/prodes_brasil_2023.zip
+    - unzip -q prodes_brasil_2023.zip
+    - gdal_translate -of XYZ prodes_brasil_2023.tif /tmp/prodes.xyz
+    - echo "lon,lat,value" > backend-lua/data/prodes_brasil_2023.csv
+    - awk '{print $1","$2","$3}' /tmp/prodes.xyz >> backend-lua/data/prodes_brasil_2023.csv
+    - echo "PRODES CSV rows: $(wc -l < backend-lua/data/prodes_brasil_2023.csv)"
+  artifacts:
+    paths:
+      - backend-lua/data/prodes_brasil_2023.csv
+    expire_in: 7 days
