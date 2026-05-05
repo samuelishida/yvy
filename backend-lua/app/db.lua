@@ -1,9 +1,8 @@
--- db.lua — SQLite async database layer with JSONB support
+-- db.lua — SQLite database layer with JSONB support (baremetal Lua)
 -- Port of backend/db_sqlite.py
 --
 -- Uses lsqlite3 (LuaJIT FFI binding to SQLite).
--- In OpenResty, each worker is single-threaded, so we use one connection
--- per worker with WAL mode for concurrent reads across workers.
+-- Single connection per process with WAL mode for concurrent reads.
 --
 -- Tables use hybrid scalar + JSONB BLOB columns:
 --   fire_data:          lat, lon, acq_date, ingested_at | data BLOB
@@ -13,6 +12,7 @@
 local sqlite3 = require("lsqlite3")
 local utils   = require("app.utils")
 local cjson   = require("cjson")
+local logger  = require("app.logger")
 
 local _M = {}
 
@@ -112,7 +112,7 @@ local function fetch_all(db, sql, params)
     """Execute SQL, return all rows as array of dicts."""
     local stmt = db:prepare(sql)
     if not stmt then
-        ngx.log(ngx.ERR, "SQL prepare failed: ", db:errmsg(), " | SQL: ", sql)
+        logger.error("SQL prepare failed: ", db:errmsg(), " | SQL: ", sql)
         return {}
     end
 
@@ -144,7 +144,7 @@ local function exec_write(db, sql, params)
     """Execute a write SQL statement with params."""
     local stmt = db:prepare(sql)
     if not stmt then
-        ngx.log(ngx.ERR, "SQL prepare failed: ", db:errmsg(), " | SQL: ", sql)
+        logger.error("SQL prepare failed: ", db:errmsg(), " | SQL: ", sql)
         return false, db:errmsg()
     end
 
@@ -163,7 +163,7 @@ local function exec_write(db, sql, params)
     local ok, err = stmt:step()
     stmt:finalize()
     if ok ~= sqlite3.DONE then
-        ngx.log(ngx.ERR, "SQL exec failed: ", err or db:errmsg(), " | SQL: ", sql)
+        logger.error("SQL exec failed: ", err or db:errmsg(), " | SQL: ", sql)
         return false, err or db:errmsg()
     end
     return true
@@ -180,10 +180,10 @@ local function check_sqlite_version(db)
     major, minor = tonumber(major), tonumber(minor)
     local version_num = major * 10000 + minor * 100
     if version_num < 34500 then
-        ngx.log(ngx.WARN, "SQLite ", ver, " does not support JSONB (need >= 3.45.0)")
+        logger.warn("SQLite ", ver, " does not support JSONB (need >= 3.45.0)")
         return false
     end
-    ngx.log(ngx.INFO, "SQLite ", ver, " — JSONB supported")
+    logger.info("SQLite ", ver, " — JSONB supported")
     return true
 end
 
@@ -216,7 +216,7 @@ function _M.init_db()
     end
 
     if needs_migration then
-        ngx.log(ngx.INFO, "Legacy flat-column schema detected — rebuilding tables to JSONB...")
+        logger.info("Legacy flat-column schema detected — rebuilding tables to JSONB...")
         _M.migrate_to_jsonb()
     end
 
@@ -236,7 +236,7 @@ function _M.init_db()
         pool_available[#pool_available + 1] = conn
     end
 
-    ngx.log(ngx.INFO, "SQLite initialized at ", DB_PATH, " (JSONB schema, ", POOL_SIZE, " connections)")
+    logger.info("SQLite initialized at ", DB_PATH, " (JSONB schema, ", POOL_SIZE, " connections)")
 end
 
 function _M.close_db()
@@ -610,7 +610,7 @@ function _M.migrate_to_jsonb()
     end
 
     if cols["confidence"] then
-        ngx.log(ngx.INFO, "Rebuilding fire_data table to JSONB schema...")
+        logger.info("Rebuilding fire_data table to JSONB schema...")
         db:exec([[
             CREATE TABLE IF NOT EXISTS fire_data_new (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -658,7 +658,7 @@ function _M.migrate_to_jsonb()
             CREATE INDEX IF NOT EXISTS idx_fire_acq_date ON fire_data(acq_date);
             CREATE INDEX IF NOT EXISTS idx_fire_confidence ON fire_data(json_extract(data, '$.confidence'));
         ]])
-        ngx.log(ngx.INFO, "fire_data rebuilt with JSONB schema (", #rows, " rows)")
+        logger.info("fire_data rebuilt with JSONB schema (", #rows, " rows)")
     end
 
     -- ── deforestation_data ──
@@ -672,7 +672,7 @@ function _M.migrate_to_jsonb()
     end
 
     if cols["name"] then
-        ngx.log(ngx.INFO, "Rebuilding deforestation_data table to JSONB schema...")
+        logger.info("Rebuilding deforestation_data table to JSONB schema...")
         db:exec([[
             CREATE TABLE IF NOT EXISTS deforestation_data_new (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -714,7 +714,7 @@ function _M.migrate_to_jsonb()
             CREATE INDEX IF NOT EXISTS idx_def_lon ON deforestation_data(lon);
             CREATE INDEX IF NOT EXISTS idx_def_name ON deforestation_data(json_extract(data, '$.name'));
         ]])
-        ngx.log(ngx.INFO, "deforestation_data rebuilt with JSONB schema (", #rows, " rows)")
+        logger.info("deforestation_data rebuilt with JSONB schema (", #rows, " rows)")
     end
 
     -- ── news ──
@@ -728,7 +728,7 @@ function _M.migrate_to_jsonb()
     end
 
     if cols["title"] then
-        ngx.log(ngx.INFO, "Rebuilding news table to JSONB schema...")
+        logger.info("Rebuilding news table to JSONB schema...")
         db:exec([[
             CREATE TABLE IF NOT EXISTS news_new (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -776,11 +776,11 @@ function _M.migrate_to_jsonb()
             CREATE INDEX IF NOT EXISTS idx_news_ingested ON news(ingested_at);
             CREATE INDEX IF NOT EXISTS idx_news_source ON news(json_extract(data, '$.source_name'));
         ]])
-        ngx.log(ngx.INFO, "news rebuilt with JSONB schema (", #rows, " rows)")
+        logger.info("news rebuilt with JSONB schema (", #rows, " rows)")
     end
 
     db:close()
-    ngx.log(ngx.INFO, "Migration to JSONB complete")
+    logger.info("Migration to JSONB complete")
 end
 
 return _M

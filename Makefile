@@ -1,4 +1,4 @@
-.PHONY: setup run backend frontend stop test migrate sqlite-access
+.PHONY: setup run backend frontend stop test migrate sqlite-access setup-lua run-lua test-lua
 
 setup:
 	bash scripts/setup-local.sh
@@ -11,6 +11,19 @@ backend:
 
 frontend:
 	bash scripts/run-frontend.sh
+
+# ── Lua backend targets ───────────────────────────────────────────────────
+
+setup-lua:
+	bash scripts/setup-lua.sh
+
+run-lua:
+	bash scripts/run-lua.sh
+
+test-lua:
+	cd backend-lua && busted --verbose tests/
+
+# ── Python backend targets ────────────────────────────────────────────────
 
 test:
 	cd backend && bash -c '\
@@ -50,6 +63,7 @@ stop:
 	@pkill -f "[r]eact-scripts start" 2>/dev/null || true
 	@pkill -f "[n]ode.*react-scripts" 2>/dev/null || true
 	@pkill -f "[n]ode server.js" 2>/dev/null || true
+	@pkill -f "[l]ua main.lua" 2>/dev/null || true
 	@echo "Done."
 	@pkill -f "[r]eact-scripts start" 2>/dev/null || true
 	@if command -v lsof >/dev/null 2>&1; then pids=$$(lsof -tiTCP:5000 -sTCP:LISTEN 2>/dev/null || true); [ -z "$$pids" ] || kill $$pids 2>/dev/null || true; fi

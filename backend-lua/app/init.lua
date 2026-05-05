@@ -1,6 +1,5 @@
--- init.lua — Startup initialization for Yvy backend
--- Called from init_by_lua_block in nginx.conf
--- Loads all lookup data, initializes DB, starts background timers
+-- init.lua — Startup initialization for Yvy backend (baremetal)
+-- Loads all lookup data, initializes DB, starts background tasks via copas
 
 local db          = require("app.db")
 local biome       = require("app.biome_lookup")
@@ -11,8 +10,10 @@ local fires_mod   = require("app.fires")
 local news_mod    = require("app.news")
 local alerts_mod  = require("app.alerts")
 local redis       = require("app.redis")
-local http        = require("resty.http")
+local http_client = require("app.http_client")
 local cjson       = require("cjson")
+local logger      = require("app.logger")
+local socket      = require("socket")
 
 local _M = {}
 
@@ -25,7 +26,7 @@ local ALERTS_SYNC_INTERVAL = 1800  -- 30 minutes
 -- ── Startup ──────────────────────────────────────────────────────────────
 
 function _M.startup()
-    ngx.log(ngx.INFO, "=== Yvy Backend (Lua/OpenResty) Starting ===")
+    logger.info("=== Yvy Backend (Lua baremetal) Starting ===")
 
     -- Initialize database
     db.init_db()
@@ -33,68 +34,71 @@ function _M.startup()
     -- Load biome boundaries
     local ok, err = pcall(biome.load_biomes)
     if not ok then
-        ngx.log(ngx.WARN, "Failed to load biome data: ", err)
+        logger.warn("Failed to load biome data: " .. tostring(err))
     end
 
     -- Load indigenous lands
     ok, err = pcall(ti.load_indigenous_lands)
     if not ok then
-        ngx.log(ngx.WARN, "Failed to load indigenous lands data: ", err)
+        logger.warn("Failed to load indigenous lands data: " .. tostring(err))
     end
 
     -- Load conservation units
     ok, err = pcall(uc.load_conservation_units)
     if not ok then
-        ngx.log(ngx.WARN, "Failed to load conservation units data: ", err)
+        logger.warn("Failed to load conservation units data: " .. tostring(err))
     end
 
     -- Run PRODES ingestion (if CSV available)
     ok, err = pcall(ingest.run)
     if not ok then
-        ngx.log(ngx.WARN, "PRODES ingestion failed: ", err)
+        logger.warn("PRODES ingestion failed: " .. tostring(err))
     end
 
-    ngx.log(ngx.INFO, "=== Yvy Backend Ready ===")
+    logger.info("=== Yvy Backend Ready ===")
 end
 
--- ── Background timers ────────────────────────────────────────────────────
+-- ── Background tasks (simple sleep-loop coroutines) ──────────────────────
 
-function _M.start_background_tasks()
-    -- FIRMS sync (every N hours)
-    local function fires_timer(premature)
-        if premature then return end
-        ngx.log(ngx.INFO, "Background FIRMS sync starting")
+local function fires_sync_loop()
+    socket.sleep(10)  -- initial delay
+    while true do
+        logger.info("Background FIRMS sync starting")
         pcall(fires_mod.fetch_firms_data, false)
-        -- Reschedule
-        ngx.timer.at(FIRMS_SYNC_INTERVAL, fires_timer)
+        socket.sleep(FIRMS_SYNC_INTERVAL)
     end
-    ngx.timer.at(10, fires_timer)  -- Start after 10s
+end
 
-    -- News sync (every N minutes)
-    local function news_timer(premature)
-        if premature then return end
-        ngx.log(ngx.INFO, "Background news sync starting")
+local function news_sync_loop()
+    socket.sleep(15)
+    while true do
+        logger.info("Background news sync starting")
         pcall(news_mod.fetch_and_save_news)
-        ngx.timer.at(NEWS_SYNC_INTERVAL, news_timer)
+        socket.sleep(NEWS_SYNC_INTERVAL)
     end
-    ngx.timer.at(15, news_timer)  -- Start after 15s
+end
 
-    -- Alerts refresh (every 30 minutes)
-    local function alerts_timer(premature)
-        if premature then return end
-        ngx.log(ngx.INFO, "Background alerts refresh starting")
+local function alerts_sync_loop()
+    socket.sleep(60)
+    while true do
+        logger.info("Background alerts refresh starting")
         pcall(function()
             local fires = db.find_fires(-34.0, 5.5, -74.0, -34.0, 10000)
-            local httpc = http.new()
-            httpc:set_timeout(30000)
-            local result = alerts_mod.generate_all_alerts(fires, httpc, os.getenv("WAQI_TOKEN"))
-            httpc:close()
+            local result = alerts_mod.generate_all_alerts(fires, nil, os.getenv("WAQI_TOKEN"))
             redis.set("alerts:all", cjson.encode(result), 1800)
-            ngx.log(ngx.INFO, "Alerts cache refreshed: ", result.count, " alerts")
+            logger.info("Alerts cache refreshed: " .. result.count .. " alerts")
         end)
-        ngx.timer.at(ALERTS_SYNC_INTERVAL, alerts_timer)
+        socket.sleep(ALERTS_SYNC_INTERVAL)
     end
-    ngx.timer.at(60, alerts_timer)  -- Start after 60s
+end
+
+function _M.start_background_tasks()
+    -- Spawn background coroutines (cooperative multitasking via copas)
+    -- These run in the same process; socket.sleep yields to copas
+    coroutine.wrap(fires_sync_loop)()
+    coroutine.wrap(news_sync_loop)()
+    coroutine.wrap(alerts_sync_loop)()
 end
 
 return _M
+

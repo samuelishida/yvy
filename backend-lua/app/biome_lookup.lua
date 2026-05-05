@@ -2,8 +2,9 @@
 -- Port of backend/biome_lookup.py
 -- Loads biome_data.json at init time
 
-local geo   = require("app.geo")
-local cjson = require("cjson")
+local geo    = require("app.geo")
+local cjson  = require("cjson")
+local logger = require("app.logger")
 
 local _M = {}
 
@@ -44,13 +45,13 @@ function _M.load_biomes()
     end
 
     if not data then
-        ngx.log(ngx.WARN, "biome_data.json not found — biome lookup disabled")
+        logger.warn("biome_data.json not found — biome lookup disabled")
         return
     end
 
     local ok, parsed = pcall(cjson.decode, data)
     if not ok then
-        ngx.log(ngx.WARN, "Failed to parse biome_data.json")
+        logger.warn("Failed to parse biome_data.json")
         return
     end
 
@@ -71,7 +72,7 @@ function _M.load_biomes()
         end
     end
 
-    ngx.log(ngx.INFO, "Loaded ", #biome_rings, " biome rings for ", #biome_colors, " biomes")
+    logger.info("Loaded ", #biome_rings, " biome rings for ", #biome_colors, " biomes")
 end
 
 function _M.classify_point(lat, lon)

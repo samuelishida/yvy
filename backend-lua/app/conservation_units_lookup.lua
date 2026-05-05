@@ -1,8 +1,9 @@
 -- conservation_units_lookup.lua — UC ICMBio point-in-polygon lookup
 -- Port of backend/conservation_units_lookup.py
 
-local geo   = require("app.geo")
-local cjson = require("cjson")
+local geo    = require("app.geo")
+local cjson  = require("cjson")
+local logger = require("app.logger")
 
 local _M = {}
 
@@ -29,13 +30,13 @@ function _M.load_conservation_units()
     end
 
     if not data then
-        ngx.log(ngx.WARN, "conservation_units.json not found — UC lookup disabled")
+        logger.warn("conservation_units.json not found — UC lookup disabled")
         return
     end
 
     local ok, parsed = pcall(cjson.decode, data)
     if not ok then
-        ngx.log(ngx.WARN, "Failed to parse conservation_units.json")
+        logger.warn("Failed to parse conservation_units.json")
         return
     end
 
@@ -51,7 +52,7 @@ function _M.load_conservation_units()
         units[#units + 1] = {name = name, meta = clean_meta, rings = rings}
     end
 
-    ngx.log(ngx.INFO, "Loaded ", #units, " conservation unit polygons")
+    logger.info("Loaded ", #units, " conservation unit polygons")
 end
 
 function _M.classify_point(lon, lat)

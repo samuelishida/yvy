@@ -1,10 +1,10 @@
 -- ingest.lua — Ingest TerraBrasilis PRODES data into SQLite
--- Port of backend/ingest_sqlite.py
--- Reads pre-processed CSV (from GDAL in CI) instead of TIF directly
+-- Baremetal Lua version — reads pre-processed CSV (from GDAL in CI)
 
-local db    = require("app.db")
-local utils = require("app.utils")
-local cjson = require("cjson")
+local db     = require("app.db")
+local utils  = require("app.utils")
+local cjson  = require("cjson")
+local logger = require("app.logger")
 
 local _M = {}
 
@@ -14,7 +14,7 @@ function _M.parse_qml(file_path)
     """Parse QML XML file to extract color legend. Returns {[value] = {color, label}}."""
     local f = io.open(file_path, "r")
     if not f then
-        ngx.log(ngx.WARN, "QML file not found: ", file_path)
+        logger.warn("QML file not found: " .. file_path)
         return {}
     end
     local xml_text = f:read("*a")
@@ -43,7 +43,7 @@ function _M.ingest_prodes(csv_path, qml_path)
 
     local f = io.open(csv_path, "r")
     if not f then
-        ngx.log(ngx.ERR, "PRODES CSV not found: ", csv_path)
+        logger.error("PRODES CSV not found: " .. csv_path)
         return 0
     end
 
@@ -93,7 +93,7 @@ function _M.ingest_prodes(csv_path, qml_path)
         db.bulk_upsert_deforestation(docs)
     end
 
-    ngx.log(ngx.INFO, "PRODES ingestion complete: ", line_count, " records")
+    logger.info("PRODES ingestion complete: " .. line_count .. " records")
     return line_count
 end
 
@@ -108,7 +108,7 @@ function _M.run()
     -- Check if CSV exists
     local f = io.open(csv_path, "r")
     if not f then
-        ngx.log(ngx.INFO, "PRODES CSV not found at ", csv_path, " — skipping ingestion")
+        logger.info("PRODES CSV not found at " .. csv_path .. " — skipping ingestion")
         return 0
     end
     f:close()

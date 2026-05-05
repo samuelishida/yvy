@@ -9,7 +9,7 @@ on:
   pull_request:
 
 jobs:
-  # ── Lua backend tests ──────────────────────────────────────────────────
+  # ── Lua backend tests (baremetal) ─────────────────────────────────────
   lua-tests:
     runs-on: ubuntu-latest
     services:
@@ -21,10 +21,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install OpenResty + LuaRocks
+      - name: Install Lua 5.1 + LuaRocks
         run: |
           sudo apt-get update
-          sudo apt-get install -y openresty luarocks libssl-dev
+          sudo apt-get install -y lua5.1 liblua5.1-0-dev luarocks libssl-dev
 
       - name: Install SQLite 3.45+ from source (JSONB support)
         run: |
@@ -39,24 +39,23 @@ jobs:
 
       - name: Install Lua dependencies
         run: |
-          sudo luarocks install busted
+          sudo luarocks install luasocket
+          sudo luarocks install copas
           sudo luarocks install lsqlite3 SQLITE_DIR=/usr/local
-          sudo luarocks install lua-resty-http
-          sudo luarocks install lua-resty-redis
+          sudo luarocks install lua-cjson
           sudo luarocks install luaexpat
           sudo luarocks install lua-csv
-          sudo luarocks install lua-cjson
+          sudo luarocks install busted
 
       - name: Run Lua tests
         working-directory: ./backend-lua
         run: |
           busted --verbose tests/
 
-      - name: Validate nginx config syntax
+      - name: Validate Lua syntax
         run: |
-          openresty -t -c backend-lua/nginx.conf 2>&1 || true
-          for f in backend-lua/app/*.lua; do
-            luajit -bl "$f" /dev/null || { echo "FAIL: $f"; exit 1; }
+          for f in backend-lua/app/*.lua backend-lua/main.lua; do
+            luac -p "$f" || { echo "FAIL: $f"; exit 1; }
           done
 
   # ── Python backend tests (legacy, still runs) ──────────────────────────

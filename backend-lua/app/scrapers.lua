@@ -1,11 +1,11 @@
 -- scrapers.lua — RSS scraper for Brazilian environmental news sources
--- Port of backend/news_scrapers.py
--- Fetches and normalises articles from curated RSS feeds
+-- Baremetal Lua version using http_client + LuaExpat
 
-local http   = require("resty.http")
-local lxp    = require("lxp")
-local cjson  = require("cjson")
-local utils  = require("app.utils")
+local http_client = require("app.http_client")
+local lxp         = require("lxp")
+local cjson       = require("cjson")
+local utils       = require("app.utils")
+local logger      = require("app.logger")
 
 local _M = {}
 
@@ -217,7 +217,7 @@ local function parse_rss(xml_text, source_name)
     end)
 
     if not ok then
-        ngx.log(ngx.WARN, "RSS parse error for ", source_name, ": ", err)
+        logger.warn("RSS parse error for " .. source_name .. ": " .. tostring(err))
     end
 
     return articles
@@ -228,21 +228,19 @@ end
 function _M.fetch_all()
     """Fetch all RSS sources, filter by relevance, return articles."""
     local all_articles = {}
-    local httpc = http.new()
-    httpc:set_timeout(15000)
 
     for _, source in ipairs(RSS_SOURCES) do
-        ngx.log(ngx.INFO, "Fetching RSS: ", source.name, " (", source.url, ")")
-        local res, err = httpc:request_uri(source.url, {
-            method = "GET",
+        logger.info("Fetching RSS: " .. source.name .. " (" .. source.url .. ")")
+        local res, err = http_client.get(source.url, {
             headers = {
                 ["User-Agent"] = "YvyApp/1.0 (environmental-monitoring)",
                 ["Accept"] = "application/rss+xml, application/atom+xml, application/xml, text/xml",
             },
+            timeout = 15,
         })
 
         if not res or res.status ~= 200 then
-            ngx.log(ngx.WARN, "RSS fetch failed for ", source.name, ": ", err or res.status)
+            logger.warn("RSS fetch failed for " .. source.name .. ": " .. tostring(err or (res and res.status)))
             goto continue
         end
 
@@ -253,11 +251,10 @@ function _M.fetch_all()
             end
         end
 
-        ngx.log(ngx.INFO, "RSS ", source.name, ": ", #articles, " articles, ", #all_articles, " relevant total")
+        logger.info("RSS " .. source.name .. ": " .. #articles .. " articles, " .. #all_articles .. " relevant total")
         ::continue::
     end
 
-    httpc:close()
     return all_articles
 end
 

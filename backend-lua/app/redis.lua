@@ -1,9 +1,9 @@
--- redis.lua — Redis cache helpers
--- Port of backend/backend.py cache_get/cache_set/cache_delete
--- Uses lua-resty-redis with connection pooling via ngx.shared.DICT
+-- redis.lua — Redis cache helpers for baremetal Lua
+-- Uses luasocket TCP + Redis RESP protocol
+-- Replaces lua-resty-redis
 
-local redis = require("resty.redis")
-local cjson = require("cjson")
+local socket = require("socket")
+local logger = require("app.logger")
 
 local _M = {}
 
@@ -15,125 +15,147 @@ local function parse_redis_url(url)
     local host, port, db = "127.0.0.1", 6379, 0
     local h, p, d = url:match("redis://([^:]+):(%d+)/(%d+)")
     if h then
-        host = h
-        port = tonumber(p) or 6379
-        db = tonumber(d) or 0
+        host = h; port = tonumber(p) or 6379; db = tonumber(d) or 0
     else
         h, p = url:match("redis://([^:]+):(%d+)")
-        if h then
-            host = h
-            port = tonumber(p) or 6379
-        end
+        if h then host = h; port = tonumber(p) or 6379 end
     end
     return host, port, db
 end
 
 local redis_host, redis_port, redis_db = parse_redis_url(REDIS_URL)
 
--- Connection pool key
-local POOL_KEY = "redis_pool"
+-- ── RESP protocol helpers ────────────────────────────────────────────────
 
-local function get_conn()
-    local red = redis:new()
-    red:set_timeout(5000)  -- 5s
-
-    local ok, err = red:connect(redis_host, redis_port)
+local function connect()
+    local s = socket.tcp()
+    s:settimeout(5)
+    local ok, err = s:connect(redis_host, redis_port)
     if not ok then
-        ngx.log(ngx.WARN, "Redis connect failed: ", err)
+        logger.warn("Redis connect failed: " .. tostring(err))
         return nil
     end
-
     if redis_db > 0 then
-        red:select(redis_db)
+        s:send("*2\r\n$6\r\nSELECT\r\n$" .. #tostring(redis_db) .. "\r\n" .. redis_db .. "\r\n")
+        s:receive("*l")  -- consume +OK
     end
-
-    return red
+    return s
 end
 
-local function close_conn(red)
-    if red then
-        red:set_keepalive(60000, 10)  -- 60s idle, max 10 in pool
+local function command(s, ...)
+    local args = {...}
+    local parts = {"*" .. #args .. "\r\n"}
+    for _, arg in ipairs(args) do
+        local a = tostring(arg)
+        parts[#parts + 1] = "$" .. #a .. "\r\n" .. a .. "\r\n"
     end
+    s:send(table.concat(parts))
 end
+
+local function read_response(s)
+    local line = s:receive("*l")
+    if not line then return nil end
+    local prefix = line:sub(1, 1)
+    if prefix == "+" then
+        return line:sub(2)
+    elseif prefix == "-" then
+        return nil, line:sub(2)
+    elseif prefix == ":" then
+        return tonumber(line:sub(2))
+    elseif prefix == "$" then
+        local len = tonumber(line:sub(2))
+        if len < 0 then return nil end
+        local data = s:receive(len)
+        s:receive("*l")  -- consume trailing \r\n
+        return data
+    elseif prefix == "*" then
+        local count = tonumber(line:sub(2))
+        if count < 0 then return nil end
+        local result = {}
+        for i = 1, count do
+            result[i] = read_response(s)
+        end
+        return result
+    end
+    return nil
+end
+
+-- ── Public API ───────────────────────────────────────────────────────────
 
 function _M.get(key)
-    local red = get_conn()
-    if not red then return nil end
-
-    local val, err = red:get(key)
-    close_conn(red)
-
-    if not val or val == ngx.null then
-        return nil
-    end
+    local s = connect()
+    if not s then return nil end
+    command(s, "GET", key)
+    local val = read_response(s)
+    s:close()
     return val
 end
 
 function _M.set(key, value, ttl)
     ttl = ttl or CACHE_TTL_DEFAULT
-    local red = get_conn()
-    if not red then return end
-
-    red:setex(key, ttl, value)
-    close_conn(red)
+    local s = connect()
+    if not s then return end
+    command(s, "SETEX", key, ttl, value)
+    read_response(s)
+    s:close()
 end
 
 function _M.delete(pattern)
-    """Delete keys matching pattern using SCAN."""
-    local red = get_conn()
-    if not red then return end
-
+    local s = connect()
+    if not s then return end
     local cursor = "0"
     repeat
-        local res, err = red:scan(cursor, "MATCH", pattern, "COUNT", 100)
-        if not res then break end
+        command(s, "SCAN", cursor, "MATCH", pattern, "COUNT", "100")
+        local res = read_response(s)
+        if not res or #res < 2 then break end
         cursor = res[1]
         local keys = res[2]
         if keys and #keys > 0 then
             for _, k in ipairs(keys) do
-                red:del(k)
+                command(s, "DEL", k)
+                read_response(s)
             end
         end
     until cursor == "0"
-
-    close_conn(red)
+    s:close()
 end
 
--- ── Rate limiting via Redis sorted sets ──────────────────────────────────
+-- ── Rate limiting via sorted sets ────────────────────────────────────────
 
 function _M.check_rate_limit(ip, limit, window_seconds)
-    """Check if IP has exceeded rate limit using sorted set.
-    Returns true if rate limited, false if allowed.
-    """
     limit = limit or 60
     window_seconds = window_seconds or 60
+    local now = socket.gettime()
 
-    local red = get_conn()
-    if not red then return false end  -- Allow if Redis down
+    local s = connect()
+    if not s then return false end  -- Allow if Redis down
 
     local key = "rate_limit:" .. ip
-    local now = ngx.now()
 
     -- Remove old entries
-    red:zremrangebyscore(key, 0, now - window_seconds)
+    command(s, "ZREMRANGEBYSCORE", key, "0", tostring(now - window_seconds))
+    read_response(s)
 
     -- Count current
-    local count, err = red:zcard(key)
-    if not count then
-        close_conn(red)
-        return false
-    end
+    command(s, "ZCARD", key)
+    local count = read_response(s)
+    if not count then s:close(); return false end
 
     if tonumber(count) >= limit then
-        close_conn(red)
+        s:close()
         return true
     end
 
     -- Add current request
-    red:zadd(key, now, tostring(now) .. "_" .. tostring(math.random(1000000)))
-    red:expire(key, window_seconds)
-    close_conn(red)
+    local member = tostring(now) .. "_" .. tostring(math.random(1000000))
+    command(s, "ZADD", key, tostring(now), member)
+    read_response(s)
+    command(s, "EXPIRE", key, tostring(window_seconds))
+    read_response(s)
+
+    s:close()
     return false
 end
 
 return _M
+

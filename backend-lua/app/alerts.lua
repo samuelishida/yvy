@@ -9,12 +9,13 @@
 --   prodes           — deforestation records exist in DB
 --   pm25             — PM2.5 > 55 µg/m³ at any monitored station
 
-local db          = require("app.db")
+local db           = require("app.db")
 local biome_lookup = require("app.biome_lookup")
-local ti_lookup   = require("app.indigenous_lands_lookup")
-local uc_lookup   = require("app.conservation_units_lookup")
-local http        = require("resty.http")
-local cjson       = require("cjson")
+local ti_lookup    = require("app.indigenous_lands_lookup")
+local uc_lookup    = require("app.conservation_units_lookup")
+local http_client  = require("app.http_client")
+local cjson        = require("cjson")
+local logger       = require("app.logger")
 
 local _M = {}
 

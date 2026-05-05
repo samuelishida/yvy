@@ -1,8 +1,9 @@
 -- indigenous_lands_lookup.lua — TI point-in-polygon lookup
 -- Port of backend/indigenous_lands_lookup.py
 
-local geo   = require("app.geo")
-local cjson = require("cjson")
+local geo    = require("app.geo")
+local cjson  = require("cjson")
+local logger = require("app.logger")
 
 local _M = {}
 
@@ -30,13 +31,13 @@ function _M.load_indigenous_lands()
     end
 
     if not data then
-        ngx.log(ngx.WARN, "indigenous_lands.json not found — TI lookup disabled")
+        logger.warn("indigenous_lands.json not found — TI lookup disabled")
         return
     end
 
     local ok, parsed = pcall(cjson.decode, data)
     if not ok then
-        ngx.log(ngx.WARN, "Failed to parse indigenous_lands.json")
+        logger.warn("Failed to parse indigenous_lands.json")
         return
     end
 
@@ -52,7 +53,7 @@ function _M.load_indigenous_lands()
         lands[#lands + 1] = {name = name, meta = clean_meta, rings = rings}
     end
 
-    ngx.log(ngx.INFO, "Loaded ", #lands, " indigenous land polygons")
+    logger.info("Loaded ", #lands, " indigenous land polygons")
 end
 
 function _M.classify_point(lon, lat)

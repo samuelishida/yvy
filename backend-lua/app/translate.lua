@@ -1,9 +1,10 @@
 -- translate.lua — Multi-provider translation chain
--- Port of backend/news_sqlite.py TranslatorChain
+-- Baremetal Lua version using http_client + logger
 -- MyMemory → LibreTranslate → Google Translate
 
-local http  = require("resty.http")
-local cjson = require("cjson")
+local http_client = require("app.http_client")
+local cjson       = require("cjson")
+local logger      = require("app.logger")
 
 local _M = {}
 
@@ -47,18 +48,13 @@ function TranslatorChain:translate(text, source_lang, target_lang)
 end
 
 function TranslatorChain:_try_mymemory(text, source_lang, target_lang)
-    local httpc = http.new()
-    httpc:set_timeout(15000)
-
-    local res, err = httpc:request_uri(MYMEMORY_API_URL, {
-        method = "GET",
+    local res, err = http_client.get(MYMEMORY_API_URL, {
         query = {
             q = text:sub(1, 500),
             langpair = source_lang .. "|" .. target_lang,
         },
+        timeout = 15,
     })
-
-    httpc:close()
 
     if not res or res.status ~= 200 then return nil end
 
@@ -72,7 +68,7 @@ function TranslatorChain:_try_mymemory(text, source_lang, target_lang)
 
     if _M.is_mymemory_warning(translation) then
         self.mymemory_quota_exhausted = true
-        ngx.log(ngx.WARN, "MyMemory quota exhausted. Switching to fallbacks.")
+        logger.warn("MyMemory quota exhausted. Switching to fallbacks.")
         return nil
     end
 
@@ -81,22 +77,11 @@ function TranslatorChain:_try_mymemory(text, source_lang, target_lang)
 end
 
 function TranslatorChain:_try_libre(text, source_lang, target_lang)
-    local httpc = http.new()
-    httpc:set_timeout(10000)
-
-    local res, err = httpc:request_uri("https://libretranslate.de/translate", {
-        method = "POST",
-        body = cjson.encode({
-            q = text,
-            source = source_lang,
-            target = target_lang,
-        }),
-        headers = {
-            ["Content-Type"] = "application/json",
-        },
+    local res, err = http_client.post("https://libretranslate.de/translate", {
+        body = {q = text, source = source_lang, target = target_lang},
+        headers = {["Content-Type"] = "application/json"},
+        timeout = 10,
     })
-
-    httpc:close()
 
     if not res or res.status ~= 200 then return nil end
 
@@ -111,21 +96,13 @@ function TranslatorChain:_try_libre(text, source_lang, target_lang)
 end
 
 function TranslatorChain:_try_google(text, source_lang, target_lang)
-    local httpc = http.new()
-    httpc:set_timeout(10000)
-
-    local res, err = httpc:request_uri("https://translate.googleapis.com/translate_a/single", {
-        method = "GET",
+    local res, err = http_client.get("https://translate.googleapis.com/translate_a/single", {
         query = {
-            client = "gtx",
-            sl = source_lang,
-            tl = target_lang,
-            dt = "t",
-            q = text:sub(1, 5000),
+            client = "gtx", sl = source_lang, tl = target_lang,
+            dt = "t", q = text:sub(1, 5000),
         },
+        timeout = 10,
     })
-
-    httpc:close()
 
     if not res or res.status ~= 200 then return nil end
 
@@ -147,7 +124,7 @@ end
 
 function _M.is_mymemory_warning(text)
     if not text then return false end
-    return ngx.re.match(text, MYMEMORY_WARNING_PATTERN, "isjo") ~= nil
+    return text:match(MYMEMORY_WARNING_PATTERN) ~= nil
 end
 
 function _M.new_chain()
@@ -155,3 +132,4 @@ function _M.new_chain()
 end
 
 return _M
+

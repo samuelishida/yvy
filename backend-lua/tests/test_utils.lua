@@ -14,12 +14,16 @@ describe("utils", function()
 
         it("handles nil / empty", function()
             local decoded = utils.decode_jsonb(nil)
-            assert.are_equal(0, #vim.tbl_keys(decoded))  -- empty table
+            local count = 0
+            for _ in pairs(decoded) do count = count + 1 end
+            assert.are_equal(0, count)  -- empty table
         end)
 
         it("handles empty string", function()
             local decoded = utils.decode_jsonb("")
-            assert.are_equal(0, #vim.tbl_keys(decoded))
+            local count = 0
+            for _ in pairs(decoded) do count = count + 1 end
+            assert.are_equal(0, count)
         end)
     end)
 
