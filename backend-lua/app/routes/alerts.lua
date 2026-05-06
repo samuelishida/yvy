@@ -61,8 +61,19 @@ local function haversine_km(lat1, lon1, lat2, lon2)
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 end
 
+local function is_in_brazil_bbox(lat, lon)
+    return lat >= -34 and lat <= 5.5 and lon >= -74 and lon <= -28
+end
+
 local function meta_for_fire(lat, lon)
-    return biome_lookup.classify_point(lat, lon) or "Brasil"
+    local biome = biome_lookup.classify_point(lat, lon)
+    if biome then
+        return biome
+    end
+    if is_in_brazil_bbox(lat, lon) then
+        return "Brasil"
+    end
+    return "América do Sul"
 end
 
 -- ── Time utilities ───────────────────────────────────────────────────────
@@ -95,292 +106,328 @@ local function hours_ago(ts)
     return (os.time() - ts) / 3600
 end
 
--- ── Cluster detection ────────────────────────────────────────────────────
+local function ts_label(generated_at)
+    local total_s = os.time() - generated_at
+    if total_s < 3600 then
+        return math.max(1, math.floor(total_s / 60)) .. "m"
+    elseif total_s < 86400 then
+        return math.floor(total_s / 3600) .. "h"
+    else
+        return math.floor(total_s / 86400) .. "d"
+    end
+end
 
-local function find_clusters(fires)
+-- ── Clustering (greedy O(n²), same as Python) ───────────────────────────
+
+local function cluster_fires(candidates, radius_km, min_count, window_hours)
     local now = os.time()
+    local cutoff = now - window_hours * 3600
+
     local recent = {}
-
-    -- Filter to recent fires with high/nominal confidence
-    for _, fire in ipairs(fires) do
-        local ts = parse_fire_time(fire)
-        if ts and hours_ago(ts) <= CLUSTER_WINDOW_HOURS then
-            local conf = (fire.confidence or ""):lower()
-            if conf == "high" or conf == "nominal" or conf == "n" or conf == "h" then
-                recent[#recent + 1] = fire
-            end
+    for _, f in ipairs(candidates) do
+        local t = parse_fire_time(f)
+        if t and t >= cutoff then
+            recent[#recent + 1] = f
         end
     end
 
-    -- Union-Find for clustering
-    local parent = {}
-    local function find(i)
-        while parent[i] and parent[i] ~= i do
-            parent[i] = parent[parent[i]] or parent[i]
-            i = parent[i]
-        end
-        return i
-    end
-    local function union(i, j)
-        local ri, rj = find(i), find(j)
-        if ri ~= rj then parent[ri] = rj end
-    end
-
-    -- Connect fires within radius
-    for i = 1, #recent do
-        parent[i] = i
-    end
-    for i = 1, #recent do
-        for j = i + 1, #recent do
-            local d = haversine_km(
-                recent[i].lat, recent[i].lon,
-                recent[j].lat, recent[j].lon
-            )
-            if d <= CLUSTER_RADIUS_KM then
-                union(i, j)
-            end
-        end
-    end
-
-    -- Collect clusters
+    local assigned = {}
+    for i = 1, #recent do assigned[i] = false end
     local clusters = {}
-    for i = 1, #recent do
-        local root = find(i)
-        if not clusters[root] then
-            clusters[root] = {}
-        end
-        clusters[root][#clusters[root] + 1] = recent[i]
-    end
 
-    -- Filter to clusters with >= MIN_FIRES
-    local alerts = {}
-    for _, cluster in pairs(clusters) do
-        if #cluster >= CLUSTER_MIN_FIRES then
-            -- Compute centroid
-            local sum_lat, sum_lon = 0, 0
-            for _, f in ipairs(cluster) do
-                sum_lat = sum_lat + f.lat
-                sum_lon = sum_lon + f.lon
+    for i, seed in ipairs(recent) do
+        if not assigned[i] then
+            local cluster = {seed}
+            assigned[i] = true
+            for j, other in ipairs(recent) do
+                if not assigned[j] then
+                    if haversine_km(seed.lat, seed.lon, other.lat, other.lon) <= radius_km then
+                        cluster[#cluster + 1] = other
+                        assigned[j] = true
+                    end
+                end
             end
-            local center_lat = sum_lat / #cluster
-            local center_lon = sum_lon / #cluster
-
-            local loc = meta_for_fire(center_lat, center_lon)
-            alerts[#alerts + 1] = {
-                type = "cluster",
-                severity = "high",
-                title = "Cluster de queimadas",
-                title_en = "Fire cluster",
-                description = #cluster .. " focos de calor em " .. loc,
-                description_en = #cluster .. " fire hotspots in " .. loc,
-                lat = center_lat,
-                lon = center_lon,
-                count = #cluster,
-                meta = loc,
-                state = "",
-                location = loc,
-            }
+            if #cluster >= min_count then
+                clusters[#clusters + 1] = cluster
+            end
         end
     end
 
-    return alerts
+    -- Sort by size descending
+    table.sort(clusters, function(a, b) return #a > #b end)
+    return clusters
 end
 
--- ── Night fire detection ─────────────────────────────────────────────────
+-- ── Alert generators ─────────────────────────────────────────────────────
 
-local function find_night_fires(fires)
+local function cluster_alerts(fires)
+    local candidates = {}
+    for _, f in ipairs(fires) do
+        local conf = (f.confidence or ""):lower()
+        if conf == "high" or conf == "nominal" or conf == "h" or conf == "n" then
+            candidates[#candidates + 1] = f
+        end
+    end
+
+    local clusters = cluster_fires(candidates, CLUSTER_RADIUS_KM, CLUSTER_MIN_FIRES, CLUSTER_WINDOW_HOURS)
     local now = os.time()
-    local night_fires = {}
-
-    for _, fire in ipairs(fires) do
-        local ts = parse_fire_time(fire)
-        if ts and hours_ago(ts) <= NIGHT_WINDOW_HOURS and is_night(fire.acq_time or "") then
-            night_fires[#night_fires + 1] = fire
-        end
-    end
-
-    -- Union-Find
-    local parent = {}
-    local function find(i)
-        while parent[i] and parent[i] ~= i do
-            parent[i] = parent[parent[i]] or parent[i]
-            i = parent[i]
-        end
-        return i
-    end
-    local function union(i, j)
-        local ri, rj = find(i), find(j)
-        if ri ~= rj then parent[ri] = rj end
-    end
-
-    for i = 1, #night_fires do parent[i] = i end
-    for i = 1, #night_fires do
-        for j = i + 1, #night_fires do
-            local d = haversine_km(
-                night_fires[i].lat, night_fires[i].lon,
-                night_fires[j].lat, night_fires[j].lon
-            )
-            if d <= NIGHT_RADIUS_KM then
-                union(i, j)
-            end
-        end
-    end
-
-    local clusters = {}
-    for i = 1, #night_fires do
-        local root = find(i)
-        if not clusters[root] then clusters[root] = {} end
-        clusters[root][#clusters[root] + 1] = night_fires[i]
-    end
-
     local alerts = {}
-    for _, cluster in pairs(clusters) do
-        if #cluster >= NIGHT_MIN_FIRES then
-            local sum_lat, sum_lon = 0, 0
-            for _, f in ipairs(cluster) do
-                sum_lat = sum_lat + f.lat
-                sum_lon = sum_lon + f.lon
-            end
-            local center_lat = sum_lat / #cluster
-            local center_lon = sum_lon / #cluster
 
-            local loc = meta_for_fire(center_lat, center_lon)
-            alerts[#alerts + 1] = {
-                type = "night_fire",
-                severity = "high",
-                title = "Queimadas noturnas",
-                title_en = "Night fires",
-                description = #cluster .. " focos noturnos em " .. loc,
-                description_en = #cluster .. " nighttime fires in " .. loc,
-                lat = center_lat,
-                lon = center_lon,
-                count = #cluster,
-                meta = loc,
-                state = "",
-                location = loc,
-            }
+    for idx = 1, math.min(5, #clusters) do
+        local cluster = clusters[idx]
+        local sum_lat, sum_lon = 0, 0
+        for _, f in ipairs(cluster) do
+            sum_lat = sum_lat + f.lat
+            sum_lon = sum_lon + f.lon
         end
-    end
+        local clat = sum_lat / #cluster
+        local clon = sum_lon / #cluster
 
+        local max_d = 5.0
+        for _, f in ipairs(cluster) do
+            local d = haversine_km(clat, clon, f.lat, f.lon)
+            if d > max_d then max_d = d end
+        end
+        local radius_km = math.max(5.0, max_d)
+
+        local meta = meta_for_fire(clat, clon)
+        alerts[#alerts + 1] = {
+            id = string.format("cluster_%.2f_%.2f", clat, clon),
+            type = "cluster",
+            tick = "crit",
+            meta = meta,
+            state = #cluster .. " focos",
+            center = {clat, clon},
+            radius_km = radius_km,
+            generated_at = now,
+            ts = ts_label(now),
+        }
+    end
     return alerts
 end
 
--- ── Indigenous land / Conservation unit intersection ─────────────────────
-
-local function find_land_alerts(fires)
-    local alerts = {}
-    local seen_ti = {}
-    local seen_uc = {}
-
-    for _, fire in ipairs(fires) do
-        local lat = tonumber(fire.lat)
-        local lon = tonumber(fire.lon)
-        if lat and lon then
-            local ti = ti_lookup.classify_point(lon, lat)
-            if ti then
-                local key = ti.name or "ti"
-                if not seen_ti[key] then
-                    seen_ti[key] = true
-                    alerts[#alerts + 1] = {
-                        type = "indigenous_land",
-                        severity = "critical",
-                        title = "Fogo em Terra Indígena",
-                        title_en = "Fire in Indigenous Land",
-                        description = "Foco detectado na " .. (ti.name or "Terra Indígena") .. " (" .. (ti.state_abbr or "") .. ")",
-                        description_en = "Fire detected in " .. (ti.name or "Indigenous Land") .. " (" .. (ti.state_abbr or "") .. ")",
-                        lat = lat,
-                        lon = lon,
-                        meta = ti.name or "Terra Indígena",
-                        state = ti.state_abbr or "",
-                        location = ti.name or "Terra Indígena",
-                    }
-                end
-            end
-
-            local uc = uc_lookup.classify_point(lon, lat)
-            if uc then
-                local key = uc.name or "uc"
-                if not seen_uc[key] then
-                    seen_uc[key] = true
-                    alerts[#alerts + 1] = {
-                        type = "conservation_unit",
-                        severity = "high",
-                        title = "Fogo em Unidade de Conservação",
-                        title_en = "Fire in Conservation Unit",
-                        description = "Foco detectado na " .. (uc.name or "UC") .. " (" .. (uc.category or "") .. ")",
-                        description_en = "Fire detected in " .. (uc.name or "Conservation Unit") .. " (" .. (uc.category or "") .. ")",
-                        lat = lat,
-                        lon = lon,
-                        meta = uc.name or "Unidade de Conservação",
-                        state = uc.category or "",
-                        location = uc.name or "Unidade de Conservação",
-                    }
-                end
-            end
+local function night_fire_alerts(fires)
+    local candidates = {}
+    for _, f in ipairs(fires) do
+        if is_night(f.acq_time or "") then
+            candidates[#candidates + 1] = f
         end
     end
 
+    local clusters = cluster_fires(candidates, NIGHT_RADIUS_KM, NIGHT_MIN_FIRES, NIGHT_WINDOW_HOURS)
+    local now = os.time()
+    local alerts = {}
+
+    for idx = 1, math.min(5, #clusters) do
+        local cluster = clusters[idx]
+        local sum_lat, sum_lon = 0, 0
+        for _, f in ipairs(cluster) do
+            sum_lat = sum_lat + f.lat
+            sum_lon = sum_lon + f.lon
+        end
+        local clat = sum_lat / #cluster
+        local clon = sum_lon / #cluster
+
+        local max_d = 5.0
+        for _, f in ipairs(cluster) do
+            local d = haversine_km(clat, clon, f.lat, f.lon)
+            if d > max_d then max_d = d end
+        end
+        local radius_km = math.max(5.0, max_d)
+
+        local meta = meta_for_fire(clat, clon)
+        alerts[#alerts + 1] = {
+            id = string.format("night_%.2f_%.2f", clat, clon),
+            type = "night_fire",
+            tick = "warn",
+            meta = meta,
+            state = #cluster .. " focos",
+            center = {clat, clon},
+            radius_km = radius_km,
+            generated_at = now,
+            ts = ts_label(now),
+        }
+    end
     return alerts
 end
 
--- ── PRODES deforestation alerts ──────────────────────────────────────────
-
-local function find_prodes_alerts()
-    local stats = db.get_stats()
-    if stats.deforestation > 0 then
-        return {{
-            type = "prodes",
-            severity = "info",
-            title = "Dados de desmatamento disponíveis",
-            title_en = "Deforestation data available",
-            description = stats.deforestation .. " registros de desmatamento no banco de dados",
-            description_en = stats.deforestation .. " deforestation records in database",
-            lat = -14.235,
-            lon = -51.925,
-            location = "Brasil",
-        }}
+local function indigenous_land_alerts(fires)
+    if not ti_lookup._lands or #ti_lookup._lands == 0 then
+        return {}
     end
-    return {}
+
+    local by_ti = {}
+    for _, fire in ipairs(fires) do
+        local info = ti_lookup.classify_point(fire.lon, fire.lat)
+        if info then
+            local name = info.name
+            if not by_ti[name] then
+                by_ti[name] = {info = info, lats = {}, lons = {}}
+            end
+            local t = by_ti[name]
+            t.lats[#t.lats + 1] = fire.lat
+            t.lons[#t.lons + 1] = fire.lon
+        end
+    end
+
+    -- Sort by fire count descending
+    local sorted = {}
+    for name, data in pairs(by_ti) do
+        sorted[#sorted + 1] = {name = name, data = data}
+    end
+    table.sort(sorted, function(a, b) return #a.data.lats > #b.data.lats end)
+
+    local now = os.time()
+    local alerts = {}
+    for idx = 1, math.min(5, #sorted) do
+        local item = sorted[idx]
+        local info = item.data.info
+        local state_abbr = info.state_abbr or "BR"
+        local state_name = info.state_name or "Brasil"
+        local lats, lons = item.data.lats, item.data.lons
+        local clat = 0; for _, v in ipairs(lats) do clat = clat + v end; clat = clat / #lats
+        local clon = 0; for _, v in ipairs(lons) do clon = clon + v end; clon = clon / #lons
+
+        local max_d = 5.0
+        for i = 1, #lats do
+            local d = haversine_km(clat, clon, lats[i], lons[i])
+            if d > max_d then max_d = d end
+        end
+        local radius_km = math.max(5.0, max_d)
+
+        local meta = state_name .. " · " .. item.name
+        local safe_id = item.name:sub(1, 20):gsub(" ", "_")
+        alerts[#alerts + 1] = {
+            id = "ti_" .. safe_id,
+            type = "indigenous_land",
+            tick = "crit",
+            meta = meta,
+            state = state_abbr .. " · " .. #lats .. " focos",
+            center = {clat, clon},
+            radius_km = radius_km,
+            generated_at = now,
+            ts = ts_label(now),
+        }
+    end
+    return alerts
 end
 
--- ── PM2.5 alerts ─────────────────────────────────────────────────────────
+local function conservation_unit_alerts(fires)
+    if not uc_lookup._units or #uc_lookup._units == 0 then
+        return {}
+    end
 
-local function find_pm25_alerts(waqi_token)
+    local by_uc = {}
+    for _, fire in ipairs(fires) do
+        local info = uc_lookup.classify_point(fire.lon, fire.lat)
+        if info then
+            local name = info.name
+            if not by_uc[name] then
+                by_uc[name] = {info = info, lats = {}, lons = {}}
+            end
+            local t = by_uc[name]
+            t.lats[#t.lats + 1] = fire.lat
+            t.lons[#t.lons + 1] = fire.lon
+        end
+    end
+
+    local sorted = {}
+    for name, data in pairs(by_uc) do
+        sorted[#sorted + 1] = {name = name, data = data}
+    end
+    table.sort(sorted, function(a, b) return #a.data.lats > #b.data.lats end)
+
+    local now = os.time()
     local alerts = {}
+    for idx = 1, math.min(5, #sorted) do
+        local item = sorted[idx]
+        local info = item.data.info
+        local state_abbr = info.state_abbr or "BR"
+        local category = info.category or "UC"
+        local lats, lons = item.data.lats, item.data.lons
+        local clat = 0; for _, v in ipairs(lats) do clat = clat + v end; clat = clat / #lats
+        local clon = 0; for _, v in ipairs(lons) do clon = clon + v end; clon = clon / #lons
+
+        local max_d = 5.0
+        for i = 1, #lats do
+            local d = haversine_km(clat, clon, lats[i], lons[i])
+            if d > max_d then max_d = d end
+        end
+        local radius_km = math.max(5.0, max_d)
+
+        local meta = category .. " · " .. item.name:sub(1, 30)
+        local safe_id = item.name:sub(1, 20):gsub(" ", "_")
+        alerts[#alerts + 1] = {
+            id = "uc_" .. safe_id,
+            type = "conservation_unit",
+            tick = "crit",
+            meta = meta,
+            state = state_abbr .. " · " .. #lats .. " focos",
+            center = {clat, clon},
+            radius_km = radius_km,
+            generated_at = now,
+            ts = ts_label(now),
+        }
+    end
+    return alerts
+end
+
+local function prodes_alerts()
+    local ok, records = pcall(db.find_deforestation, -34.0, 5.5, -74.0, -34.0, 10)
+    if not ok or not records or #records == 0 then
+        return {}
+    end
+
+    local now = os.time()
+    local first = records[1]
+    local meta = meta_for_fire(first.lat or -14.235, first.lon or -51.925)
+    local area_km2 = #records * 2
+
+    return {{
+        id = "prodes_latest",
+        type = "prodes",
+        tick = "info",
+        meta = meta,
+        state = area_km2 .. " km²",
+        center = {first.lat or -14.235, first.lon or -51.925},
+        radius_km = 50,
+        generated_at = now,
+        ts = ts_label(now),
+    }}
+end
+
+local function pm25_alerts(waqi_token)
     local token = waqi_token or os.getenv("WAQI_TOKEN") or "demo"
-
     if token == "" or token == "demo" then
-        return alerts
+        return {}
     end
+
+    local now = os.time()
+    local alerts = {}
 
     for _, station in ipairs(WAQI_STATIONS) do
         local state, city, station_id = station[1], station[2], station[3]
         local url = "https://api.waqi.info/feed/" .. station_id .. "/?token=" .. token
 
-        local res, err = http_client.get(url, {timeout = 10})
+        local res, err = http_client.get(url, {timeout = 8})
         if res and res.status == 200 then
-
             local ok, data = pcall(cjson.decode, res.body)
             if ok and data.status == "ok" then
-
-        local pm25 = data.data and data.data.iaqi and data.data.iaqi.pm25 and data.data.iaqi.pm25.v
-        if pm25 and tonumber(pm25) > PM25_THRESHOLD then
-            alerts[#alerts + 1] = {
-                type = "pm25",
-                severity = "high",
-                title = "Qualidade do ar ruim em " .. city,
-                title_en = "Poor air quality in " .. city,
-                description = "PM2.5: " .. pm25 .. " µg/m³ em " .. city .. ", " .. state,
-                description_en = "PM2.5: " .. pm25 .. " µg/m³ in " .. city .. ", " .. state,
-                lat = data.data.city and data.data.city.geo and data.data.city.geo[1] or 0,
-                lon = data.data.city and data.data.city.geo and data.data.city.geo[2] or 0,
-                pm25 = tonumber(pm25),
-                meta = city,
-                state = state,
-                location = city .. ", " .. state,
-            }
-        end
-
+                local pm25 = data.data and data.data.iaqi and data.data.iaqi.pm25 and data.data.iaqi.pm25.v
+                if pm25 and tonumber(pm25) >= PM25_THRESHOLD then
+                    alerts[#alerts + 1] = {
+                        id = "pm25_" .. station_id,
+                        type = "pm25",
+                        tick = "warn",
+                        meta = state .. " · " .. city,
+                        state = state .. " · " .. pm25 .. " µg/m³",
+                        center = {data.data.city and data.data.city.geo and data.data.city.geo[1] or 0,
+                                  data.data.city and data.data.city.geo and data.data.city.geo[2] or 0},
+                        radius_km = 15,
+                        generated_at = now,
+                        ts = ts_label(now),
+                    }
+                end
             end
         end
     end
@@ -388,75 +435,49 @@ local function find_pm25_alerts(waqi_token)
     return alerts
 end
 
--- ── Generate all alerts ──────────────────────────────────────────────────
-
-local RADIUS_BY_TYPE = {
-    cluster          = CLUSTER_RADIUS_KM,
-    night_fire       = NIGHT_RADIUS_KM,
-    indigenous_land  = 8,
-    conservation_unit= 8,
-    prodes           = 50,
-    pm25             = 15,
-}
-
-local TICK_BY_SEVERITY = {critical = "crit", high = "warn", info = "info"}
-
-local TYPE_PRIORITY = {cluster=1, night_fire=2, pm25=3, indigenous_land=4, conservation_unit=5, prodes=6}
-
--- Cap per-type before merging to prevent one type flooding MAX_ALERTS
-local TYPE_CAP = 5
-
-local function add_common_fields(a, idx)
-    a.id         = a.type .. "_" .. idx
-    a.tick       = TICK_BY_SEVERITY[a.severity] or "info"
-    a.ts         = os.date("!%Y-%m-%dT%H:%M:%SZ")
-    a.center     = {a.lat or 0, a.lon or 0}
-    a.radius_km  = RADIUS_BY_TYPE[a.type] or 10
-    a.meta       = a.meta or a.location or "Brasil"
-    a.state      = a.state or ""
-    return a
-end
+-- ── Public API ───────────────────────────────────────────────────────────
 
 function _M.generate_all_alerts(fires, deforestation_data, waqi_token)
-    local buckets = {}
-
-    local function add_bucket(type_name, list)
-        buckets[#buckets + 1] = {type_name = type_name, list = list}
-    end
-
-    add_bucket("cluster",           find_clusters(fires))
-    add_bucket("night_fire",        find_night_fires(fires))
-    add_bucket("pm25",              find_pm25_alerts(waqi_token))
-    add_bucket("indigenous_land",   find_land_alerts(fires))  -- already deduped
-    add_bucket("prodes",            find_prodes_alerts())
-
-    -- Sort buckets by type priority, then fill up to MAX_ALERTS respecting per-type cap
-    local severity_rank = {critical = 1, high = 2, info = 3}
     local all_alerts = {}
 
-    for _, bucket in ipairs(buckets) do
-        local list = bucket.list
-        -- Sort within bucket by severity
-        table.sort(list, function(a, b)
-            return (severity_rank[a.severity] or 99) < (severity_rank[b.severity] or 99)
-        end)
-        local added = 0
+    -- Fire-based alerts (CPU-bound, no I/O)
+    local function extend(list)
         for _, a in ipairs(list) do
-            if #all_alerts >= MAX_ALERTS then break end
-            if added < TYPE_CAP then
-                all_alerts[#all_alerts + 1] = a
-                added = added + 1
-            end
+            all_alerts[#all_alerts + 1] = a
         end
-        if #all_alerts >= MAX_ALERTS then break end
     end
 
-    -- Add required frontend fields
-    for i, a in ipairs(all_alerts) do
-        add_common_fields(a, i)
+    extend(cluster_alerts(fires))
+    extend(night_fire_alerts(fires))
+    extend(indigenous_land_alerts(fires))
+    extend(conservation_unit_alerts(fires))
+
+    -- Async I/O alerts
+    extend(prodes_alerts())
+    extend(pm25_alerts(waqi_token))
+
+    -- Sort: crit first, then warn, then info; within each tier by id for stability
+    local tier = {crit = 0, warn = 1, info = 2}
+    table.sort(all_alerts, function(a, b)
+        local ta = tier[a.tick] or 9
+        local tb = tier[b.tick] or 9
+        if ta ~= tb then return ta < tb end
+        return (a.id or "") < (b.id or "")
+    end)
+
+    -- Cap
+    if #all_alerts > MAX_ALERTS then
+        local capped = {}
+        for i = 1, MAX_ALERTS do capped[i] = all_alerts[i] end
+        all_alerts = capped
     end
 
-    return {alerts = all_alerts, count = #all_alerts}
+    local now = os.time()
+    return {
+        alerts = all_alerts,
+        count = #all_alerts,
+        generated_at = os.date("!%Y-%m-%dT%H:%M:%SZ", now),
+    }
 end
 
 return _M
