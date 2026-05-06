@@ -19,8 +19,6 @@
         name:
           - git
           - python3
-          - python3-venv
-          - python3-pip
           - redis-server
           - sqlite3
           - curl
@@ -132,10 +130,20 @@
         create: true
       become_user: "{{ yvy_user }}"
 
-    - name: Rodar setup local (venv + node_modules)
+    - name: Rodar setup Lua
       ansible.builtin.command:
-        cmd: bash scripts/setup-local.sh
+        cmd: bash scripts/setup-lua.sh
         chdir: "{{ app_dir }}"
+      become_user: "{{ yvy_user }}"
+
+    - name: Instalar dependencias frontend
+      ansible.builtin.shell:
+        cmd: |
+          export NVM_DIR="{{ nvm_dir }}"
+          [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+          cd {{ app_dir }}/frontend
+          npm ci
+        executable: /bin/bash
       become_user: "{{ yvy_user }}"
 
     - name: Build frontend (produzir static build/)

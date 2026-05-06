@@ -20,6 +20,10 @@ local cjson  = require("cjson")
 local logger = require("app.logger")
 local has_coxpcall, coxpcall = pcall(require, "coxpcall")
 
+if type(cjson.encode_empty_table_as_object) == "function" then
+    cjson.encode_empty_table_as_object(false)
+end
+
 local _M = {}
 local safe_pcall = (has_coxpcall and coxpcall and coxpcall.pcall) or pcall
 

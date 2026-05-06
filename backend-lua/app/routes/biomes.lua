@@ -18,7 +18,8 @@ function _M.get_biomes(ctx)
     if not rl.enforce(ctx) then return end
 
     local cached = redis.get("biomes:all")
-    if cached then ctx:send(200, cached); return end
+    if cached and not cached:find('"biomes"%s*:%s*{}') then ctx:send(200, cached); return end
+    if cached then redis.delete("biomes:all") end
 
     local fires = db.find_fires(-34.0, 5.5, -74.0, -34.0, MAX_RESULTS)
     local result = biome_lookup.classify_fires(fires)

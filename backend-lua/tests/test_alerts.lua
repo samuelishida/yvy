@@ -1,6 +1,6 @@
 -- test_alerts.lua — Tests for alerts.lua
 
-local alerts = require("app.alerts")
+local alerts = require("app.routes.alerts")
 
 describe("alerts", function()
     describe("generate_all_alerts", function()

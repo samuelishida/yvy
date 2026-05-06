@@ -64,10 +64,13 @@ CREATE TABLE IF NOT EXISTS news (
 CREATE INDEX IF NOT EXISTS idx_fire_lat ON fire_data(lat);
 CREATE INDEX IF NOT EXISTS idx_fire_lon ON fire_data(lon);
 CREATE INDEX IF NOT EXISTS idx_fire_acq_date ON fire_data(acq_date);
+CREATE INDEX IF NOT EXISTS idx_fire_bbox_date ON fire_data(lat, lon, acq_date DESC);
 CREATE INDEX IF NOT EXISTS idx_def_lat ON deforestation_data(lat);
 CREATE INDEX IF NOT EXISTS idx_def_lon ON deforestation_data(lon);
+CREATE INDEX IF NOT EXISTS idx_def_bbox ON deforestation_data(lat, lon);
 CREATE INDEX IF NOT EXISTS idx_news_published ON news(publishedAt);
 CREATE INDEX IF NOT EXISTS idx_news_ingested ON news(ingested_at);
+CREATE INDEX IF NOT EXISTS idx_news_page ON news(publishedAt DESC, ingested_at DESC);
 CREATE INDEX IF NOT EXISTS idx_fire_confidence ON fire_data(json_extract(data, '$.confidence'));
 CREATE INDEX IF NOT EXISTS idx_def_name ON deforestation_data(json_extract(data, '$.name'));
 CREATE INDEX IF NOT EXISTS idx_news_source ON news(json_extract(data, '$.source_name'));
@@ -77,6 +80,7 @@ CREATE TABLE IF NOT EXISTS lookup_data (
     data BLOB,
     updated_at TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_lookup_updated ON lookup_data(updated_at);
 ]]
 
 -- ── Connection pool ──────────────────────────────────────────────────────
@@ -239,7 +243,15 @@ function _M.init_db()
         pool_available[#pool_available + 1] = conn
     end
 
+    _M.optimize_db()
+
     logger.info("SQLite initialized at ", DB_PATH, " (JSONB schema, ", POOL_SIZE, " connections)")
+end
+
+function _M.optimize_db()
+    local db = sqlite3.open(DB_PATH)
+    db:exec("PRAGMA optimize")
+    db:close()
 end
 
 function _M.close_db()

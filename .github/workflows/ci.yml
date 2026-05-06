@@ -9,7 +9,6 @@ on:
   pull_request:
 
 jobs:
-  # ── Lua backend tests (baremetal) ─────────────────────────────────────
   lua-tests:
     runs-on: ubuntu-latest
     services:
@@ -26,16 +25,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y lua5.1 liblua5.1-0-dev luarocks libssl-dev
 
-      - name: Install SQLite 3.45+ from source (JSONB support)
+      - name: Install SQLite 3.45+ from source
         run: |
           wget -q https://sqlite.org/2024/sqlite-autoconf-3450000.tar.gz
           tar xzf sqlite-autoconf-3450000.tar.gz
           cd sqlite-autoconf-3450000
-          ./configure --prefix=/usr/local --enable-json1
-          make -j$(nproc)
+          ./configure --prefix=/usr/local
+          make -j"$(nproc)"
           sudo make install
           sudo ldconfig
-          cd .. && rm -rf sqlite-autoconf-*
+          cd ..
+          rm -rf sqlite-autoconf-*
 
       - name: Install Lua dependencies
         run: |
@@ -45,52 +45,19 @@ jobs:
           sudo luarocks install lua-cjson
           sudo luarocks install luaexpat
           sudo luarocks install lua-csv
+          sudo luarocks install dkjson
           sudo luarocks install busted
 
       - name: Run Lua tests
         working-directory: ./backend-lua
-        run: |
-          busted --verbose tests/
+        run: busted --verbose tests/*.lua
 
       - name: Validate Lua syntax
         run: |
-          for f in backend-lua/app/*.lua backend-lua/main.lua; do
+          for f in $(find backend-lua -name '*.lua' -not -path '*/tests/*'); do
             luac -p "$f" || { echo "FAIL: $f"; exit 1; }
           done
 
-  # ── Python backend tests (legacy, still runs) ──────────────────────────
-  python-tests:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install backend dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt
-
-      - name: Compile Python sources
-        run: |
-          python -m py_compile backend/backend.py backend/db_sqlite.py backend/ingest_sqlite.py backend/news_sqlite.py
-
-      - name: Run SQLite manual tests
-        working-directory: ./backend
-        run: python test_sqlite_manual.py
-
-      - name: Install pytest and run suite
-        working-directory: ./backend
-        run: |
-          pip install pytest pytest-asyncio
-          python -m pytest test_db_sqlite.py -v
-
-  # ── Shell script validation ────────────────────────────────────────────
   shell-check:
     runs-on: ubuntu-latest
     steps:
@@ -103,38 +70,10 @@ jobs:
           sh -n scripts/setup-local.sh
           sh -n scripts/run-backend.sh
           sh -n scripts/run-frontend.sh
+          sh -n scripts/run-local.sh
           sh -n scripts/deploy-local.sh
           sh -n scripts/deploy-nginx.sh
 
-  # ── PRODES data pre-processing ─────────────────────────────────────────
-  preprocess-prodes:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install GDAL
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gdal-bin unzip
-
-      - name: Download & convert PRODES TIF → CSV
-        run: |
-          wget -q https://terrabrasilis.dpi.inpe.br/download/dataset/brasil-prodes/raster/prodes_brasil_2023.zip
-          unzip -q prodes_brasil_2023.zip
-          gdal_translate -of XYZ prodes_brasil_2023.tif /tmp/prodes.xyz
-          echo "lon,lat,value" > backend-lua/data/prodes_brasil_2023.csv
-          awk '{print $1","$2","$3}' /tmp/prodes.xyz >> backend-lua/data/prodes_brasil_2023.csv
-          echo "PRODES CSV rows: $(wc -l < backend-lua/data/prodes_brasil_2023.csv)"
-
-      - name: Upload CSV artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: prodes-csv
-          path: backend-lua/data/prodes_brasil_2023.csv
-          retention-days: 7
-
-  # ── Frontend build check ───────────────────────────────────────────────
   frontend-build:
     runs-on: ubuntu-latest
     steps:

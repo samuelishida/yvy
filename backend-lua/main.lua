@@ -48,6 +48,15 @@ local function read_json_file(candidates)
     return data or "{}"
 end
 
+local function read_lookup_json(key, candidates)
+    local data = db.get_lookup_data(key)
+    if data then
+        data._updated_at = nil
+        return cjson.encode(data)
+    end
+    return read_json_file(candidates)
+end
+
 -- Health checks
 server.route("GET", "/health", function(ctx)
     ctx:json(200, {status = "healthy", timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")})
@@ -79,7 +88,8 @@ server.route("GET", "/api/alerts", function(ctx)
     if not rl.enforce(ctx) then return end
 
     local cached = redis.get("alerts:all")
-    if cached then ctx:send(200, cached); return end
+    if cached and not cached:find('"alerts"%s*:%s*{}') then ctx:send(200, cached); return end
+    if cached then redis.delete("alerts:all") end
 
     local alerts_mod = require("app.routes.alerts")
     local fires_data = db.find_fires(-34.0, 5.5, -74.0, -34.0, 10000)
@@ -102,7 +112,7 @@ server.route("GET", "/api/weather/temperature", weather.get_temperature)
 -- Indigenous lands
 server.route("GET", "/api/indigenous-lands", function(ctx)
     if not rl.enforce(ctx) then return end
-    ctx:send(200, read_json_file({
+    ctx:send(200, read_lookup_json("indigenous_lands", {
         script_dir .. "data/indigenous_lands.json",
         script_dir .. "../backend/indigenous_lands.json",
         "data/indigenous_lands.json",
@@ -113,7 +123,7 @@ end)
 -- Conservation units
 server.route("GET", "/api/conservation-units", function(ctx)
     if not rl.enforce(ctx) then return end
-    ctx:send(200, read_json_file({
+    ctx:send(200, read_lookup_json("conservation_units", {
         script_dir .. "data/conservation_units.json",
         script_dir .. "../backend/conservation_units.json",
         "data/conservation_units.json",

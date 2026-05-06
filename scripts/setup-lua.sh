@@ -28,7 +28,7 @@ if [ "$OS" = "linux" ]; then
         wget -q "https://sqlite.org/2024/sqlite-autoconf-${SQLITE_VERSION}.tar.gz"
         tar xzf "sqlite-autoconf-${SQLITE_VERSION}.tar.gz"
         cd "sqlite-autoconf-${SQLITE_VERSION}"
-        ./configure --prefix=/usr/local --enable-json1
+        ./configure --prefix=/usr/local
         make -j$(nproc)
         sudo make install
         sudo ldconfig
@@ -46,6 +46,7 @@ sudo luarocks install lsqlite3 SQLITE_DIR=/usr/local
 sudo luarocks install lua-cjson
 sudo luarocks install luaexpat
 sudo luarocks install lua-csv
+sudo luarocks install dkjson
 
 # Test framework
 sudo luarocks install busted

@@ -21,7 +21,7 @@ run-lua:
 	bash scripts/run-lua.sh
 
 test-lua:
-	cd backend-lua && busted --verbose tests/
+	cd backend-lua && busted --verbose tests/*.lua
 
 migrate-lua:
 	cd backend-lua && lua scripts/migrate_to_jsonb.lua --db data/yvy.db --vacuum
