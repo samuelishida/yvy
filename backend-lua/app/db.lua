@@ -20,9 +20,9 @@ local _M = {}
 -- ── Configuration ────────────────────────────────────────────────────────
 
 local DB_PATH = env.get("SQLITE_PATH") or env.first_with_existing_parent({
+    "data/yvy.db",
     "../backend/data/yvy.db",
     "backend/data/yvy.db",
-    "data/yvy.db",
     "/opt/yvy/data/yvy.db",
 })
 local POOL_SIZE = 3  -- connections per nginx worker
