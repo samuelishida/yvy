@@ -1,55 +1,47 @@
--- server.lua — Minimal async HTTP server for baremetal Lua
--- Uses luasocket + copas for cross-platform (Windows + Ubuntu) event loop
--- Replaces nginx.conf + Express proxy
+-- frontend_server.lua — Static file server + API proxy for Yvy frontend
+-- Replaces Node.js/Express server for Lua stack
 --
 -- Features:
---   - Route registration (method + path pattern)
---   - Query string parsing
---   - JSON request/response helpers
---   - Static file serving
+--   - Serve React build static files
+--   - Proxy /api/* to Lua backend with X-API-Key injection
 --   - CORS headers
 --   - Gzip compression (if lua-zlib available)
 --   - Security headers
 
-local env    = require("app.env")
-local copas  = require("copas")
+local env = require("app.env")
+local copas = require("copas")
 local socket = require("socket")
-local http   = require("socket.http")
-local url    = require("socket.url")
-local cjson  = require("cjson")
+local http = require("socket.http")
+local url = require("socket.url")
+local ltn12 = require("ltn12")
+local cjson = require("cjson")
 local logger = require("app.logger")
-local has_coxpcall, coxpcall = pcall(require, "coxpcall")
 
 local _M = {}
-local safe_pcall = (has_coxpcall and coxpcall and coxpcall.pcall) or pcall
 
 -- ── Configuration ────────────────────────────────────────────────────────
 
-local PORT = tonumber(os.getenv("PORT") or "5000")
-local HOST = os.getenv("HOST") or "127.0.0.1"
-local CORS_ORIGINS = os.getenv("CORS_ORIGINS") or "http://localhost:5001,http://127.0.0.1:5001,http://localhost:3000"
+local PORT = tonumber(os.getenv("PORT") or "5001")
+local BACKEND_URL = os.getenv("BACKEND_URL") or "http://127.0.0.1:5000"
+local API_KEY = os.getenv("API_KEY") or ""
 local STATIC_DIR = os.getenv("STATIC_DIR") or env.first_existing({
     "../frontend/build",
     "frontend/build",
     "/opt/yvy/frontend/build",
 }) or "../frontend/build"
 
--- Security limits
-local MAX_REQUEST_SIZE = tonumber(os.getenv("MAX_REQUEST_SIZE") or "1048576")  -- 1MB default
-local MAX_URI_LENGTH = tonumber(os.getenv("MAX_URI_LENGTH") or "2048")  -- 2KB
-local CLIENT_TIMEOUT = tonumber(os.getenv("CLIENT_TIMEOUT_SECONDS") or "5")
+local CORS_ORIGINS = os.getenv("CORS_ORIGINS") or "http://localhost:5001,http://127.0.0.1:5001,http://localhost:3000"
 
 -- Parse CORS origins
 local cors_origins = {}
-for origin in (CORS_ORIGINS .. ","):gmatch("([^,]+),") do
-    origin = origin:gsub("^%s+", ""):gsub("%s+$", "")
+for o in (CORS_ORIGINS .. ","):gmatch("([^,]+),") do
+    local origin = o:gsub("^%s+", ""):gsub("%s+$", "")
     if origin ~= "" then
         cors_origins[origin] = true
     end
 end
 
--- ── Security headers ─────────────────────────────────────────────────────
-
+-- Security headers
 local SECURITY_HEADERS = {
     ["X-Content-Type-Options"] = "nosniff",
     ["X-Frame-Options"] = "DENY",
@@ -58,29 +50,22 @@ local SECURITY_HEADERS = {
     ["Content-Security-Policy"] = "default-src 'self'; img-src 'self' data: https://tile.openstreetmap.org https://*.tile.openstreetmap.org; style-src 'self' 'unsafe-inline' https://stackpath.bootstrapcdn.com https://cdn.jsdelivr.net https://unpkg.com; script-src 'self' 'unsafe-inline' https://code.jquery.com https://cdn.jsdelivr.net https://unpkg.com; font-src 'self' https://stackpath.bootstrapcdn.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 }
 
--- ── Route table ──────────────────────────────────────────────────────────
+-- MIME types
+local mime_types = {
+    html = "text/html", htm = "text/html",
+    css = "text/css", js = "application/javascript",
+    json = "application/json", xml = "application/xml",
+    png = "image/png", jpg = "image/jpeg", jpeg = "image/jpeg",
+    gif = "image/gif", svg = "image/svg+xml", ico = "image/x-icon",
+    woff = "font/woff", woff2 = "font/woff2",
+    txt = "text/plain", pdf = "application/pdf",
+}
 
--- routes[method][path] = handler
--- Special: routes["GET"]["*"] = static file fallback
-local routes = {}
-
-function _M.route(method, path, handler)
-    method = method:upper()
-    if not routes[method] then routes[method] = {} end
-    routes[method][path] = handler
-end
-
--- ── Request object ───────────────────────────────────────────────────────
+-- ── Request parsing ──────────────────────────────────────────────────────
 
 local function parse_request(skt)
-    -- Read request line
     local line, err = skt:receive("*l")
     if not line then return nil, err end
-
-    -- Validate request line length (DoS protection)
-    if #line > MAX_URI_LENGTH then
-        return nil, "request line too long (max " .. MAX_URI_LENGTH .. " bytes)"
-    end
 
     local method, path, _ = line:match("^(%w+)%s+(%S+)%s+(%S+)$")
     if not method then return nil, "bad request line: " .. line end
@@ -117,12 +102,6 @@ local function parse_request(skt)
     -- Read body if Content-Length present
     local body = ""
     local content_length = tonumber(headers["content-length"] or "0")
-    
-    -- Validate request size (DoS protection)
-    if content_length > MAX_REQUEST_SIZE then
-        return nil, "request body too large (max " .. MAX_REQUEST_SIZE .. " bytes)"
-    end
-    
     if content_length > 0 then
         body, err = skt:receive(content_length)
         if not body then return nil, err end
@@ -142,16 +121,16 @@ end
 -- ── Response helpers ─────────────────────────────────────────────────────
 
 local function send_response(skt, status, body, content_type, extra_headers)
-    content_type = content_type or "application/json"
+    content_type = content_type or "application/octet-stream"
     extra_headers = extra_headers or {}
-    extra_headers["Connection"] = extra_headers["Connection"] or "close"
 
     local response_lines = {
         "HTTP/1.1 " .. status .. " " .. ({
             [200] = "OK", [201] = "Created", [204] = "No Content",
-            [400] = "Bad Request", [401] = "Unauthorized", [404] = "Not Found",
-            [429] = "Too Many Requests", [500] = "Internal Server Error",
-            [502] = "Bad Gateway", [503] = "Service Unavailable",
+            [301] = "Moved Permanently", [302] = "Found", [304] = "Not Modified",
+            [400] = "Bad Request", [401] = "Unauthorized", [403] = "Forbidden",
+            [404] = "Not Found", [429] = "Too Many Requests",
+            [500] = "Internal Server Error", [502] = "Bad Gateway",
         })[status] or "Unknown",
     }
 
@@ -175,26 +154,12 @@ local function send_response(skt, status, body, content_type, extra_headers)
     skt:send(table.concat(response_lines, "\r\n"))
 end
 
-local function json_response(skt, status, data, extra_headers)
-    local body = cjson.encode(data)
+local function error_response(skt, status, message, extra_headers)
+    local body = cjson.encode({error = message})
     send_response(skt, status, body, "application/json", extra_headers)
 end
 
-local function error_response(skt, status, message, extra_headers)
-    json_response(skt, status, {error = message}, extra_headers)
-end
-
 -- ── Static file serving ──────────────────────────────────────────────────
-
-local mime_types = {
-    html = "text/html", htm = "text/html",
-    css = "text/css", js = "application/javascript",
-    json = "application/json", xml = "application/xml",
-    png = "image/png", jpg = "image/jpeg", jpeg = "image/jpeg",
-    gif = "image/gif", svg = "image/svg+xml", ico = "image/x-icon",
-    woff = "font/woff", woff2 = "font/woff2",
-    txt = "text/plain", pdf = "application/pdf",
-}
 
 local function serve_static(skt, req)
     local file_path = STATIC_DIR .. req.path
@@ -223,9 +188,99 @@ local function serve_static(skt, req)
     return 200, #content
 end
 
--- ── CORS handling ────────────────────────────────────────────────────────
+-- ── API Proxy ────────────────────────────────────────────────────────────
 
-local function add_cors_headers(req, extra_headers)
+local function proxy_api(skt, req)
+    -- Build backend path
+    local backend_path = req.path
+    if req.query_string ~= "" then
+        backend_path = backend_path .. "?" .. req.query_string
+    end
+
+    -- Prepare headers
+    local proxy_headers = {}
+    for k, v in pairs(req.headers) do
+        local key = k:lower()
+        if key ~= "host" and key ~= "connection" and key ~= "proxy-connection" then
+            proxy_headers[k] = v
+        end
+    end
+    proxy_headers["Host"] = BACKEND_URL:match("https?://([^/]+)") or "127.0.0.1"
+    proxy_headers["Connection"] = "close"
+
+    -- Inject API key
+    if API_KEY ~= "" then
+        proxy_headers["X-API-Key"] = API_KEY
+    end
+
+    -- Parse backend URL
+    local backend_host = BACKEND_URL:match("https?://([^:/]+)")
+    local backend_port = tonumber(BACKEND_URL:match("https?://[^:]+:(%d+)") or "5000")
+    
+    logger.debug("Proxying to " .. backend_host .. ":" .. backend_port .. backend_path)
+
+    -- Make direct socket request (copas-compatible)
+    local ok, result = pcall(function()
+        local s = socket.tcp()
+        copas.wrap(s)
+        s:settimeout(10)
+
+        local ok, err = s:connect(backend_host, backend_port)
+        if not ok then error("Connection failed: " .. tostring(err)) end
+
+        -- Send HTTP request
+        s:send(req.method .. " " .. backend_path .. " HTTP/1.1\r\n")
+        for k, v in pairs(proxy_headers) do
+            s:send(k .. ": " .. tostring(v) .. "\r\n")
+        end
+        s:send("\r\n")
+
+        if req.body ~= "" and req.method ~= "GET" then
+            s:send(req.body)
+        end
+
+        -- Read response
+        local response = s:receive("*a")
+        s:close()
+
+        -- Parse response
+        local status_line, headers_str, body = response:match("^(HTTP/1%.[01] %d+ .-\r\n)(.-)\r\n\r\n(.*)$")
+        if not status_line then
+            error("Invalid response format")
+        end
+
+        local code = tonumber(status_line:match("HTTP/1%.[01] (%d+)"))
+        local resp_headers = {}
+        for key, value in headers_str:gmatch("([^:]+):%s*(.-)\r\n") do
+            resp_headers[key:lower()] = value
+        end
+
+        return code, resp_headers, body
+    end)
+
+    if not ok then
+        logger.error("Backend proxy error: " .. tostring(result))
+        error_response(skt, 502, "Bad Gateway")
+        return 502, 0
+    end
+
+    local code, resp_headers, body = ok, result, nil
+    if type(result) == "number" then
+        code, resp_headers, body = result, select(2, result)
+    end
+
+    -- Forward response
+    local extra_headers = {}
+    if resp_headers then
+        if resp_headers["content-type"] then
+            extra_headers["Content-Type"] = resp_headers["content-type"]
+        end
+        if resp_headers["cache-control"] then
+            extra_headers["Cache-Control"] = resp_headers["cache-control"]
+        end
+    end
+
+    -- Add CORS headers
     local origin = req.headers["origin"] or ""
     if cors_origins[origin] or cors_origins["*"] then
         extra_headers["Access-Control-Allow-Origin"] = origin
@@ -233,21 +288,19 @@ local function add_cors_headers(req, extra_headers)
         extra_headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-API-Key"
         extra_headers["Access-Control-Max-Age"] = "86400"
     end
+
+    send_response(skt, code or 200, body or "", nil, extra_headers)
+    return code or 200, body and #body or 0
 end
 
--- ── Request handler (dispatched by copas) ────────────────────────────────
+-- ── Request handler ──────────────────────────────────────────────────────
 
 local function handle_request(skt)
     local start_time = socket.gettime()
-    pcall(function()
-        skt:settimeout(CLIENT_TIMEOUT)
-    end)
 
     local req, err = parse_request(skt)
     if not req then
-        if err ~= "timeout" then
-            logger.warn("Failed to parse request: " .. tostring(err))
-        end
+        logger.warn("Failed to parse request: " .. tostring(err))
         skt:close()
         return
     end
@@ -255,102 +308,47 @@ local function handle_request(skt)
     -- Handle OPTIONS (CORS preflight)
     if req.method == "OPTIONS" then
         local extra = {}
-        add_cors_headers(req, extra)
+        local origin = req.headers["origin"] or ""
+        if cors_origins[origin] or cors_origins["*"] then
+            extra["Access-Control-Allow-Origin"] = origin
+            extra["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            extra["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-API-Key"
+            extra["Access-Control-Max-Age"] = "86400"
+        end
         send_response(skt, 204, "", "text/plain", extra)
         local duration = math.floor((socket.gettime() - start_time) * 1000)
         logger.request(req.method, req.path, 204, duration, req.remote_addr, 0)
-        skt:close()
         return
     end
 
-    -- Find route handler
-    local method_routes = routes[req.method]
-    local handler = method_routes and method_routes[req.path]
     local status_code = 200
     local bytes_sent = 0
 
-    if handler then
-        local ctx
-        local ok, err_or_status = safe_pcall(function()
-            -- Create a response context
-            ctx = {
-                req = req,
-                skt = skt,
-                status = 200,
-                _headers = {},
-                _sent = false,
-                _status_code = 200,
-                _bytes_sent = 0,
-            }
-
-            function ctx:send(status, body, content_type)
-                body = body or ""
-                self._sent = true
-                self._status_code = status
-                self._bytes_sent = #body
-                add_cors_headers(req, self._headers)
-                send_response(skt, status, body, content_type or "application/json", self._headers)
-            end
-
-            function ctx:json(status, data)
-                local body = cjson.encode(data)
-                self._sent = true
-                self._status_code = status
-                self._bytes_sent = #body
-                add_cors_headers(req, self._headers)
-                send_response(skt, status, body, "application/json", self._headers)
-            end
-
-            function ctx:error(status, msg)
-                self._sent = true
-                self._status_code = status
-                add_cors_headers(req, self._headers)
-                error_response(skt, status, msg, self._headers)
-            end
-
-            function ctx:set_header(k, v)
-                self._headers[k] = v
-            end
-
-            return handler(ctx)
-        end)
-
-        if not ok then
-            logger.error("Handler error: " .. tostring(err_or_status))
-            status_code = 500
-            if not ctx or not ctx._sent then
-                error_response(skt, 500, "Internal server error")
-            end
-        elseif ctx then
-            status_code = ctx._status_code or 200
-            bytes_sent = ctx._bytes_sent or 0
-        end
+    -- Route: /api/* → proxy to backend
+    if req.path:sub(1, 4) == "/api" then
+        status_code, bytes_sent = proxy_api(skt, req)
     else
-        -- Try static file serving for GET requests
-        if req.method == "GET" then
-            status_code, bytes_sent = serve_static(skt, req)
-        else
-            status_code = 404
-            error_response(skt, 404, "Not found")
-        end
+        -- Static file serving
+        status_code, bytes_sent = serve_static(skt, req)
     end
 
     local duration = math.floor((socket.gettime() - start_time) * 1000)
     logger.request(req.method, req.path, status_code, duration, req.remote_addr, bytes_sent)
-    skt:close()
 end
 
 -- ── Start server ─────────────────────────────────────────────────────────
 
 function _M.start()
-    logger.info("Yvy backend (Lua baremetal) starting on " .. HOST .. ":" .. PORT)
+    logger.info("Yvy frontend (Lua) starting on port " .. PORT)
+    logger.info("Serving static files from: " .. STATIC_DIR)
+    logger.info("Proxying /api/* to: " .. BACKEND_URL)
 
     local server_skt = socket.tcp()
-    assert(server_skt:bind(HOST, PORT))
+    assert(server_skt:bind("*", PORT))
     server_skt:listen(128)
 
     copas.addserver(server_skt, handle_request)
-    logger.info("Server listening on " .. HOST .. ":" .. PORT)
+    logger.info("Frontend listening on :" .. PORT)
 
     copas.loop()
 end

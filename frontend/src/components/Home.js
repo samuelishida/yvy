@@ -667,11 +667,12 @@ export default function Home() {
 
   // Fire data (cached 4h)
   useEffect(() => {
+    const validFire = f => f.lat != null && f.lon != null;
     const cached = getCache('fires', 240);
-    if (cached) setFires(cached.fires || []);
+    if (cached) setFires((cached.fires || []).filter(validFire));
     fetch('/api/fires')
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then(d => { const f = d.fires || []; setFires(f); setCache('fires', { fires: f, last_sync: d.last_sync }); })
+      .then(d => { const f = (d.fires || []).filter(validFire); setFires(f); setCache('fires', { fires: f, last_sync: d.last_sync }); })
       .catch(() => { if (!cached) setFires([]); });
   }, []);
 
@@ -724,12 +725,13 @@ export default function Home() {
   useEffect(() => {
     if (!showDeforest || deforestFetchedRef.current) return;
     deforestFetchedRef.current = true;
+    const validRec = r => r.lat != null && r.lon != null;
     const cached = getCache('prodes_records', 15);
-    if (cached) { setRecords(cached); return; }
+    if (cached) { setRecords(cached.filter(validRec)); return; }
     setLoading(true);
     fetch('/api/data')
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then(d => { const rows = Array.isArray(d) ? d : []; setRecords(rows); setCache('prodes_records', rows); setLoading(false); })
+      .then(d => { const rows = (Array.isArray(d) ? d : []).filter(validRec); setRecords(rows); setCache('prodes_records', rows); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });
   }, [showDeforest]);
 

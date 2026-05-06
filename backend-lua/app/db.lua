@@ -9,6 +9,7 @@
 --   deforestation_data: lat, lon                        | data BLOB
 --   news:               url, publishedAt, ingested_at   | data BLOB
 
+local env     = require("app.env")
 local sqlite3 = require("lsqlite3")
 local utils   = require("app.utils")
 local cjson   = require("cjson")
@@ -18,7 +19,12 @@ local _M = {}
 
 -- ── Configuration ────────────────────────────────────────────────────────
 
-local DB_PATH = os.getenv("SQLITE_PATH") or "/opt/yvy/data/yvy.db"
+local DB_PATH = env.get("SQLITE_PATH") or env.first_with_existing_parent({
+    "../backend/data/yvy.db",
+    "backend/data/yvy.db",
+    "data/yvy.db",
+    "/opt/yvy/data/yvy.db",
+})
 local POOL_SIZE = 3  -- connections per nginx worker
 
 -- ── Schema ───────────────────────────────────────────────────────────────
@@ -65,13 +71,11 @@ CREATE INDEX IF NOT EXISTS idx_news_source ON news(json_extract(data, '$.source_
 
 local pool = {}
 local pool_available = {}
-local pool_mutex = false  -- simple spinlock for pool access
+-- No spinlock needed - copas coroutines yield during I/O, not during pool access
+-- Pool operations are atomic within a single coroutine
 
 local function pool_acquire()
-    while pool_mutex do end  -- spin (queries are fast, contention is rare)
-    pool_mutex = true
     local conn = table.remove(pool_available)
-    pool_mutex = false
     if conn then return conn end
 
     -- All connections busy; create a temporary one
@@ -84,35 +88,19 @@ local function pool_acquire()
 end
 
 local function pool_release(conn)
-    while pool_mutex do end
-    pool_mutex = true
     if #pool_available < POOL_SIZE then
         pool_available[#pool_available + 1] = conn
-        conn = nil
+    else
+        conn:close()
     end
-    pool_mutex = false
-    if conn then conn:close() end
 end
 
 -- ── Row helper ───────────────────────────────────────────────────────────
 
-local function row_to_dict(stmt)
-    """Convert current statement row to a Lua table keyed by column name."""
-    local row = {}
-    local cols = stmt:get_columns()
-    local values = stmt:get_values()
-    if not cols or not values then return nil end
-    for i, col in ipairs(cols) do
-        row[col] = values[i]
-    end
-    return row
-end
-
 local function fetch_all(db, sql, params)
-    """Execute SQL, return all rows as array of dicts."""
     local stmt = db:prepare(sql)
     if not stmt then
-        logger.error("SQL prepare failed: ", db:errmsg(), " | SQL: ", sql)
+        logger.error("SQL prepare failed: " .. tostring(db:errmsg()) .. " | SQL: " .. sql)
         return {}
     end
 
@@ -127,7 +115,7 @@ local function fetch_all(db, sql, params)
     end
 
     local rows = {}
-    for row in stmt:rows() do
+    for row in stmt:nrows() do
         rows[#rows + 1] = row
     end
     stmt:finalize()
@@ -135,16 +123,14 @@ local function fetch_all(db, sql, params)
 end
 
 local function fetch_one(db, sql, params)
-    """Execute SQL, return first row as dict or nil."""
     local rows = fetch_all(db, sql, params)
     return rows[1]
 end
 
 local function exec_write(db, sql, params)
-    """Execute a write SQL statement with params."""
     local stmt = db:prepare(sql)
     if not stmt then
-        logger.error("SQL prepare failed: ", db:errmsg(), " | SQL: ", sql)
+        logger.error("SQL prepare failed: " .. tostring(db:errmsg()) .. " | SQL: " .. sql)
         return false, db:errmsg()
     end
 
@@ -163,7 +149,7 @@ local function exec_write(db, sql, params)
     local ok, err = stmt:step()
     stmt:finalize()
     if ok ~= sqlite3.DONE then
-        logger.error("SQL exec failed: ", err or db:errmsg(), " | SQL: ", sql)
+        logger.error("SQL exec failed: " .. tostring(err or db:errmsg()) .. " | SQL: " .. sql)
         return false, err or db:errmsg()
     end
     return true
@@ -180,7 +166,7 @@ local function check_sqlite_version(db)
     major, minor = tonumber(major), tonumber(minor)
     local version_num = major * 10000 + minor * 100
     if version_num < 34500 then
-        logger.warn("SQLite ", ver, " does not support JSONB (need >= 3.45.0)")
+        logger.warn("SQLite " .. ver .. " does not support JSONB (need >= 3.45.0)")
         return false
     end
     logger.info("SQLite ", ver, " — JSONB supported")
@@ -190,10 +176,15 @@ end
 -- ── Init / Close ─────────────────────────────────────────────────────────
 
 function _M.init_db()
-    """Create tables and connection pool. Auto-migrates legacy schema."""
     -- Ensure directory exists
     local dir = DB_PATH:match("^(.*)[/\\]")
-    if dir then os.execute("mkdir -p " .. dir) end
+    if dir then
+        if package.config:sub(1, 1) == "\\" then
+            os.execute('mkdir "' .. dir .. '" >NUL 2>NUL')
+        else
+            os.execute('mkdir -p "' .. dir .. '" >/dev/null 2>&1')
+        end
+    end
 
     -- Check for legacy schema
     local needs_migration = false
@@ -249,7 +240,6 @@ end
 -- ── Fire data ────────────────────────────────────────────────────────────
 
 function _M.bulk_upsert_fires(docs)
-    """Insert or update fire records. Returns count."""
     if not docs or #docs == 0 then return 0 end
 
     local db = pool_acquire()
@@ -282,7 +272,6 @@ function _M.bulk_upsert_fires(docs)
 end
 
 function _M.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit)
-    """Find fires within bounding box. Returns array of dicts."""
     limit = limit or 10000
     local db = pool_acquire()
 
@@ -314,11 +303,11 @@ function _M.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit)
 end
 
 function _M.prune_old_fires(days)
-    """Delete fire records older than `days`. Returns count deleted."""
     days = days or 90
     local cutoff = os.date("!%Y-%m-%dT%H:%M:%SZ", os.time() - days * 86400)
     local db = pool_acquire()
 
+    db:exec("BEGIN")
     local sql = "DELETE FROM fire_data WHERE ingested_at < ?"
     exec_write(db, sql, {cutoff})
     local count = db:changes()
@@ -330,7 +319,6 @@ end
 -- ── Deforestation data ───────────────────────────────────────────────────
 
 function _M.bulk_upsert_deforestation(docs)
-    """Insert deforestation records. Returns count."""
     if not docs or #docs == 0 then return 0 end
 
     local db = pool_acquire()
@@ -360,7 +348,6 @@ function _M.bulk_upsert_deforestation(docs)
 end
 
 function _M.find_deforestation(sw_lat, ne_lat, sw_lng, ne_lng, limit)
-    """Find deforestation records within bounding box."""
     limit = limit or 10000
     local db = pool_acquire()
 
@@ -394,7 +381,6 @@ end
 -- ── News ─────────────────────────────────────────────────────────────────
 
 function _M.bulk_upsert_news(articles)
-    """Insert or update news articles. Returns count."""
     if not articles or #articles == 0 then return 0 end
 
     local db = pool_acquire()
@@ -436,7 +422,6 @@ function _M.bulk_upsert_news(articles)
 end
 
 function _M.get_news_page(page, page_size, lang)
-    """Get paginated news articles. lang: 'pt' or 'en'."""
     page = page or 1
     page_size = page_size or 20
     lang = lang or "pt"
@@ -486,7 +471,6 @@ function _M.get_news_page(page, page_size, lang)
 end
 
 function _M.has_recent_news(minutes)
-    """Check if there are news ingested within the last N minutes."""
     minutes = minutes or 15
     local cutoff = os.date("!%Y-%m-%dT%H:%M:%SZ", os.time() - minutes * 60)
     local db = pool_acquire()
@@ -505,9 +489,6 @@ end
 -- ── News field access (for translation repair) ───────────────────────────
 
 function _M.get_news_fields_by_urls(urls, fields)
-    """Fetch specific JSONB fields for given URLs.
-    Returns {[url] = {field = value, ...}}
-    """
     if not urls or #urls == 0 then return {} end
 
     local db = pool_acquire()
@@ -533,7 +514,6 @@ function _M.get_news_fields_by_urls(urls, fields)
 end
 
 function _M.update_news_fields(url, updates)
-    """Update specific JSONB fields in a news article."""
     local db = pool_acquire()
 
     local row = fetch_one(db, "SELECT json(data) AS data_json FROM news WHERE url = ?", {url})
@@ -548,13 +528,13 @@ function _M.update_news_fields(url, updates)
     end
 
     local data_json = utils.encode_jsonb(current)
+    db:exec("BEGIN")
     exec_write(db, "UPDATE news SET data = jsonb(?) WHERE url = ?", {data_json, url})
     db:exec("COMMIT")
     pool_release(db)
 end
 
 function _M.clear_news_fields(urls, fields)
-    """Set specific JSONB fields to NULL for given URLs."""
     if not urls or #urls == 0 then return end
 
     local db = pool_acquire()
@@ -595,7 +575,6 @@ end
 -- ── Migration ────────────────────────────────────────────────────────────
 
 function _M.migrate_to_jsonb()
-    """Rebuild tables from legacy flat-column schema to JSONB."""
     local db = sqlite3.open(DB_PATH)
     check_sqlite_version(db)
 

@@ -1,6 +1,7 @@
 -- indigenous_lands_lookup.lua — TI point-in-polygon lookup
 -- Port of backend/indigenous_lands_lookup.py
 
+local env    = require("app.env")
 local geo    = require("app.geo")
 local cjson  = require("cjson")
 local logger = require("app.logger")
@@ -12,21 +13,20 @@ local lands = {}
 
 function _M.load_indigenous_lands()
     local paths = {
-        os.getenv("INDIGENOUS_LANDS_PATH") or "",
+        env.get("INDIGENOUS_LANDS_PATH") or "",
         "/opt/yvy/backend-lua/data/indigenous_lands.json",
         "/opt/yvy/data/indigenous_lands.json",
         "data/indigenous_lands.json",
+        "../backend/indigenous_lands.json",
     }
 
+    local resolved = env.first_existing(paths)
     local data = nil
-    for _, p in ipairs(paths) do
-        if p ~= "" then
-            local f = io.open(p, "r")
-            if f then
-                data = f:read("*a")
-                f:close()
-                break
-            end
+    if resolved then
+        local f = io.open(resolved, "r")
+        if f then
+            data = f:read("*a")
+            f:close()
         end
     end
 

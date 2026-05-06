@@ -7,28 +7,12 @@
 local script_dir = debug.getinfo(1, "S").source:match("@(.*[/\\])") or ""
 package.path = script_dir .. "?.lua;" .. script_dir .. "?/init.lua;" .. package.path
 
--- Load .env file
-local function load_dotenv(path)
-    local f = io.open(path, "r")
-    if not f then return end
-    for line in f:lines() do
-        line = line:match("^%s*(.-)%s*$")
-        if line ~= "" and not line:match("^#") then
-            local key, value = line:match("^([%w_]+)%s*=%s*(.*)$")
-            if key then
-                value = value:gsub('^"', ""):gsub('"$', ""):gsub("^'", ""):gsub("'$", "")
-                value = value:match("^(.-)%s*#") or value
-                os.setenv(key, value)
-            end
-        end
-    end
-    f:close()
-end
+local env = require("app.env")
 
 -- Try multiple .env locations
-load_dotenv(".env")
-load_dotenv("../.env")
-load_dotenv(script_dir .. "../.env")
+env.load_dotenv(".env")
+env.load_dotenv("../.env")
+env.load_dotenv(script_dir .. "../.env")
 
 local server = require("app.server")
 local init   = require("app.init")
@@ -36,16 +20,33 @@ local logger = require("app.logger")
 
 -- ── Register routes ──────────────────────────────────────────────────────
 
-local fires         = require("app.fires")
-local deforestation = require("app.deforestation")
-local biomes        = require("app.biomes")
-local weather       = require("app.weather")
-local news          = require("app.news")
-local auth          = require("app.auth")
-local rl            = require("app.rate_limit")
+local fires         = require("app.routes.fires")
+local deforestation = require("app.routes.deforestation")
+local biomes        = require("app.routes.biomes")
+local weather       = require("app.routes.weather")
+local news          = require("app.routes.news")
+local alerts        = require("app.routes.alerts")
+local auth          = require("app.middleware.auth")
+local rl            = require("app.middleware.rate_limit")
 local db            = require("app.db")
 local redis         = require("app.redis")
 local cjson         = require("cjson")
+
+local function read_json_file(candidates)
+    local path = env.first_existing(candidates)
+    if not path then
+        return "{}"
+    end
+
+    local file = io.open(path, "r")
+    if not file then
+        return "{}"
+    end
+
+    local data = file:read("*a")
+    file:close()
+    return data or "{}"
+end
 
 -- Health checks
 server.route("GET", "/health", function(ctx)
@@ -80,7 +81,7 @@ server.route("GET", "/api/alerts", function(ctx)
     local cached = redis.get("alerts:all")
     if cached then ctx:send(200, cached); return end
 
-    local alerts_mod = require("app.alerts")
+    local alerts_mod = require("app.routes.alerts")
     local fires_data = db.find_fires(-34.0, 5.5, -74.0, -34.0, 10000)
     local result = alerts_mod.generate_all_alerts(fires_data, nil, os.getenv("WAQI_TOKEN"))
     local body = cjson.encode(result)
@@ -101,17 +102,23 @@ server.route("GET", "/api/weather/temperature", weather.get_temperature)
 -- Indigenous lands
 server.route("GET", "/api/indigenous-lands", function(ctx)
     if not rl.enforce(ctx) then return end
-    local f = io.open(script_dir .. "data/indigenous_lands.json", "r")
-    if f then ctx:send(200, f:read("*a")); f:close()
-    else ctx:send(200, "{}") end
+    ctx:send(200, read_json_file({
+        script_dir .. "data/indigenous_lands.json",
+        script_dir .. "../backend/indigenous_lands.json",
+        "data/indigenous_lands.json",
+        "../backend/indigenous_lands.json",
+    }))
 end)
 
 -- Conservation units
 server.route("GET", "/api/conservation-units", function(ctx)
     if not rl.enforce(ctx) then return end
-    local f = io.open(script_dir .. "data/conservation_units.json", "r")
-    if f then ctx:send(200, f:read("*a")); f:close()
-    else ctx:send(200, "{}") end
+    ctx:send(200, read_json_file({
+        script_dir .. "data/conservation_units.json",
+        script_dir .. "../backend/conservation_units.json",
+        "data/conservation_units.json",
+        "../backend/conservation_units.json",
+    }))
 end)
 
 -- Stats

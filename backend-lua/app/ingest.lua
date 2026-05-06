@@ -1,28 +1,21 @@
--- ingest.lua — Ingest TerraBrasilis PRODES data into SQLite
--- Baremetal Lua version — reads pre-processed CSV (from GDAL in CI)
-
+local env    = require("app.env")
 local db     = require("app.db")
 local utils  = require("app.utils")
-local cjson  = require("cjson")
 local logger = require("app.logger")
 
 local _M = {}
 
--- ── QML color legend parser ──────────────────────────────────────────────
-
 function _M.parse_qml(file_path)
-    """Parse QML XML file to extract color legend. Returns {[value] = {color, label}}."""
-    local f = io.open(file_path, "r")
-    if not f then
+    local file = io.open(file_path, "r")
+    if not file then
         logger.warn("QML file not found: " .. file_path)
         return {}
     end
-    local xml_text = f:read("*a")
-    f:close()
+
+    local xml_text = file:read("*a")
+    file:close()
 
     local color_legend = {}
-
-    -- Simple regex-based QML parsing (avoids full XML parser for this simple case)
     for value, color, label in xml_text:gmatch([[paletteEntry value="(%d+)" color="([^"]+)" label="([^"]+)"]]) do
         color_legend[tonumber(value)] = {
             color = color,
@@ -33,27 +26,20 @@ function _M.parse_qml(file_path)
     return color_legend
 end
 
--- ── CSV-based PRODES ingestion ───────────────────────────────────────────
-
 function _M.ingest_prodes(csv_path, qml_path)
-    """Ingest PRODES data from CSV file (pre-processed from TIF via GDAL).
-    CSV format: lon,lat,value
-    """
     local color_legend = _M.parse_qml(qml_path)
 
-    local f = io.open(csv_path, "r")
-    if not f then
+    local file = io.open(csv_path, "r")
+    if not file then
         logger.error("PRODES CSV not found: " .. csv_path)
         return 0
     end
 
     local docs = {}
     local line_count = 0
+    file:read("*l")
 
-    -- Skip header
-    f:read("*l")
-
-    for line in f:lines() do
+    for line in file:lines() do
         line = line:gsub("^%s+", ""):gsub("%s+$", "")
         if line ~= "" then
             local lon, lat, value = line:match("([^,]+),([^,]+),([^,]+)")
@@ -79,16 +65,14 @@ function _M.ingest_prodes(csv_path, qml_path)
             end
         end
 
-        -- Batch insert every 1000 rows
         if #docs >= 1000 then
             db.bulk_upsert_deforestation(docs)
             docs = {}
         end
     end
 
-    f:close()
+    file:close()
 
-    -- Insert remaining
     if #docs > 0 then
         db.bulk_upsert_deforestation(docs)
     end
@@ -97,21 +81,24 @@ function _M.ingest_prodes(csv_path, qml_path)
     return line_count
 end
 
--- ── Standalone runner ────────────────────────────────────────────────────
-
 function _M.run()
-    """Run ingestion from default paths. Called from init or manually."""
-    local data_dir = os.getenv("DATA_DIR") or "/opt/yvy/backend-lua/data"
-    local csv_path = data_dir .. "/prodes_brasil_2023.csv"
-    local qml_path = data_dir .. "/prodes_brasil_2023.qml"
+    local csv_path = env.first_existing({
+        (os.getenv("DATA_DIR") or "") .. "/prodes_brasil_2023.csv",
+        "data/prodes_brasil_2023.csv",
+        "../backend/prodes_brasil_2023.csv",
+        "/opt/yvy/backend-lua/data/prodes_brasil_2023.csv",
+    })
+    local qml_path = env.first_existing({
+        (os.getenv("DATA_DIR") or "") .. "/prodes_brasil_2023.qml",
+        "data/prodes_brasil_2023.qml",
+        "../backend/prodes_brasil_2023.qml",
+        "/opt/yvy/backend-lua/data/prodes_brasil_2023.qml",
+    })
 
-    -- Check if CSV exists
-    local f = io.open(csv_path, "r")
-    if not f then
-        logger.info("PRODES CSV not found at " .. csv_path .. " — skipping ingestion")
+    if not csv_path or not qml_path then
+        logger.info("PRODES source files not found - skipping ingestion")
         return 0
     end
-    f:close()
 
     return _M.ingest_prodes(csv_path, qml_path)
 end

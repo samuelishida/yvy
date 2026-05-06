@@ -1,9 +1,10 @@
 -- deforestation.lua — /api/data
 -- Baremetal Lua version
 
+require("app.env")
 local db    = require("app.db")
-local auth  = require("app.auth")
-local rl    = require("app.rate_limit")
+local auth  = require("app.middleware.auth")
+local rl    = require("app.middleware.rate_limit")
 local redis = require("app.redis")
 local cjson = require("cjson")
 
@@ -38,9 +39,9 @@ function _M.get_data(ctx)
         if ne_lat <= sw_lat or ne_lng <= sw_lng then
             ctx:error(400, "Invalid bbox."); return
         end
-        local clamped = clamp_bbox_to_brazil(ne_lat, ne_lng, sw_lat, sw_lng)
-        if not clamped then ctx:send(200, "[]"); return end
-        ne_lat, ne_lng, sw_lat, sw_lng = clamped[1], clamped[2], clamped[3], clamped[4]
+        local c_ne_lat, c_ne_lng, c_sw_lat, c_sw_lng = clamp_bbox_to_brazil(ne_lat, ne_lng, sw_lat, sw_lng)
+        if not c_ne_lat then ctx:send(200, "[]"); return end
+        ne_lat, ne_lng, sw_lat, sw_lng = c_ne_lat, c_ne_lng, c_sw_lat, c_sw_lng
     else
         sw_lat, ne_lat, sw_lng, ne_lng = -90, 90, -180, 180
     end

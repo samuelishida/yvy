@@ -1,7 +1,8 @@
 -- weather.lua — /api/weather/air-quality, /api/weather/temperature
 -- Baremetal Lua version
 
-local rl          = require("app.rate_limit")
+require("app.env")
+local rl          = require("app.middleware.rate_limit")
 local redis       = require("app.redis")
 local http_client = require("app.http_client")
 local cjson       = require("cjson")
@@ -74,7 +75,7 @@ function _M.get_air_quality(ctx)
                       humidity = d.iaqi and d.iaqi.h and d.iaqi.h.v, city = city}
         elseif station ~= fallback then
             local url2 = "https://api.waqi.info/feed/" .. fallback .. "/?token=" .. WAQI_TOKEN
-            local res2 = http_client.get(url2, {timeout = 10})
+            local res2, err2 = http_client.get(url2, {timeout = 10})
             if res2 and res2.status == 200 then
                 local ok2, data2 = pcall(cjson.decode, res2.body)
                 if ok2 and data2.status == "ok" then
@@ -114,7 +115,7 @@ function _M.get_temperature(ctx)
         .. "&current=temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m,wind_direction_10m"
         .. "&wind_speed_unit=kmh&timezone=America/Sao_Paulo"
 
-    local res = http_client.get(url, {timeout = 10})
+    local res, err = http_client.get(url, {timeout = 10})
     if not res or res.status ~= 200 then ctx:json(200, {temp = cjson.null}); return end
 
     local ok, data = pcall(cjson.decode, res.body)

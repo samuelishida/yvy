@@ -2,12 +2,30 @@
 -- Replaces nginx access/error log + Python JsonFormatter
 -- Thread-safe, writes to stdout/stderr
 
+require("app.env")
 local cjson = require("cjson")
 
 local _M = {}
 
 local LOG_LEVELS = {DEBUG = 10, INFO = 20, WARN = 30, ERROR = 40}
 local current_level = LOG_LEVELS[os.getenv("LOG_LEVEL") or "INFO"] or LOG_LEVELS.INFO
+
+local function normalize_log_args(...)
+    local argc = select("#", ...)
+    local extra = nil
+
+    if argc > 1 and type(select(argc, ...)) == "table" then
+        extra = select(argc, ...)
+        argc = argc - 1
+    end
+
+    local parts = {}
+    for i = 1, argc do
+        parts[i] = tostring(select(i, ...))
+    end
+
+    return table.concat(parts), extra
+end
 
 local function format_log(level, message, extra)
     local payload = {
@@ -23,29 +41,33 @@ local function format_log(level, message, extra)
     return cjson.encode(payload)
 end
 
-function _M.debug(msg, extra)
+function _M.debug(...)
     if current_level <= LOG_LEVELS.DEBUG then
+        local msg, extra = normalize_log_args(...)
         io.stderr:write(format_log("DEBUG", msg, extra), "\n")
         io.stderr:flush()
     end
 end
 
-function _M.info(msg, extra)
+function _M.info(...)
     if current_level <= LOG_LEVELS.INFO then
+        local msg, extra = normalize_log_args(...)
         io.stdout:write(format_log("INFO", msg, extra), "\n")
         io.stdout:flush()
     end
 end
 
-function _M.warn(msg, extra)
+function _M.warn(...)
     if current_level <= LOG_LEVELS.WARN then
+        local msg, extra = normalize_log_args(...)
         io.stderr:write(format_log("WARN", msg, extra), "\n")
         io.stderr:flush()
     end
 end
 
-function _M.error(msg, extra)
+function _M.error(...)
     if current_level <= LOG_LEVELS.ERROR then
+        local msg, extra = normalize_log_args(...)
         io.stderr:write(format_log("ERROR", msg, extra), "\n")
         io.stderr:flush()
     end

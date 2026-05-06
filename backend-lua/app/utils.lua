@@ -1,20 +1,14 @@
--- utils.lua — JSON, CSV, date helpers, .env parser, string utilities
+local env = require("app.env")
 local cjson = require("cjson")
-local csv = require("lua-csv")
+local csv = require("lua-csv.csv")
 
 local _M = {}
 
--- ── JSON ─────────────────────────────────────────────────────────────────
-
 function _M.encode_jsonb(tbl)
-    """Encode a table to JSON text for jsonb() SQL function.
-    SQLite's jsonb() converts text JSON → binary JSONB at INSERT time.
-    """
     return cjson.encode(tbl)
 end
 
 function _M.decode_jsonb(blob)
-    """Decode JSONB text (from json(data) in SQL) back to Lua table."""
     if blob == nil or blob == "" then
         return {}
     end
@@ -28,13 +22,11 @@ function _M.decode_jsonb(blob)
     return {}
 end
 
--- ── CSV ──────────────────────────────────────────────────────────────────
-
 function _M.parse_csv(text)
-    """Parse CSV text into array of tables (header row → keys)."""
     if not text or text == "" then
         return {}
     end
+
     local result = {}
     local lines = {}
     for line in text:gmatch("[^\r\n]+") do
@@ -44,21 +36,45 @@ function _M.parse_csv(text)
 
     -- Parse header
     local headers = {}
-    for h in lines[1]:gmatch('([^,]+)') do
-        headers[#headers + 1] = h:gsub('^%s*"', ""):gsub('"%s*$', ""):gsub('^%s+', ""):gsub('%s+$', "")
+    local pos = 1
+    local field = ""
+    local in_quotes = false
+    for i = 1, #lines[1] do
+        local c = lines[1]:sub(i, i)
+        if c == '"' then
+            in_quotes = not in_quotes
+        elseif c == ',' and not in_quotes then
+            headers[#headers + 1] = field:gsub('^%s*', ""):gsub('%s*$', "")
+            field = ""
+        else
+            field = field .. c
+        end
     end
+    headers[#headers + 1] = field:gsub('^%s*', ""):gsub('%s*$', "")
 
-    -- Parse rows
+    -- Parse data rows
     for i = 2, #lines do
         local row = {}
-        local col = 1
-        for v in lines[i]:gmatch('([^,]+)') do
-            local key = headers[col]
-            if key then
-                local val = v:gsub('^%s*"', ""):gsub('"%s*$', ""):gsub('^%s+', ""):gsub('%s+$', "")
-                row[key] = val
+        local values = {}
+        field = ""
+        in_quotes = false
+        for j = 1, #lines[i] do
+            local c = lines[i]:sub(j, j)
+            if c == '"' then
+                in_quotes = not in_quotes
+            elseif c == ',' and not in_quotes then
+                values[#values + 1] = field:gsub('^%s*"', ""):gsub('"%s*$', ""):gsub('^%s+', ""):gsub('%s+$', "")
+                field = ""
+            else
+                field = field .. c
             end
-            col = col + 1
+        end
+        values[#values + 1] = field:gsub('^%s*"', ""):gsub('"%s*$', ""):gsub('^%s+', ""):gsub('%s+$', "")
+
+        for col, key in ipairs(headers) do
+            if values[col] then
+                row[key] = values[col]
+            end
         end
         if next(row) then
             result[#result + 1] = row
@@ -67,20 +83,15 @@ function _M.parse_csv(text)
     return result
 end
 
--- ── Date / Time ──────────────────────────────────────────────────────────
-
 function _M.now_iso()
-    """Return current UTC time as ISO-8601 string."""
     return os.date("!%Y-%m-%dT%H:%M:%SZ")
 end
 
 function _M.iso_from_timestamp(ts)
-    """Convert Unix timestamp to ISO-8601 UTC string."""
     return os.date("!%Y-%m-%dT%H:%M:%SZ", ts)
 end
 
 function _M.parse_iso(iso_str)
-    """Parse ISO-8601 string to {year, month, day, hour, min, sec} table, or nil."""
     if not iso_str then return nil end
     local year, month, day, hour, min, sec =
         iso_str:match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)")
@@ -92,7 +103,6 @@ function _M.parse_iso(iso_str)
 end
 
 function _M.hours_between(iso1, iso2)
-    """Return hours elapsed between two ISO-8601 strings."""
     local t1 = _M.parse_iso(iso1)
     local t2 = _M.parse_iso(iso2)
     if not t1 or not t2 then return nil end
@@ -101,32 +111,9 @@ function _M.hours_between(iso1, iso2)
     return math.abs(os.difftime(ts2, ts1)) / 3600
 end
 
--- ── .env parser ──────────────────────────────────────────────────────────
-
 function _M.load_dotenv(path)
-    """Load KEY=VALUE pairs from a .env file into os environment.
-    Handles comments (#), quotes, and empty lines.
-    """
-    local file = io.open(path, "r")
-    if not file then return end
-
-    for line in file:lines() do
-        line = line:match("^%s*(.-)%s*$")  -- trim
-        if line ~= "" and not line:match("^#") then
-            local key, value = line:match("^([%w_]+)%s*=%s*(.*)$")
-            if key then
-                -- Strip surrounding quotes
-                value = value:gsub('^"', ""):gsub('"$', ""):gsub("^'", ""):gsub("'$", "")
-                -- Strip inline comments (unless inside quotes — simplified)
-                value = value:match("^(.-)%s*#") or value
-                os.setenv(key, value)
-            end
-        end
-    end
-    file:close()
+    return env.load_dotenv(path)
 end
-
--- ── String helpers ───────────────────────────────────────────────────────
 
 function _M.trim(s)
     return (s:gsub("^%s+", ""):gsub("%s+$", ""))
@@ -136,13 +123,9 @@ function _M.starts_with(s, prefix)
     return s:sub(1, #prefix) == prefix
 end
 
--- ── Math helpers ─────────────────────────────────────────────────────────
-
 function _M.clamp(val, min_val, max_val)
     return math.max(min_val, math.min(max_val, val))
 end
-
--- ── Table helpers ────────────────────────────────────────────────────────
 
 function _M.table_contains(tbl, value)
     for _, v in ipairs(tbl) do

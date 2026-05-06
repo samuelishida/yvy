@@ -1,13 +1,15 @@
 -- test_db.lua — Tests for db.lua (SQLite + JSONB schema)
 -- Uses in-memory SQLite database
 
+local env = require("app.env")
 local sqlite3 = require("lsqlite3")
-local db_mod  = require("app.db")
 local utils   = require("app.utils")
 
 -- Override DB_PATH to use temp file for tests
-local test_db_path = "/tmp/yvy_test_" .. tostring(os.time()) .. ".db"
-os.setenv("SQLITE_PATH", test_db_path)
+local test_db_path = "./yvy_test_" .. tostring(os.time()) .. ".db"
+env.set("SQLITE_PATH", test_db_path)
+package.loaded["app.db"] = nil
+local db_mod  = require("app.db")
 
 describe("db", function()
     setup(function()

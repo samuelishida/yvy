@@ -1,6 +1,7 @@
 -- conservation_units_lookup.lua — UC ICMBio point-in-polygon lookup
 -- Port of backend/conservation_units_lookup.py
 
+local env    = require("app.env")
 local geo    = require("app.geo")
 local cjson  = require("cjson")
 local logger = require("app.logger")
@@ -11,21 +12,20 @@ local units = {}
 
 function _M.load_conservation_units()
     local paths = {
-        os.getenv("CONSERVATION_UNITS_PATH") or "",
+        env.get("CONSERVATION_UNITS_PATH") or "",
         "/opt/yvy/backend-lua/data/conservation_units.json",
         "/opt/yvy/data/conservation_units.json",
         "data/conservation_units.json",
+        "../backend/conservation_units.json",
     }
 
+    local resolved = env.first_existing(paths)
     local data = nil
-    for _, p in ipairs(paths) do
-        if p ~= "" then
-            local f = io.open(p, "r")
-            if f then
-                data = f:read("*a")
-                f:close()
-                break
-            end
+    if resolved then
+        local f = io.open(resolved, "r")
+        if f then
+            data = f:read("*a")
+            f:close()
         end
     end
 

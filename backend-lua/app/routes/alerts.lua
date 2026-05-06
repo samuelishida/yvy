@@ -9,10 +9,11 @@
 --   prodes           — deforestation records exist in DB
 --   pm25             — PM2.5 > 55 µg/m³ at any monitored station
 
+require("app.env")
 local db           = require("app.db")
-local biome_lookup = require("app.biome_lookup")
-local ti_lookup    = require("app.indigenous_lands_lookup")
-local uc_lookup    = require("app.conservation_units_lookup")
+local biome_lookup = require("app.lookups.biome_lookup")
+local ti_lookup    = require("app.lookups.indigenous_lands_lookup")
+local uc_lookup    = require("app.lookups.conservation_units_lookup")
 local http_client  = require("app.http_client")
 local cjson        = require("cjson")
 local logger       = require("app.logger")
@@ -67,7 +68,6 @@ end
 -- ── Time utilities ───────────────────────────────────────────────────────
 
 local function parse_fire_time(fire)
-    """Parse acq_date + acq_time into a Unix timestamp, or nil."""
     local acq_date = fire.acq_date or ""
     local acq_time = fire.acq_time or ""
     if acq_date == "" then return nil end
@@ -86,21 +86,18 @@ local function parse_fire_time(fire)
 end
 
 local function is_night(acq_time)
-    """Return true if acquisition time is between 18:00 and 06:00 UTC."""
     local t = tonumber(acq_time)
     if not t then return false end
     return t >= NIGHT_START_HHMM or t < NIGHT_END_HHMM
 end
 
 local function hours_ago(ts)
-    """Return hours elapsed since timestamp."""
     return (os.time() - ts) / 3600
 end
 
 -- ── Cluster detection ────────────────────────────────────────────────────
 
 local function find_clusters(fires)
-    """Find clusters of 5+ high/nominal fires within 15 km in 24h."""
     local now = os.time()
     local recent = {}
 
@@ -168,17 +165,20 @@ local function find_clusters(fires)
             local center_lat = sum_lat / #cluster
             local center_lon = sum_lon / #cluster
 
+            local loc = meta_for_fire(center_lat, center_lon)
             alerts[#alerts + 1] = {
                 type = "cluster",
                 severity = "high",
                 title = "Cluster de queimadas",
                 title_en = "Fire cluster",
-                description = #cluster .. " focos de calor em " .. meta_for_fire(center_lat, center_lon),
-                description_en = #cluster .. " fire hotspots in " .. meta_for_fire(center_lat, center_lon),
+                description = #cluster .. " focos de calor em " .. loc,
+                description_en = #cluster .. " fire hotspots in " .. loc,
                 lat = center_lat,
                 lon = center_lon,
                 count = #cluster,
-                location = meta_for_fire(center_lat, center_lon),
+                meta = loc,
+                state = "",
+                location = loc,
             }
         end
     end
@@ -189,7 +189,6 @@ end
 -- ── Night fire detection ─────────────────────────────────────────────────
 
 local function find_night_fires(fires)
-    """Find 3+ night fires within 10 km in 12h."""
     local now = os.time()
     local night_fires = {}
 
@@ -245,17 +244,20 @@ local function find_night_fires(fires)
             local center_lat = sum_lat / #cluster
             local center_lon = sum_lon / #cluster
 
+            local loc = meta_for_fire(center_lat, center_lon)
             alerts[#alerts + 1] = {
                 type = "night_fire",
                 severity = "high",
                 title = "Queimadas noturnas",
                 title_en = "Night fires",
-                description = #cluster .. " focos noturnos em " .. meta_for_fire(center_lat, center_lon),
-                description_en = #cluster .. " nighttime fires in " .. meta_for_fire(center_lat, center_lon),
+                description = #cluster .. " focos noturnos em " .. loc,
+                description_en = #cluster .. " nighttime fires in " .. loc,
                 lat = center_lat,
                 lon = center_lon,
                 count = #cluster,
-                location = meta_for_fire(center_lat, center_lon),
+                meta = loc,
+                state = "",
+                location = loc,
             }
         end
     end
@@ -266,8 +268,9 @@ end
 -- ── Indigenous land / Conservation unit intersection ─────────────────────
 
 local function find_land_alerts(fires)
-    """Find fires inside indigenous lands or conservation units."""
     local alerts = {}
+    local seen_ti = {}
+    local seen_uc = {}
 
     for _, fire in ipairs(fires) do
         local lat = tonumber(fire.lat)
@@ -275,32 +278,44 @@ local function find_land_alerts(fires)
         if lat and lon then
             local ti = ti_lookup.classify_point(lon, lat)
             if ti then
-                alerts[#alerts + 1] = {
-                    type = "indigenous_land",
-                    severity = "critical",
-                    title = "Fogo em Terra Indígena",
-                    title_en = "Fire in Indigenous Land",
-                    description = "Foco detectado na " .. (ti.name or "Terra Indígena") .. " (" .. (ti.state_abbr or "") .. ")",
-                    description_en = "Fire detected in " .. (ti.name or "Indigenous Land") .. " (" .. (ti.state_abbr or "") .. ")",
-                    lat = lat,
-                    lon = lon,
-                    location = ti.name or "Terra Indígena",
-                }
+                local key = ti.name or "ti"
+                if not seen_ti[key] then
+                    seen_ti[key] = true
+                    alerts[#alerts + 1] = {
+                        type = "indigenous_land",
+                        severity = "critical",
+                        title = "Fogo em Terra Indígena",
+                        title_en = "Fire in Indigenous Land",
+                        description = "Foco detectado na " .. (ti.name or "Terra Indígena") .. " (" .. (ti.state_abbr or "") .. ")",
+                        description_en = "Fire detected in " .. (ti.name or "Indigenous Land") .. " (" .. (ti.state_abbr or "") .. ")",
+                        lat = lat,
+                        lon = lon,
+                        meta = ti.name or "Terra Indígena",
+                        state = ti.state_abbr or "",
+                        location = ti.name or "Terra Indígena",
+                    }
+                end
             end
 
             local uc = uc_lookup.classify_point(lon, lat)
             if uc then
-                alerts[#alerts + 1] = {
-                    type = "conservation_unit",
-                    severity = "high",
-                    title = "Fogo em Unidade de Conservação",
-                    title_en = "Fire in Conservation Unit",
-                    description = "Foco detectado na " .. (uc.name or "UC") .. " (" .. (uc.category or "") .. ")",
-                    description_en = "Fire detected in " .. (uc.name or "Conservation Unit") .. " (" .. (uc.category or "") .. ")",
-                    lat = lat,
-                    lon = lon,
-                    location = uc.name or "Unidade de Conservação",
-                }
+                local key = uc.name or "uc"
+                if not seen_uc[key] then
+                    seen_uc[key] = true
+                    alerts[#alerts + 1] = {
+                        type = "conservation_unit",
+                        severity = "high",
+                        title = "Fogo em Unidade de Conservação",
+                        title_en = "Fire in Conservation Unit",
+                        description = "Foco detectado na " .. (uc.name or "UC") .. " (" .. (uc.category or "") .. ")",
+                        description_en = "Fire detected in " .. (uc.name or "Conservation Unit") .. " (" .. (uc.category or "") .. ")",
+                        lat = lat,
+                        lon = lon,
+                        meta = uc.name or "Unidade de Conservação",
+                        state = uc.category or "",
+                        location = uc.name or "Unidade de Conservação",
+                    }
+                end
             end
         end
     end
@@ -311,7 +326,6 @@ end
 -- ── PRODES deforestation alerts ──────────────────────────────────────────
 
 local function find_prodes_alerts()
-    """Check if there are any deforestation records in DB."""
     local stats = db.get_stats()
     if stats.deforestation > 0 then
         return {{
@@ -331,24 +345,23 @@ end
 
 -- ── PM2.5 alerts ─────────────────────────────────────────────────────────
 
-local function find_pm25_alerts(http_client, waqi_token)
-    """Check PM2.5 levels at monitored stations."""
+local function find_pm25_alerts(waqi_token)
     local alerts = {}
     local token = waqi_token or os.getenv("WAQI_TOKEN") or "demo"
+
+    if token == "" or token == "demo" then
+        return alerts
+    end
 
     for _, station in ipairs(WAQI_STATIONS) do
         local state, city, station_id = station[1], station[2], station[3]
         local url = "https://api.waqi.info/feed/" .. station_id .. "/?token=" .. token
 
-        local res, err = http_client:request_uri(url, {method = "GET"})
-        if not res or res.status ~= 200 then
-            goto continue
-        end
+        local res, err = http_client.get(url, {timeout = 10})
+        if res and res.status == 200 then
 
-        local ok, data = pcall(cjson.decode, res.body)
-        if not ok or data.status ~= "ok" then
-            goto continue
-        end
+            local ok, data = pcall(cjson.decode, res.body)
+            if ok and data.status == "ok" then
 
         local pm25 = data.data and data.data.iaqi and data.data.iaqi.pm25 and data.data.iaqi.pm25.v
         if pm25 and tonumber(pm25) > PM25_THRESHOLD then
@@ -362,11 +375,14 @@ local function find_pm25_alerts(http_client, waqi_token)
                 lat = data.data.city and data.data.city.geo and data.data.city.geo[1] or 0,
                 lon = data.data.city and data.data.city.geo and data.data.city.geo[2] or 0,
                 pm25 = tonumber(pm25),
+                meta = city,
+                state = state,
                 location = city .. ", " .. state,
             }
         end
 
-        ::continue::
+            end
+        end
     end
 
     return alerts
@@ -374,41 +390,70 @@ end
 
 -- ── Generate all alerts ──────────────────────────────────────────────────
 
-function _M.generate_all_alerts(fires, http_client, waqi_token)
-    """Generate all alert types from fire data. Returns {alerts, count}."""
+local RADIUS_BY_TYPE = {
+    cluster          = CLUSTER_RADIUS_KM,
+    night_fire       = NIGHT_RADIUS_KM,
+    indigenous_land  = 8,
+    conservation_unit= 8,
+    prodes           = 50,
+    pm25             = 15,
+}
+
+local TICK_BY_SEVERITY = {critical = "crit", high = "warn", info = "info"}
+
+local TYPE_PRIORITY = {cluster=1, night_fire=2, pm25=3, indigenous_land=4, conservation_unit=5, prodes=6}
+
+-- Cap per-type before merging to prevent one type flooding MAX_ALERTS
+local TYPE_CAP = 5
+
+local function add_common_fields(a, idx)
+    a.id         = a.type .. "_" .. idx
+    a.tick       = TICK_BY_SEVERITY[a.severity] or "info"
+    a.ts         = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    a.center     = {a.lat or 0, a.lon or 0}
+    a.radius_km  = RADIUS_BY_TYPE[a.type] or 10
+    a.meta       = a.meta or a.location or "Brasil"
+    a.state      = a.state or ""
+    return a
+end
+
+function _M.generate_all_alerts(fires, deforestation_data, waqi_token)
+    local buckets = {}
+
+    local function add_bucket(type_name, list)
+        buckets[#buckets + 1] = {type_name = type_name, list = list}
+    end
+
+    add_bucket("cluster",           find_clusters(fires))
+    add_bucket("night_fire",        find_night_fires(fires))
+    add_bucket("pm25",              find_pm25_alerts(waqi_token))
+    add_bucket("indigenous_land",   find_land_alerts(fires))  -- already deduped
+    add_bucket("prodes",            find_prodes_alerts())
+
+    -- Sort buckets by type priority, then fill up to MAX_ALERTS respecting per-type cap
+    local severity_rank = {critical = 1, high = 2, info = 3}
     local all_alerts = {}
 
-    -- Cluster alerts
-    local clusters = find_clusters(fires)
-    for _, a in ipairs(clusters) do all_alerts[#all_alerts + 1] = a end
-
-    -- Night fire alerts
-    local night = find_night_fires(fires)
-    for _, a in ipairs(night) do all_alerts[#all_alerts + 1] = a end
-
-    -- Indigenous land / Conservation unit alerts
-    local land = find_land_alerts(fires)
-    for _, a in ipairs(land) do all_alerts[#all_alerts + 1] = a end
-
-    -- PRODES alerts
-    local prodes = find_prodes_alerts()
-    for _, a in ipairs(prodes) do all_alerts[#all_alerts + 1] = a end
-
-    -- PM2.5 alerts
-    local pm25 = find_pm25_alerts(http_client, waqi_token)
-    for _, a in ipairs(pm25) do all_alerts[#all_alerts + 1] = a end
-
-    -- Cap at MAX_ALERTS
-    if #all_alerts > MAX_ALERTS then
-        -- Sort by severity: critical > high > info
-        local severity_rank = {critical = 1, high = 2, info = 3}
-        table.sort(all_alerts, function(a, b)
+    for _, bucket in ipairs(buckets) do
+        local list = bucket.list
+        -- Sort within bucket by severity
+        table.sort(list, function(a, b)
             return (severity_rank[a.severity] or 99) < (severity_rank[b.severity] or 99)
         end)
-        -- Truncate
-        for i = MAX_ALERTS + 1, #all_alerts do
-            all_alerts[i] = nil
+        local added = 0
+        for _, a in ipairs(list) do
+            if #all_alerts >= MAX_ALERTS then break end
+            if added < TYPE_CAP then
+                all_alerts[#all_alerts + 1] = a
+                added = added + 1
+            end
         end
+        if #all_alerts >= MAX_ALERTS then break end
+    end
+
+    -- Add required frontend fields
+    for i, a in ipairs(all_alerts) do
+        add_common_fields(a, i)
     end
 
     return {alerts = all_alerts, count = #all_alerts}

@@ -2,6 +2,7 @@
 -- Uses luasocket TCP + Redis RESP protocol
 -- Replaces lua-resty-redis
 
+require("app.env")
 local socket = require("socket")
 local logger = require("app.logger")
 
@@ -24,6 +25,37 @@ local function parse_redis_url(url)
 end
 
 local redis_host, redis_port, redis_db = parse_redis_url(REDIS_URL)
+
+-- ── Connection pooling ───────────────────────────────────────────────────
+
+local redis_pool = {}
+local REDIS_POOL_SIZE = 5
+
+local function pool_acquire()
+    local conn = table.remove(redis_pool)
+    if conn then return conn end
+
+    local s = socket.tcp()
+    s:settimeout(5)
+    local ok, err = s:connect(redis_host, redis_port)
+    if not ok then
+        logger.warn("Redis connect failed: " .. tostring(err))
+        return nil
+    end
+    if redis_db > 0 then
+        s:send("*2\r\n$6\r\nSELECT\r\n$" .. #tostring(redis_db) .. "\r\n" .. redis_db .. "\r\n")
+        s:receive("*l")  -- consume +OK
+    end
+    return s
+end
+
+local function pool_release(s)
+    if s and #redis_pool < REDIS_POOL_SIZE then
+        redis_pool[#redis_pool + 1] = s
+    elseif s then
+        s:close()
+    end
+end
 
 -- ── RESP protocol helpers ────────────────────────────────────────────────
 
@@ -83,25 +115,33 @@ end
 -- ── Public API ───────────────────────────────────────────────────────────
 
 function _M.get(key)
-    local s = connect()
+    local s = pool_acquire()
     if not s then return nil end
     command(s, "GET", key)
     local val = read_response(s)
-    s:close()
+    pool_release(s)
     return val
 end
 
 function _M.set(key, value, ttl)
     ttl = ttl or CACHE_TTL_DEFAULT
-    local s = connect()
+    local s = pool_acquire()
     if not s then return end
     command(s, "SETEX", key, ttl, value)
     read_response(s)
-    s:close()
+    pool_release(s)
 end
 
-function _M.delete(pattern)
-    local s = connect()
+function _M.delete(key)
+    local s = pool_acquire()
+    if not s then return end
+    command(s, "DEL", key)
+    read_response(s)
+    pool_release(s)
+end
+
+function _M.delete_pattern(pattern)
+    local s = pool_acquire()
     if not s then return end
     local cursor = "0"
     repeat
@@ -117,7 +157,7 @@ function _M.delete(pattern)
             end
         end
     until cursor == "0"
-    s:close()
+    pool_release(s)
 end
 
 -- ── Rate limiting via sorted sets ────────────────────────────────────────
@@ -127,7 +167,7 @@ function _M.check_rate_limit(ip, limit, window_seconds)
     window_seconds = window_seconds or 60
     local now = socket.gettime()
 
-    local s = connect()
+    local s = pool_acquire()
     if not s then return false end  -- Allow if Redis down
 
     local key = "rate_limit:" .. ip
@@ -139,10 +179,10 @@ function _M.check_rate_limit(ip, limit, window_seconds)
     -- Count current
     command(s, "ZCARD", key)
     local count = read_response(s)
-    if not count then s:close(); return false end
+    if not count then pool_release(s); return false end
 
     if tonumber(count) >= limit then
-        s:close()
+        pool_release(s)
         return true
     end
 
@@ -153,7 +193,7 @@ function _M.check_rate_limit(ip, limit, window_seconds)
     command(s, "EXPIRE", key, tostring(window_seconds))
     read_response(s)
 
-    s:close()
+    pool_release(s)
     return false
 end
 

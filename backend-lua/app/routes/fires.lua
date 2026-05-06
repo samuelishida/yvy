@@ -1,9 +1,10 @@
 -- fires.lua — /api/fires, /api/fires/sync, /api/admin/firms/sync
 -- Baremetal Lua version using ctx-based request/response
 
+require("app.env")
 local db         = require("app.db")
-local auth       = require("app.auth")
-local rl         = require("app.rate_limit")
+local auth       = require("app.middleware.auth")
+local rl         = require("app.middleware.rate_limit")
 local redis      = require("app.redis")
 local utils      = require("app.utils")
 local http_client = require("app.http_client")
@@ -85,35 +86,31 @@ function _M.fetch_firms_data(global_sync)
         local res, err = http_client.get(url, {timeout = 60})
         if not res then
             logger.error("FIRMS fetch error: " .. tostring(err))
-            goto continue
-        end
-        if res.status ~= 200 then
+        elseif res.status ~= 200 then
             logger.error("FIRMS API returned " .. res.status)
-            goto continue
-        end
-
-        local docs = utils.parse_csv(res.body)
-        local fire_docs = {}
-        for _, row in ipairs(docs) do
-            local lat = tonumber(row.latitude or row["latitude"])
-            local lon = tonumber(row.longitude or row["longitude"])
-            if lat and lon and lat >= -90 and lat <= 90 and lon >= -180 and lon <= 180 then
-                fire_docs[#fire_docs + 1] = {
-                    lat = lat, lon = lon,
-                    confidence = (row.confidence or row["confidence"] or "low"):lower(),
-                    acq_date = row.acq_date or row["acq_date"] or "",
-                    acq_time = row.acq_time or row["acq_time"] or "",
-                    satellite = row.satellite or row["satellite"] or "",
-                    bright_ti4 = tonumber(row.bright_ti4 or row["bright_ti4"] or 0) or 0,
-                    source = "NASA_FIRMS_VIIRS_SNPP",
-                    ingested_at = utils.now_iso(),
-                }
+        else
+            local docs = utils.parse_csv(res.body)
+            local fire_docs = {}
+            for _, row in ipairs(docs) do
+                local lat = tonumber(row.latitude or row["latitude"])
+                local lon = tonumber(row.longitude or row["longitude"])
+                if lat and lon and lat >= -90 and lat <= 90 and lon >= -180 and lon <= 180 then
+                    fire_docs[#fire_docs + 1] = {
+                        lat = lat, lon = lon,
+                        confidence = (row.confidence or row["confidence"] or "low"):lower(),
+                        acq_date = row.acq_date or row["acq_date"] or "",
+                        acq_time = row.acq_time or row["acq_time"] or "",
+                        satellite = row.satellite or row["satellite"] or "",
+                        bright_ti4 = tonumber(row.bright_ti4 or row["bright_ti4"] or 0) or 0,
+                        source = "NASA_FIRMS_VIIRS_SNPP",
+                        ingested_at = utils.now_iso(),
+                    }
+                end
             end
-        end
 
-        if #fire_docs > 0 then db.bulk_upsert_fires(fire_docs) end
-        total_count = total_count + #fire_docs
-        ::continue::
+            if #fire_docs > 0 then db.bulk_upsert_fires(fire_docs) end
+            total_count = total_count + #fire_docs
+        end
     end
 
     redis.set("fires:last_sync", utils.now_iso(), 3600)

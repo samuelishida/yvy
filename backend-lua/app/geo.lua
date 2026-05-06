@@ -1,13 +1,6 @@
--- geo.lua — Point-in-polygon utilities (ray-casting algorithm)
--- Port of backend/_geo.py
-
 local _M = {}
 
 function _M.point_in_ring(px, py, ring)
-    """Return true if point (px, py) is inside a polygon ring.
-    ring: array of {lon, lat} pairs, e.g. {{-50, -10}, {-51, -11}, ...}
-    Uses the ray-casting (even-odd rule) algorithm.
-    """
     local n = #ring
     if n < 3 then return false end
 
@@ -26,19 +19,14 @@ function _M.point_in_ring(px, py, ring)
 end
 
 function _M.point_in_polygon(px, py, rings)
-    """Return true if point is inside a polygon (first ring = exterior, rest = holes).
-    rings: array of rings, each ring is {{lon, lat}, ...}
-    """
     if not rings or #rings == 0 then
         return false
     end
 
-    -- Must be inside exterior ring
     if not _M.point_in_ring(px, py, rings[1]) then
         return false
     end
 
-    -- Must NOT be inside any hole
     for i = 2, #rings do
         if _M.point_in_ring(px, py, rings[i]) then
             return false

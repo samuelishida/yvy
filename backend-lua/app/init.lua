@@ -1,19 +1,20 @@
 -- init.lua — Startup initialization for Yvy backend (baremetal)
 -- Loads all lookup data, initializes DB, starts background tasks via copas
 
+require("app.env")
 local db          = require("app.db")
-local biome       = require("app.biome_lookup")
-local ti          = require("app.indigenous_lands_lookup")
-local uc          = require("app.conservation_units_lookup")
+local biome       = require("app.lookups.biome_lookup")
+local ti          = require("app.lookups.indigenous_lands_lookup")
+local uc          = require("app.lookups.conservation_units_lookup")
 local ingest      = require("app.ingest")
-local fires_mod   = require("app.fires")
-local news_mod    = require("app.news")
-local alerts_mod  = require("app.alerts")
+local fires_mod   = require("app.routes.fires")
+local news_mod    = require("app.routes.news")
+local alerts_mod  = require("app.routes.alerts")
 local redis       = require("app.redis")
 local http_client = require("app.http_client")
 local cjson       = require("cjson")
 local logger      = require("app.logger")
-local socket      = require("socket")
+local copas       = require("copas")
 
 local _M = {}
 
@@ -61,25 +62,25 @@ end
 -- ── Background tasks (simple sleep-loop coroutines) ──────────────────────
 
 local function fires_sync_loop()
-    socket.sleep(10)  -- initial delay
+    copas.sleep(10)
     while true do
         logger.info("Background FIRMS sync starting")
         pcall(fires_mod.fetch_firms_data, false)
-        socket.sleep(FIRMS_SYNC_INTERVAL)
+        copas.sleep(FIRMS_SYNC_INTERVAL)
     end
 end
 
 local function news_sync_loop()
-    socket.sleep(15)
+    copas.sleep(15)
     while true do
         logger.info("Background news sync starting")
         pcall(news_mod.fetch_and_save_news)
-        socket.sleep(NEWS_SYNC_INTERVAL)
+        copas.sleep(NEWS_SYNC_INTERVAL)
     end
 end
 
 local function alerts_sync_loop()
-    socket.sleep(60)
+    copas.sleep(60)
     while true do
         logger.info("Background alerts refresh starting")
         pcall(function()
@@ -88,16 +89,14 @@ local function alerts_sync_loop()
             redis.set("alerts:all", cjson.encode(result), 1800)
             logger.info("Alerts cache refreshed: " .. result.count .. " alerts")
         end)
-        socket.sleep(ALERTS_SYNC_INTERVAL)
+        copas.sleep(ALERTS_SYNC_INTERVAL)
     end
 end
 
 function _M.start_background_tasks()
-    -- Spawn background coroutines (cooperative multitasking via copas)
-    -- These run in the same process; socket.sleep yields to copas
-    coroutine.wrap(fires_sync_loop)()
-    coroutine.wrap(news_sync_loop)()
-    coroutine.wrap(alerts_sync_loop)()
+    copas.addthread(fires_sync_loop)
+    copas.addthread(news_sync_loop)
+    copas.addthread(alerts_sync_loop)
 end
 
 return _M

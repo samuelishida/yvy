@@ -55,6 +55,8 @@ else
     echo "Running in PROD mode (serve build)..."
     BUILD_ENTRY="build/index.html"
     NEED_BUILD=0
+    BUILD_HOME="$HOME/.local/share/yvy-frontend"
+    BUILD_NODE_MODULES="$BUILD_HOME/node_modules"
 
     if [ ! -f "$BUILD_ENTRY" ]; then
         NEED_BUILD=1
@@ -65,15 +67,31 @@ else
     if [ "$NEED_BUILD" -eq 1 ]; then
         echo "Build missing or stale. Building..."
         # Build in home dir where node_modules works, then copy build back
-        BUILD_HOME="$HOME/.local/share/yvy-frontend"
-        cp -r "$PROJECT_DIR/frontend/src" "$BUILD_HOME/" 2>/dev/null || true
-        cp -r "$PROJECT_DIR/frontend/public" "$BUILD_HOME/" 2>/dev/null || true
-        cp "$PROJECT_DIR/frontend/package.json" "$BUILD_HOME/" 2>/dev/null || true
+        mkdir -p "$BUILD_HOME"
+        rm -rf "$BUILD_HOME/src" "$BUILD_HOME/public"
+        cp -r "$PROJECT_DIR/frontend/src" "$BUILD_HOME/"
+        cp -r "$PROJECT_DIR/frontend/public" "$BUILD_HOME/"
+        cp "$PROJECT_DIR/frontend/package.json" "$BUILD_HOME/"
+        cp "$PROJECT_DIR/frontend/package-lock.json" "$BUILD_HOME/"
         cp "$PROJECT_DIR/frontend/tailwind.config.js" "$BUILD_HOME/" 2>/dev/null || true
         cp "$PROJECT_DIR/frontend/postcss.config.js" "$BUILD_HOME/" 2>/dev/null || true
+
+        if [ ! -d "$BUILD_NODE_MODULES" ] || [ ! -f "$BUILD_NODE_MODULES/react-dom/client.js" ] || [ "$PROJECT_DIR/frontend/package-lock.json" -nt "$BUILD_NODE_MODULES" ]; then
+            echo "Syncing frontend dependencies in $BUILD_HOME..."
+            if [ -d "$BUILD_NODE_MODULES" ]; then
+                rm -rf "$BUILD_NODE_MODULES"
+            fi
+            (
+                cd "$BUILD_HOME"
+                npm ci
+            )
+        fi
+
         cd "$BUILD_HOME"
-        node "$REACT_SCRIPTS_BIN" build
+        BUILD_REACT_SCRIPTS_BIN="$BUILD_NODE_MODULES/react-scripts/bin/react-scripts.js"
+        node "$BUILD_REACT_SCRIPTS_BIN" build
         echo "Copying build to project..."
+        rm -rf "$PROJECT_DIR/frontend/build"
         cp -r "$BUILD_HOME/build" "$PROJECT_DIR/frontend/"
         cd "$PROJECT_DIR/frontend"
     fi

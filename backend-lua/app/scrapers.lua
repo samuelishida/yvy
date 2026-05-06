@@ -58,7 +58,6 @@ for _, kw in ipairs(KEYWORDS_EN) do all_keywords[#all_keywords + 1] = kw end
 table.sort(all_keywords, function(a, b) return #a > #b end)
 
 function _M.is_relevant(article)
-    """Return true if article title or description matches environmental keywords."""
     local text = (article.title or "") .. " " .. (article.description or "")
     text = text:lower()
     for _, kw in ipairs(all_keywords) do
@@ -105,7 +104,6 @@ local RSS_SOURCES = {
 -- ── RSS XML parser (SAX-based via LuaExpat) ──────────────────────────────
 
 local function parse_rss(xml_text, source_name)
-    """Parse RSS/Atom XML and return array of article dicts."""
     local articles = {}
     local current = {}
     local in_item = false
@@ -226,7 +224,6 @@ end
 -- ── Fetch all sources ────────────────────────────────────────────────────
 
 function _M.fetch_all()
-    """Fetch all RSS sources, filter by relevance, return articles."""
     local all_articles = {}
 
     for _, source in ipairs(RSS_SOURCES) do
@@ -241,18 +238,16 @@ function _M.fetch_all()
 
         if not res or res.status ~= 200 then
             logger.warn("RSS fetch failed for " .. source.name .. ": " .. tostring(err or (res and res.status)))
-            goto continue
-        end
-
-        local articles = parse_rss(res.body, source.name)
-        for _, article in ipairs(articles) do
-            if _M.is_relevant(article) then
-                all_articles[#all_articles + 1] = article
+        else
+            local articles = parse_rss(res.body, source.name)
+            for _, article in ipairs(articles) do
+                if _M.is_relevant(article) then
+                    all_articles[#all_articles + 1] = article
+                end
             end
-        end
 
-        logger.info("RSS " .. source.name .. ": " .. #articles .. " articles, " .. #all_articles .. " relevant total")
-        ::continue::
+            logger.info("RSS " .. source.name .. ": " .. #articles .. " articles, " .. #all_articles .. " relevant total")
+        end
     end
 
     return all_articles

@@ -1,11 +1,12 @@
 -- biomes.lua — /api/biomes
 -- Baremetal Lua version
 
+require("app.env")
 local db           = require("app.db")
-local auth         = require("app.auth")
-local rl           = require("app.rate_limit")
+local auth         = require("app.middleware.auth")
+local rl           = require("app.middleware.rate_limit")
 local redis        = require("app.redis")
-local biome_lookup = require("app.biome_lookup")
+local biome_lookup = require("app.lookups.biome_lookup")
 local cjson        = require("cjson")
 
 local _M = {}

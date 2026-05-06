@@ -1,9 +1,10 @@
 -- news.lua — /api/news, /api/news/refresh, /api/news/repair
 -- Baremetal Lua version
 
+require("app.env")
 local db        = require("app.db")
-local auth      = require("app.auth")
-local rl        = require("app.rate_limit")
+local auth      = require("app.middleware.auth")
+local rl        = require("app.middleware.rate_limit")
 local scrapers  = require("app.scrapers")
 local translate = require("app.translate")
 local cjson     = require("cjson")
@@ -33,7 +34,7 @@ function _M.get_news(ctx)
     local cache_key = "news_" .. lang .. "_" .. page .. "_" .. page_size
     local cached = news_cache[cache_key]
     if cached and os.time() - cached.time < NEWS_CACHE_TTL then
-        ctx.set_header("Cache-Control", "public, max-age=300")
+        ctx:set_header("Cache-Control", "public, max-age=300")
         ctx:send(200, cached.body)
         return
     end
@@ -42,7 +43,7 @@ function _M.get_news(ctx)
     local body = cjson.encode(articles)
     news_cache[cache_key] = {time = os.time(), body = body}
 
-    ctx.set_header("Cache-Control", "public, max-age=300")
+    ctx:set_header("Cache-Control", "public, max-age=300")
     ctx:send(200, body)
 end
 

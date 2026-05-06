@@ -2,6 +2,7 @@
 -- Port of backend/biome_lookup.py
 -- Loads biome_data.json at init time
 
+local env    = require("app.env")
 local geo    = require("app.geo")
 local cjson  = require("cjson")
 local logger = require("app.logger")
@@ -24,7 +25,7 @@ local biome_rings = {}
 local biome_colors = {}
 
 function _M.load_biomes()
-    local data_file = os.getenv("BIOME_DATA_PATH") or "/opt/yvy/backend-lua/data/biome_data.json"
+    local data_file = env.get("BIOME_DATA_PATH") or "/opt/yvy/backend-lua/data/biome_data.json"
 
     -- Try multiple paths
     local paths = {
@@ -32,15 +33,16 @@ function _M.load_biomes()
         "/opt/yvy/backend-lua/data/biome_data.json",
         "/opt/yvy/data/biome_data.json",
         "data/biome_data.json",
+        "../backend/biome_data.json",
     }
 
+    local resolved = env.first_existing(paths)
     local data = nil
-    for _, p in ipairs(paths) do
-        local f = io.open(p, "r")
+    if resolved then
+        local f = io.open(resolved, "r")
         if f then
             data = f:read("*a")
             f:close()
-            break
         end
     end
 
