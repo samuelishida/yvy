@@ -123,7 +123,7 @@ end
 -- ── Warning detection ────────────────────────────────────────────────────
 
 function _M.is_mymemory_warning(text)
-    if not text then return false end
+    if type(text) ~= "string" then return false end
     return text:match(MYMEMORY_WARNING_PATTERN) ~= nil
 end
 

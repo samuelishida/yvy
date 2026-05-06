@@ -48,10 +48,12 @@ $MingwBin = Join-Path $MingwRoot "bin"
 $Lua51 = Join-Path $MingwBin "lua5.1.exe"
 $LuaRocksTree = Join-Path $env:USERPROFILE ".luarocks"
 $WindowsBasePath = "C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0"
+$OriginalPath = $env:PATH
+$HostPython = (Get-Command python -ErrorAction SilentlyContinue).Source
 
 $env:HOME = $env:USERPROFILE
 $env:MSYSTEM = "MINGW64"
-$env:PATH = "$MingwBin;$MsysRoot\usr\bin;$LuaRocksTree\bin;$WindowsBasePath"
+$env:PATH = "$MingwBin;$MsysRoot\usr\bin;$LuaRocksTree\bin;$WindowsBasePath;$OriginalPath"
 $env:LUA_PATH = "$LuaRocksTree\share\lua\5.1\?.lua;$LuaRocksTree\share\lua\5.1\?\init.lua;$MingwRoot\share\lua\5.1\?.lua;$MingwRoot\share\lua\5.1\?\init.lua"
 $env:LUA_CPATH = "$LuaRocksTree\lib\lua\5.1\?.dll;$MingwRoot\lib\lua\5.1\?.dll"
 
@@ -64,7 +66,7 @@ if (-not $SqlitePath) {
 }
 
 if (-not $SqlitePath) {
-    $SqlitePath = Join-Path $ProjectDir "backend\data\yvy.db"
+    $SqlitePath = Join-Path $ProjectDir "backend-lua\data\yvy.db"
 }
 
 $env:SQLITE_PATH = $SqlitePath
@@ -72,6 +74,7 @@ $env:PORT = [string]$Port
 
 if (-not $env:AUTH_REQUIRED) { $env:AUTH_REQUIRED = "0" }
 if (-not $env:LOG_LEVEL) { $env:LOG_LEVEL = "INFO" }
+if ($HostPython) { $env:PYTHON = $HostPython }
 
 Set-Location (Join-Path $ProjectDir "backend-lua")
 

@@ -2,6 +2,7 @@
 -- Baremetal Lua version using http_client + LuaExpat
 
 local http_client = require("app.http_client")
+local browser_fallback = require("app.browser_fallback")
 local lxp         = require("lxp")
 local cjson       = require("cjson")
 local utils       = require("app.utils")
@@ -84,6 +85,10 @@ local RSS_SOURCES = {
         url = "https://oeco.org.br/feed/",
     },
     {
+        name = "Mongabay Brasil",
+        url = "https://brasil.mongabay.com/feed/",
+    },
+    {
         name = "Greenpeace Brasil",
         url = "https://www.greenpeace.org/brasil/feed/",
     },
@@ -144,6 +149,14 @@ local function parse_rss(xml_text, source_name)
                     local desc = text:gsub("<[^>]+>", " "):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
                     if not current.description or #desc > #(current.description or "") then
                         current.description = desc
+                    end
+                    
+                    -- Extract first <img src="..."> from HTML content if no image yet
+                    if not current.urlToImage and text:find("<img") then
+                        local img_src = text:match('src%s*=%s*["\']([^"\']+)["\']')
+                        if img_src then
+                            current.urlToImage = img_src
+                        end
                     end
                 elseif tag == "pubdate" or tag == "published" or tag == "updated" or tag == "date" then
                     current.publishedAt = text
@@ -223,6 +236,55 @@ end
 
 -- ── Fetch all sources ────────────────────────────────────────────────────
 
+local function looks_blocked(status, body)
+    if status == 403 or status == 429 or status == 503 then
+        return true
+    end
+    if type(body) ~= "string" or body == "" then
+        return false
+    end
+
+    local lowered = body:lower()
+    return lowered:find("captcha", 1, true)
+        or lowered:find("cloudflare", 1, true)
+        or lowered:find("attention required", 1, true)
+        or lowered:find("verify you are human", 1, true)
+        or lowered:find("access denied", 1, true)
+        or lowered:find("/cdn-cgi/challenge", 1, true)
+end
+
+local function maybe_fetch_with_browser(source, res, err)
+    if res and res.status == 404 then
+        return res, err
+    end
+    if res and not looks_blocked(res.status, res.body) then
+        return res, err
+    end
+
+    logger.warn("Trying browser fallback for RSS source", {
+        source = source.name,
+        url = source.url,
+        status = res and res.status or nil,
+        error = err,
+    })
+
+    local browser_res, browser_err = browser_fallback.fetch(source.url, "feed")
+    if not browser_res then
+        logger.warn("Browser fallback failed for RSS source", {
+            source = source.name,
+            url = source.url,
+            error = browser_err,
+        })
+        return res, err
+    end
+
+    return {
+        status = browser_res.status or 0,
+        body = browser_res.body or browser_res.html or "",
+        headers = {},
+    }, nil
+end
+
 function _M.fetch_all()
     local all_articles = {}
 
@@ -230,11 +292,12 @@ function _M.fetch_all()
         logger.info("Fetching RSS: " .. source.name .. " (" .. source.url .. ")")
         local res, err = http_client.get(source.url, {
             headers = {
-                ["User-Agent"] = "YvyApp/1.0 (environmental-monitoring)",
+                ["User-Agent"] = "Mozilla/5.0 (compatible; YvyApp/1.0; environmental-monitoring)",
                 ["Accept"] = "application/rss+xml, application/atom+xml, application/xml, text/xml",
             },
             timeout = 15,
         })
+        res, err = maybe_fetch_with_browser(source, res, err)
 
         if not res or res.status ~= 200 then
             logger.warn("RSS fetch failed for " .. source.name .. ": " .. tostring(err or (res and res.status)))
