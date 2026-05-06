@@ -82,6 +82,13 @@ function _M.ingest_prodes(csv_path, qml_path)
 end
 
 function _M.run()
+    -- Skip if deforestation data already in DB
+    local existing = db.count_deforestation()
+    if existing > 0 then
+        logger.info("PRODES: ", existing, " rows already in DB — skipping ingestion")
+        return 0
+    end
+
     local csv_path = env.first_existing({
         (os.getenv("DATA_DIR") or "") .. "/prodes_brasil_2023.csv",
         "data/prodes_brasil_2023.csv",

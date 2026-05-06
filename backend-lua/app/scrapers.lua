@@ -173,26 +173,9 @@ local function parse_rss(xml_text, source_name)
             if (name == "item" or name == "entry") and in_item then
                 in_item = false
                 if current.url and current.title then
-                    -- Normalize publishedAt to ISO-8601
-                    if current.publishedAt then
-                        -- Try to parse common RSS date formats
-                        local patterns = {
-                            "(%d%d%d?%d%-%d%d%-%d%dT%d%d:%d%d:%d%d)",
-                            "(%d%d? %a%a%a? %d%d%d%d %d%d:%d%d:%d%d)",
-                        }
-                        for _, pat in ipairs(patterns) do
-                            local m = current.publishedAt:match(pat)
-                            if m then
-                                current.publishedAt = m
-                                break
-                            end
-                        end
-                    end
-                    if not current.publishedAt or current.publishedAt == "" then
-                        current.publishedAt = utils.now_iso()
-                    end
-
-                    current.ingested_at = utils.now_iso()
+                    local ingested_at = utils.now_iso()
+                    current.publishedAt = utils.normalize_news_date(current.publishedAt, ingested_at)
+                    current.ingested_at = ingested_at
                     current.urlToImage = current.urlToImage or nil
                     current.content = current.content or ""
 
@@ -312,6 +295,30 @@ function _M.fetch_all()
             logger.info("RSS " .. source.name .. ": " .. #articles .. " articles, " .. #all_articles .. " relevant total")
         end
     end
+
+    table.sort(all_articles, function(a, b)
+        local a_date = utils.normalize_news_date(a.publishedAt, a.ingested_at)
+        local b_date = utils.normalize_news_date(b.publishedAt, b.ingested_at)
+        if a_date ~= b_date then
+            return a_date > b_date
+        end
+
+        local a_ingested = a.ingested_at or ""
+        local b_ingested = b.ingested_at or ""
+        if a_ingested ~= b_ingested then
+            return a_ingested > b_ingested
+        end
+
+        local a_url = a.url or ""
+        local b_url = b.url or ""
+        if a_url ~= b_url then
+            return a_url < b_url
+        end
+
+        local a_source = a.source_name or ""
+        local b_source = b.source_name or ""
+        return a_source < b_source
+    end)
 
     return all_articles
 end

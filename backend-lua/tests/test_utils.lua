@@ -56,6 +56,17 @@ describe("utils", function()
         end)
     end)
 
+    describe("normalize_news_date", function()
+        it("normalizes common RSS date formats to UTC", function()
+            assert.are_equal("2026-05-06T10:30:00Z", utils.normalize_news_date("Tue, 06 May 2026 10:30:00 GMT"))
+            assert.are_equal("2026-05-06T13:30:00Z", utils.normalize_news_date("2026-05-06T10:30:00-03:00"))
+        end)
+
+        it("falls back to a known timestamp when raw input is invalid", function()
+            assert.are_equal("2026-05-06T10:30:00Z", utils.normalize_news_date("not-a-date", "2026-05-06T10:30:00Z"))
+        end)
+    end)
+
     describe("hours_between", function()
         it("computes hours between two ISO strings", function()
             local h = utils.hours_between("2024-01-01T00:00:00Z", "2024-01-01T06:00:00Z")

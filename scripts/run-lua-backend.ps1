@@ -65,7 +65,7 @@ if (-not $SqlitePath) {
     $SqlitePath = $env:SQLITE_PATH
 }
 
-if (-not $SqlitePath) {
+if (-not $SqlitePath -or $SqlitePath -match 'backend[\\/]data[\\/]yvy\.db$') {
     $SqlitePath = Join-Path $ProjectDir "backend-lua\data\yvy.db"
 }
 

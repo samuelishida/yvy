@@ -114,7 +114,7 @@ yvy/
 ```bash
 # Backend
 PORT=5000
-SQLITE_PATH=backend/data/yvy.db
+SQLITE_PATH=backend-lua/data/yvy.db
 REDIS_URL=redis://localhost:6379/0
 AUTH_REQUIRED=1
 API_KEY=your-secret-key

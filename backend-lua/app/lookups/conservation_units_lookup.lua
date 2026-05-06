@@ -1,16 +1,43 @@
 -- conservation_units_lookup.lua — UC ICMBio point-in-polygon lookup
 -- Port of backend/conservation_units_lookup.py
+-- Loads from DB (JSONB) first; ingests from conservation_units.json if missing
 
 local env    = require("app.env")
+local db     = require("app.db")
 local geo    = require("app.geo")
 local cjson  = require("cjson")
 local logger = require("app.logger")
 
 local _M = {}
 
+local LOOKUP_KEY = "conservation_units"
+
 local units = {}
 
+local function _build_from_parsed(parsed)
+    units = {}
+    for name, meta in pairs(parsed) do
+        local rings = meta.rings
+        local clean_meta = {}
+        for k, v in pairs(meta) do
+            if k ~= "rings" then
+                clean_meta[k] = v
+            end
+        end
+        units[#units + 1] = {name = name, meta = clean_meta, rings = rings}
+    end
+end
+
 function _M.load_conservation_units()
+    -- Try DB first
+    local cached = db.get_lookup_data(LOOKUP_KEY)
+    if cached then
+        _build_from_parsed(cached)
+        logger.info("Loaded ", #units, " conservation unit polygons from DB")
+        return
+    end
+
+    -- Fallback: ingest from JSON file
     local paths = {
         env.get("CONSERVATION_UNITS_PATH") or "",
         "/opt/yvy/backend-lua/data/conservation_units.json",
@@ -40,19 +67,11 @@ function _M.load_conservation_units()
         return
     end
 
-    units = {}
-    for name, meta in pairs(parsed) do
-        local rings = meta.rings
-        local clean_meta = {}
-        for k, v in pairs(meta) do
-            if k ~= "rings" then
-                clean_meta[k] = v
-            end
-        end
-        units[#units + 1] = {name = name, meta = clean_meta, rings = rings}
-    end
+    _build_from_parsed(parsed)
 
-    logger.info("Loaded ", #units, " conservation unit polygons")
+    -- Persist to DB as JSONB
+    db.set_lookup_data(LOOKUP_KEY, parsed)
+    logger.info("Loaded ", #units, " conservation unit polygons from file (saved to DB)")
 end
 
 function _M.classify_point(lon, lat)

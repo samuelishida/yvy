@@ -12,7 +12,9 @@ if [ -f "$PROJECT_DIR/.env" ]; then
     set -a; source "$PROJECT_DIR/.env"; set +a
 fi
 
-export SQLITE_PATH="${SQLITE_PATH:-$PROJECT_DIR/backend/data/yvy.db}"
+if [ -z "${SQLITE_PATH:-}" ] || [[ "$SQLITE_PATH" == *"/backend/data/yvy.db" ]] || [[ "$SQLITE_PATH" == *"\\backend\\data\\yvy.db" ]]; then
+    export SQLITE_PATH="$PROJECT_DIR/backend-lua/data/yvy.db"
+fi
 export PORT="${PORT:-5000}"
 export AUTH_REQUIRED="${AUTH_REQUIRED:-0}"
 export LOG_LEVEL="${LOG_LEVEL:-INFO}"

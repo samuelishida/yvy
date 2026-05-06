@@ -1,13 +1,16 @@
 -- biome_lookup.lua — Biome point-in-polygon lookup
 -- Port of backend/biome_lookup.py
--- Loads biome_data.json at init time
+-- Loads from DB (JSONB) first; ingests from biome_data.json if missing
 
 local env    = require("app.env")
+local db     = require("app.db")
 local geo    = require("app.geo")
 local cjson  = require("cjson")
 local logger = require("app.logger")
 
 local _M = {}
+
+local LOOKUP_KEY = "biome_data"
 
 local BIOME_ORDER = {"Amazônia", "Cerrado", "Caatinga", "Mata Atlântica", "Pantanal", "Pampa"}
 
@@ -24,10 +27,35 @@ local BIOME_COLORS = {
 local biome_rings = {}
 local biome_colors = {}
 
-function _M.load_biomes()
-    local data_file = env.get("BIOME_DATA_PATH") or "/opt/yvy/backend-lua/data/biome_data.json"
+local function _build_from_parsed(parsed)
+    biome_rings = {}
+    biome_colors = {}
+    for _, name in ipairs(BIOME_ORDER) do
+        local biome = parsed[name]
+        if biome then
+            local color = biome.color or BIOME_COLORS[name] or ""
+            biome_colors[name] = color
+            local rings = biome.rings
+            if rings then
+                for _, ring in ipairs(rings) do
+                    biome_rings[#biome_rings + 1] = {name = name, ring = ring}
+                end
+            end
+        end
+    end
+end
 
-    -- Try multiple paths
+function _M.load_biomes()
+    -- Try DB first
+    local cached = db.get_lookup_data(LOOKUP_KEY)
+    if cached then
+        _build_from_parsed(cached)
+        logger.info("Loaded ", #biome_rings, " biome rings from DB for ", #biome_colors, " biomes")
+        return
+    end
+
+    -- Fallback: ingest from JSON file
+    local data_file = env.get("BIOME_DATA_PATH") or "/opt/yvy/backend-lua/data/biome_data.json"
     local paths = {
         data_file,
         "/opt/yvy/backend-lua/data/biome_data.json",
@@ -57,24 +85,11 @@ function _M.load_biomes()
         return
     end
 
-    biome_rings = {}
-    biome_colors = {}
+    _build_from_parsed(parsed)
 
-    for _, name in ipairs(BIOME_ORDER) do
-        local biome = parsed[name]
-        if biome then
-            local color = biome.color or BIOME_COLORS[name] or ""
-            biome_colors[name] = color
-            local rings = biome.rings
-            if rings then
-                for _, ring in ipairs(rings) do
-                    biome_rings[#biome_rings + 1] = {name = name, ring = ring}
-                end
-            end
-        end
-    end
-
-    logger.info("Loaded ", #biome_rings, " biome rings for ", #biome_colors, " biomes")
+    -- Persist to DB as JSONB
+    db.set_lookup_data(LOOKUP_KEY, parsed)
+    logger.info("Loaded ", #biome_rings, " biome rings from file for ", #biome_colors, " biomes (saved to DB)")
 end
 
 function _M.classify_point(lat, lon)

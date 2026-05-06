@@ -115,6 +115,47 @@ describe("db", function()
             local page2 = db_mod.get_news_page(2, 3, "pt")
             assert.are_equal(2, #page2)
         end)
+
+        it("normalizes dates and keeps newest items first", function()
+            local articles = {
+                {
+                    url = "https://example.com/article-newest",
+                    title = "Newest Article",
+                    description = "Newest Description",
+                    publishedAt = "Wed, 02 Jan 2099 10:00:00 GMT",
+                    source = {name = "TestSource"},
+                    ingested_at = "2099-01-02T10:00:00Z",
+                },
+                {
+                    url = "https://example.com/article-mid",
+                    title = "Mid Article",
+                    description = "Mid Description",
+                    publishedAt = "2099-01-01T23:00:00-03:00",
+                    source = {name = "TestSource"},
+                    ingested_at = "2099-01-02T01:00:00Z",
+                },
+                {
+                    url = "https://example.com/article-fallback",
+                    title = "Fallback Article",
+                    description = "Fallback Description",
+                    publishedAt = "not-a-date",
+                    source = {name = "TestSource"},
+                    ingested_at = "2098-12-31T23:59:59Z",
+                },
+            }
+
+            local count = db_mod.bulk_upsert_news(articles)
+            assert.are_equal(3, count)
+
+            local page = db_mod.get_news_page(1, 3, "pt")
+            assert.are_equal(3, #page)
+            assert.are_equal("https://example.com/article-newest", page[1].url)
+            assert.are_equal("2099-01-02T10:00:00Z", page[1].publishedAt)
+            assert.are_equal("https://example.com/article-mid", page[2].url)
+            assert.are_equal("2099-01-02T02:00:00Z", page[2].publishedAt)
+            assert.are_equal("https://example.com/article-fallback", page[3].url)
+            assert.are_equal("2098-12-31T23:59:59Z", page[3].publishedAt)
+        end)
     end)
 
     describe("get_stats", function()

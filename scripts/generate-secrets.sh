@@ -43,7 +43,7 @@ RUN_INGEST=0
 NEWS_API_KEY=
 FIRMS_MAP_KEY=
 WAQI_TOKEN=demo
-SQLITE_PATH=/opt/yvy/backend/data/yvy.db
+SQLITE_PATH=/opt/yvy/backend-lua/data/yvy.db
 REDIS_URL=redis://localhost:6379/0
 BACKEND_URL=http://127.0.0.1:5000
 EOF

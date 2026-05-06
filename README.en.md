@@ -5,11 +5,11 @@ Environmental observability for monitoring deforestation and wildfires in Brazil
 **Production**: https://yvy.app.br/
 
 Current stack:
-- **Frontend**: React 18 + Express (server-side proxy) + Tailwind CSS + Leaflet
-- **Backend**: Quart + Hypercorn (async ASGI)
-- **Primary database**: SQLite (aiosqlite, WAL mode, connection pool, JSONB BLOB columns)
-- **SQLite version**: pysqlite3-binary (SQLite 3.51.1) — monkey-patched for JSONB support on older OS
-- **Cache/rate limiting**: Redis (redis.asyncio, in-memory fallback)
+- **Frontend**: React 18 + C HTTP server (static files + API proxy) + Tailwind CSS + Leaflet
+- **Backend**: Lua 5.1 (business logic, SQLite, Redis)
+- **Primary database**: SQLite (lsqlite3, WAL mode, connection pool, JSONB BLOB columns)
+- **SQLite version**: lsqlite3 (SQLite 5.1) — native Lua bindings
+- **Cache/rate limiting**: Redis (lua-redis, in-memory fallback)
 - **Geospatial data**: TerraBrasilis (PRODES) and NASA FIRMS
 - **News**: NewsAPI + MyMemory/LibreTranslate/Google Translate chain
 - **Deploy**: OCI baremetal via Terraform + Ansible
@@ -17,10 +17,11 @@ Current stack:
 ## Requirements
 
 - Linux, macOS, or Windows (MINGW/MSYS)
-- Python 3.11+
-- Node.js 18+
+- Lua 5.1+
+- Node.js 18+ (for frontend build only)
 - Redis running locally (default: `redis://localhost:6379/0`)
 - Git
+- GCC (to compile C server)
 
 ## Local setup
 
@@ -30,23 +31,24 @@ make setup
 ```
 
 `make setup` does:
-- creates Python venv at `$HOME/.local/share/yvy-venv` (fallback for FS without symlink)
-- installs backend deps (`backend/requirements.txt`)
+- installs Lua deps (`luasocket`, `lsqlite3`, `lua-cjson`, `copas`)
 - installs frontend deps (`frontend/package.json`)
+- compiles C server (`frontend/yvy-server.exe`)
 
 ## Run locally
 
 Start everything:
 
 ```bash
-make run
+cd scripts
+.\start-lua-stack.ps1
 ```
 
 Start separately:
 
 ```bash
-make backend
-make frontend
+.\run-lua-backend.ps1    # backend only
+.\run-c-frontend.ps1      # frontend only
 ```
 
 Stop local processes:
@@ -270,7 +272,7 @@ Group=ubuntu
 WorkingDirectory=/opt/yvy
 Environment=HOME=/home/ubuntu
 Environment=YVY_LOCAL_DEV=0
-ExecStart=/usr/bin/bash /opt/yvy/scripts/run-backend.sh
+ExecStart=/usr/bin/bash /opt/yvy/scripts/run-lua.sh
 Restart=always
 RestartSec=5
 
@@ -342,7 +344,7 @@ After the VM is created, all subsequent deploys use OCI CLI + Ansible.
 | `AUTH_REQUIRED` | `0` | Set `1` in production to require API key |
 | `CORS_ORIGINS` | `http://localhost:5001,...` | Allowed CORS origins |
 | `LOG_LEVEL` | `INFO` | Log level (DEBUG, INFO, WARNING, ERROR) |
-| `SQLITE_PATH` | `backend/data/yvy.db` | SQLite database path (JSONB, WAL mode) |
+| `SQLITE_PATH` | `backend-lua/data/yvy.db` | SQLite database path (JSONB, WAL mode) |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis connection |
 | `BACKEND_URL` | `http://127.0.0.1:5000` | Backend URL for proxy |
 | `RATE_LIMIT_REQUESTS` | `60` | Max requests per window |

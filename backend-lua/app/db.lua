@@ -19,11 +19,17 @@ local _M = {}
 
 -- ── Configuration ────────────────────────────────────────────────────────
 
-local DB_PATH = env.get("SQLITE_PATH") or env.first_with_existing_parent({
+local configured_db_path = env.get("SQLITE_PATH")
+if configured_db_path and configured_db_path:match("backend[/\\]data[/\\]yvy%.db") then
+    logger.warn("Ignoring legacy SQLITE_PATH; using backend-lua/data/yvy.db", { path = configured_db_path })
+    configured_db_path = nil
+end
+
+local DB_PATH = configured_db_path or env.first_with_existing_parent({
+    "backend-lua/data/yvy.db",
     "data/yvy.db",
-    "../backend/data/yvy.db",
-    "backend/data/yvy.db",
-    "/opt/yvy/data/yvy.db",
+    "../backend-lua/data/yvy.db",
+    "/opt/yvy/backend-lua/data/yvy.db",
 })
 local POOL_SIZE = 3  -- connections per nginx worker
 
@@ -65,6 +71,12 @@ CREATE INDEX IF NOT EXISTS idx_news_ingested ON news(ingested_at);
 CREATE INDEX IF NOT EXISTS idx_fire_confidence ON fire_data(json_extract(data, '$.confidence'));
 CREATE INDEX IF NOT EXISTS idx_def_name ON deforestation_data(json_extract(data, '$.name'));
 CREATE INDEX IF NOT EXISTS idx_news_source ON news(json_extract(data, '$.source_name'));
+
+CREATE TABLE IF NOT EXISTS lookup_data (
+    key TEXT PRIMARY KEY,
+    data BLOB,
+    updated_at TEXT
+);
 ]]
 
 -- ── Connection pool ──────────────────────────────────────────────────────
@@ -404,6 +416,7 @@ function _M.bulk_upsert_news(articles)
         end
 
         local ingested = a.ingested_at or utils.now_iso()
+        local published_at = utils.normalize_news_date(a.publishedAt, ingested)
         local data_json = utils.encode_jsonb({
             title = a.title,
             description = a.description,
@@ -413,7 +426,7 @@ function _M.bulk_upsert_news(articles)
             urlToImage = a.urlToImage,
             content = a.content,
         })
-        exec_write(db, sql, {a.url, a.publishedAt, ingested, data_json})
+        exec_write(db, sql, {a.url, published_at, ingested, data_json})
     end
 
     db:exec("COMMIT")
@@ -432,7 +445,9 @@ function _M.get_news_page(page, page_size, lang)
     local sql = [[
         SELECT url, publishedAt, ingested_at, json(data) AS data_json
         FROM news
-        ORDER BY publishedAt DESC
+        ORDER BY COALESCE(datetime(publishedAt), datetime(ingested_at)) DESC,
+                 datetime(ingested_at) DESC,
+                 url DESC
         LIMIT ? OFFSET ?
     ]]
 
@@ -448,7 +463,7 @@ function _M.get_news_page(page, page_size, lang)
             description = d.description,
             title_en = d.title_en,
             description_en = d.description_en,
-            publishedAt = r.publishedAt or r["publishedAt"],
+            publishedAt = utils.normalize_news_date(r.publishedAt or r["publishedAt"], r.ingested_at or r["ingested_at"]),
             source = d.source_name and {name = d.source_name} or {},
             urlToImage = d.urlToImage,
             content = d.content,
@@ -557,6 +572,47 @@ function _M.clear_news_fields(urls, fields)
 end
 
 -- ── Stats ────────────────────────────────────────────────────────────────
+
+-- ── Lookup data (biome polygons, indigenous lands, conservation units) ──
+
+function _M.get_lookup_data(key)
+    local db = pool_acquire()
+    local row = fetch_one(db, "SELECT json(data) AS data_json, updated_at FROM lookup_data WHERE key = ?", {key})
+    pool_release(db)
+    if not row then return nil end
+    local d = utils.decode_jsonb(row.data_json or row["data_json"])
+    d._updated_at = row.updated_at or row["updated_at"]
+    return d
+end
+
+function _M.set_lookup_data(key, data)
+    local db = pool_acquire()
+    db:exec("BEGIN")
+    local data_json = utils.encode_jsonb(data)
+    local updated_at = utils.now_iso()
+    exec_write(db, [[
+        INSERT INTO lookup_data (key, data, updated_at)
+        VALUES (?, jsonb(?), ?)
+        ON CONFLICT(key) DO UPDATE SET data = jsonb(excluded.data), updated_at = excluded.updated_at
+    ]], {key, data_json, updated_at})
+    db:exec("COMMIT")
+    pool_release(db)
+    return true
+end
+
+function _M.has_lookup_data(key)
+    local db = pool_acquire()
+    local row = fetch_one(db, "SELECT 1 AS found FROM lookup_data WHERE key = ?", {key})
+    pool_release(db)
+    return row ~= nil
+end
+
+function _M.count_deforestation()
+    local db = pool_acquire()
+    local row = fetch_one(db, "SELECT COUNT(*) AS cnt FROM deforestation_data")
+    pool_release(db)
+    return row and tonumber(row.cnt or row["cnt"] or 0) or 0
+end
 
 function _M.get_stats()
     local db = pool_acquire()

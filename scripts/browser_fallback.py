@@ -7,6 +7,7 @@ import json
 import random
 import re
 import sys
+from urllib.parse import urljoin
 
 STEALTH_ARGS = [
     "--disable-gpu",
@@ -50,15 +51,15 @@ USER_AGENTS = [
 ]
 
 BLOCK_PATTERNS = (
-    "captcha",
-    "cloudflare",
     "attention required",
-    "access denied",
-    "forbidden",
     "verify you are human",
     "bot verification",
     "/cdn-cgi/challenge",
+    "cf-chl-",
+    "<title>access denied",
 )
+
+IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif")
 
 
 def challenge_detected(text: str) -> bool:
@@ -66,20 +67,49 @@ def challenge_detected(text: str) -> bool:
     return any(pat in lowered for pat in BLOCK_PATTERNS)
 
 
-def extract_meta_image(html: str) -> str | None:
+def is_bad_image_url(url: str) -> bool:
+    lowered = (url or "").lower().rstrip("/")
+    path = lowered.split("?", 1)[0]
+    return (
+        lowered.endswith(("/none", "/null", "/undefined"))
+        or not any(ext in path for ext in IMAGE_EXTS)
+        or lowered.endswith(".svg")
+        or lowered.endswith(".html")
+        or lowered.endswith(".ghtml")
+        or "logo" in lowered
+        or "icon" in lowered
+        or "pixel" in lowered
+        or "1x1" in lowered
+    )
+
+
+def extract_meta_image(html: str, base_url: str = "") -> str | None:
     patterns = [
         r'property=["\']og:image["\']\s+content=["\']([^"\']+)["\']',
         r'content=["\']([^"\']+)["\']\s+property=["\']og:image["\']',
         r'name=["\']twitter:image["\']\s+content=["\']([^"\']+)["\']',
         r'content=["\']([^"\']+)["\']\s+name=["\']twitter:image["\']',
+        r'background-image\s*:\s*url\((["\']?)([^"\')]+)\1\)',
         r'<img[^>]+src=["\']([^"\']+)["\']',
+        r'<img[^>]+data-src=["\']([^"\']+)["\']',
     ]
     for pattern in patterns:
         match = re.search(pattern, html, re.I)
         if match:
-            candidate = match.group(1)
+            candidate = match.group(2) if match.lastindex and match.lastindex >= 2 else match.group(1)
             if candidate and not candidate.startswith("data:"):
-                return candidate
+                image_url = urljoin(base_url, candidate)
+                if not is_bad_image_url(image_url):
+                    return image_url
+
+    srcset = re.search(r'<img[^>]+srcset=["\']([^"\']+)["\']', html, re.I)
+    if srcset:
+        first = srcset.group(1).split(",")[0].strip().split(" ")[0]
+        if first and not first.startswith("data:"):
+            image_url = urljoin(base_url, first)
+            if not is_bad_image_url(image_url):
+                return image_url
+
     return None
 
 
@@ -88,6 +118,36 @@ def extract_title(html: str) -> str | None:
     if not match:
         return None
     return re.sub(r"\s+", " ", match.group(1)).strip() or None
+
+
+async def extract_dom_image(page) -> str | None:
+    candidates = await page.evaluate(
+        """() => {
+          const out = [];
+          const add = (value) => { if (value) out.push(value); };
+          document.querySelectorAll('meta[property="og:image"], meta[property="og:image:url"], meta[name="twitter:image"], meta[name="twitter:image:src"], meta[itemprop="image"]')
+            .forEach((el) => add(el.content || el.getAttribute('content')));
+          document.querySelectorAll('[style*="background-image"]')
+            .forEach((el) => {
+              const inline = el.getAttribute('style') || '';
+              const match = inline.match(/background-image\\s*:\\s*url\\((['"]?)(.*?)\\1\\)/i);
+              add(match && match[2]);
+            });
+          document.querySelectorAll('img').forEach((img) => {
+            add(img.currentSrc || img.src);
+            add(img.dataset && (img.dataset.src || img.dataset.lazySrc || img.dataset.original));
+            if (img.srcset) {
+              img.srcset.split(',').forEach((part) => add(part.trim().split(/\\s+/)[0]));
+            }
+          });
+          return out;
+        }"""
+    )
+    for candidate in candidates:
+        image_url = urljoin(page.url, candidate)
+        if not is_bad_image_url(image_url):
+            return image_url
+    return None
 
 
 async def run(url: str, mode: str) -> dict:
@@ -121,9 +181,6 @@ async def run(url: str, mode: str) -> dict:
             if resource_type in {"font", "media"}:
                 await route.abort()
                 return
-            if mode == "page" and resource_type == "image":
-                await route.abort()
-                return
             await route.continue_()
 
         await page.route("**/*", route_handler)
@@ -141,6 +198,10 @@ async def run(url: str, mode: str) -> dict:
         page_html = await page.content()
         status = response.status if response is not None else 0
         body = response_text or page_html
+        image = extract_meta_image(page_html, page.url) or await extract_dom_image(page)
+        challenge = challenge_detected(body) or challenge_detected(page_html)
+        if status == 200 and image:
+            challenge = False
 
         result = {
             "ok": True,
@@ -149,8 +210,8 @@ async def run(url: str, mode: str) -> dict:
             "body": body,
             "html": page_html,
             "title": extract_title(page_html),
-            "image": extract_meta_image(page_html),
-            "challenge": challenge_detected(body) or challenge_detected(page_html),
+            "image": image,
+            "challenge": challenge,
         }
 
         await context.close()
@@ -159,6 +220,9 @@ async def run(url: str, mode: str) -> dict:
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", required=True)
     parser.add_argument("--mode", choices=("feed", "page"), default="feed")

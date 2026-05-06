@@ -1,17 +1,44 @@
 -- indigenous_lands_lookup.lua — TI point-in-polygon lookup
 -- Port of backend/indigenous_lands_lookup.py
+-- Loads from DB (JSONB) first; ingests from indigenous_lands.json if missing
 
 local env    = require("app.env")
+local db     = require("app.db")
 local geo    = require("app.geo")
 local cjson  = require("cjson")
 local logger = require("app.logger")
 
 local _M = {}
 
+local LOOKUP_KEY = "indigenous_lands"
+
 -- List of {name, meta, rings}
 local lands = {}
 
+local function _build_from_parsed(parsed)
+    lands = {}
+    for name, meta in pairs(parsed) do
+        local rings = meta.rings
+        local clean_meta = {}
+        for k, v in pairs(meta) do
+            if k ~= "rings" then
+                clean_meta[k] = v
+            end
+        end
+        lands[#lands + 1] = {name = name, meta = clean_meta, rings = rings}
+    end
+end
+
 function _M.load_indigenous_lands()
+    -- Try DB first
+    local cached = db.get_lookup_data(LOOKUP_KEY)
+    if cached then
+        _build_from_parsed(cached)
+        logger.info("Loaded ", #lands, " indigenous land polygons from DB")
+        return
+    end
+
+    -- Fallback: ingest from JSON file
     local paths = {
         env.get("INDIGENOUS_LANDS_PATH") or "",
         "/opt/yvy/backend-lua/data/indigenous_lands.json",
@@ -41,19 +68,11 @@ function _M.load_indigenous_lands()
         return
     end
 
-    lands = {}
-    for name, meta in pairs(parsed) do
-        local rings = meta.rings
-        local clean_meta = {}
-        for k, v in pairs(meta) do
-            if k ~= "rings" then
-                clean_meta[k] = v
-            end
-        end
-        lands[#lands + 1] = {name = name, meta = clean_meta, rings = rings}
-    end
+    _build_from_parsed(parsed)
 
-    logger.info("Loaded ", #lands, " indigenous land polygons")
+    -- Persist to DB as JSONB
+    db.set_lookup_data(LOOKUP_KEY, parsed)
+    logger.info("Loaded ", #lands, " indigenous land polygons from file (saved to DB)")
 end
 
 function _M.classify_point(lon, lat)

@@ -154,7 +154,7 @@ Group=ubuntu
 WorkingDirectory=/opt/yvy
 Environment=HOME=/home/ubuntu
 Environment=YVY_LOCAL_DEV=0
-ExecStart=/usr/bin/bash /opt/yvy/scripts/run-backend.sh
+ExecStart=/usr/bin/bash /opt/yvy/scripts/run-lua.sh
 Restart=always
 RestartSec=5
 
@@ -251,7 +251,7 @@ Group=ubuntu
 WorkingDirectory=/opt/yvy
 Environment=HOME=/home/ubuntu
 Environment=YVY_LOCAL_DEV=0
-ExecStart=/usr/bin/bash /opt/yvy/scripts/run-backend.sh
+ExecStart=/usr/bin/bash /opt/yvy/scripts/run-lua.sh
 Restart=always
 RestartSec=5
 
@@ -311,7 +311,7 @@ Ao final, exibe a URL de acesso.
 - **Node 12 é velho demais** para react-scripts 5. Use nvm para instalar Node 18 na VM.
 - **VMs com 1GB RAM** precisam de swap (2GB) para npm install e webpack.
 - **Frontend roda em modo DEV** (`YVY_LOCAL_DEV=1`) na VM porque o build de produção exige mais RAM.
-- **Backend usa `run-backend.sh`** que carrega o `.env` antes de iniciar o hypercorn.
+- **Backend usa `run-lua.sh`** que carrega o `.env` antes de iniciar o Lua.
 - **CORS_ORIGINS** deve incluir o IP público da VM para acesso via browser.
 
 ---

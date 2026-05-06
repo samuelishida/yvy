@@ -97,7 +97,7 @@ The app also auto-migrates on startup if legacy schema is detected.
 | `DEV` | `0` | `1` runs Quart dev server instead of hypercorn |
 | `AUTH_REQUIRED` | `0` | Set `1` in production to require `X-API-Key` |
 | `API_KEY` | empty | Used by both frontend proxy and backend auth |
-| `SQLITE_PATH` | `backend/data/yvy.db` | Path to SQLite database file (container default: `/app/data/yvy.db`) |
+| `SQLITE_PATH` | `backend-lua/data/yvy.db` | Path to SQLite database file |
 | `REDIS_URL` | `redis://localhost:6379/0` | Async Redis connection for rate limiting |
 | `BACKEND_URL` | `http://127.0.0.1:5000` | Frontend proxy target |
 | `TRUSTED_PROXIES` | private ranges | CIDR list for X-Forwarded-For trust |
@@ -172,7 +172,7 @@ Group=ubuntu
 WorkingDirectory=/opt/yvy
 Environment=HOME=/home/ubuntu
 Environment=YVY_LOCAL_DEV=0
-ExecStart=/usr/bin/bash /opt/yvy/scripts/run-backend.sh
+ExecStart=/usr/bin/bash /opt/yvy/scripts/run-lua.sh
 Restart=always
 RestartSec=5
 
@@ -228,7 +228,7 @@ Production services: `yvy-backend` (systemd), `yvy-frontend` (systemd).
 - **Node 12 is too old** for react-scripts 5. Use nvm to install Node 18 on the VM.
 - **1GB RAM VMs** need swap (2GB) for npm install and webpack compilation.
 - **Frontend runs in DEV mode** (`YVY_LOCAL_DEV=1`) on the VM because production build requires more RAM.
-- **Backend uses `run-backend.sh`** which sources `.env` before starting hypercorn.
+- **Backend uses `run-lua.sh`** which sources `.env` before starting Lua.
 - **CORS_ORIGINS** must include the VM's public IP for browser access to work.
 
 ## Gotchas
@@ -237,7 +237,7 @@ Production services: `yvy-backend` (systemd), `yvy-frontend` (systemd).
 - **`test_api.py` is stale** — still uses mongomock and patches `bk.mongo_db`. Use `test_sqlite_manual.py` instead.
 - **`requirements-dev.txt` is stale** — still lists motor/pymongo/mongomock. Don't use it.
 - **`.env.example` is stale** — still has MongoDB variables, missing SQLITE_PATH and others.
-- **ingest_sqlite.py** has hardcoded `/app/` paths from Docker era — these need updating for baremetal (`backend/data/`).
+- Legacy Python ingest files are removed; Lua uses `backend-lua/data/`.
 - **Quart/async**: All route handlers are `async def`. DB queries use `await` with aiosqlite. Redis uses `redis.asyncio`.
 - **No frontend tests exist** despite `package.json` having a `test` script (react-scripts test).
 - **No linter/formatter configured** for either Python or JS.
