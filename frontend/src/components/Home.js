@@ -82,43 +82,103 @@ function VisibleFiresCounter({ fires, showFires, onVisibleCountChange, onBboxCha
   return null;
 }
 
-// Fire hit detection for event delegation - find fire marker under cursor
-function findFireAtPoint(map, fires, point, maxRadius = 8) {
+// Spatial grid for O(1) fire hit detection - bucket fires by screen cell
+function buildFireGrid(map, fires, cellSize = 20) {
+  const grid = new Map();
+  fires.forEach((fire, idx) => {
+    const p = map.latLngToContainerPoint([fire.lat, fire.lon]);
+    const key = `${Math.floor(p.x / cellSize)},${Math.floor(p.y / cellSize)}`;
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push({ idx, fire, p });
+  });
+  return grid;
+}
+
+// Fire hit detection using spatial grid - O(1) bucket lookup instead of O(n) loop
+function findFireAtPoint(map, fires, point, maxRadius = 8, gridRef) {
   if (!fires || fires.length === 0) return null;
-  for (let i = 0; i < fires.length; i++) {
-    const fire = fires[i];
-    const firePoint = map.latLngToContainerPoint([fire.lat, fire.lon]);
-    const dist = Math.hypot(point.x - firePoint.x, point.y - firePoint.y);
+
+  // Build grid if not provided (cached between calls)
+  const cellSize = 20;
+  const key = `${Math.floor(point.x / cellSize)},${Math.floor(point.y / cellSize)}`;
+
+  // Check current cell + 8 neighbors
+  const candidates = [];
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      const neighborKey = `${Math.floor(point.x / cellSize) + dx},${Math.floor(point.y / cellSize) + dy}`;
+      if (gridRef.current.has(neighborKey)) {
+        candidates.push(...gridRef.current.get(neighborKey));
+      }
+    }
+  }
+
+  for (const { idx, fire, p } of candidates) {
+    const dist = Math.hypot(point.x - p.x, point.y - p.y);
     const radius = fire.confidence === 'nominal' || fire.confidence === 'h' ? 5
                : fire.confidence === 'high' ? 4 : 3;
     if (dist <= Math.max(radius, maxRadius)) {
-      return i;
+      return idx;
     }
   }
   return null;
 }
 
+// Throttled fire hit detection for pointer events with spatial grid caching
 function FireEventsHandler({ fires, fireAlertMap, alertRows, onFireOver, onFireClick, onFireHoverEnd }) {
+  const rafRef = useRef(null);
+  const lastIdxRef = useRef(null);
+  const gridRef = useRef(new Map());
+  const prevFiresRef = useRef(null);
+
   const map = useMapEvents({
+    moveend: () => {
+      // Rebuild grid when map moves (fires screen positions changed)
+      if (fires && fires.length > 0) {
+        gridRef.current = buildFireGrid(map, fires);
+        prevFiresRef.current = fires;
+      }
+    },
     mousemove: (e) => {
       if (!fires || fires.length === 0) return;
-      const idx = findFireAtPoint(e.originalEvent.target._map, fires, e.containerPoint);
-      if (idx !== null) {
-        const fireAlertId = fireAlertMap.get(idx);
-        onFireOver(fireAlertId, idx);
-      } else {
-        onFireHoverEnd();
+      // Rebuild grid if fires array changed
+      if (prevFiresRef.current !== fires) {
+        gridRef.current = buildFireGrid(map, fires);
+        prevFiresRef.current = fires;
       }
+      if (rafRef.current) return; // throttle: skip if already scheduled
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        const idx = findFireAtPoint(map, fires, e.containerPoint, 8, gridRef);
+        if (idx !== lastIdxRef.current) {
+          lastIdxRef.current = idx;
+          if (idx !== null) {
+            const fireAlertId = fireAlertMap.get(idx);
+            onFireOver(fireAlertId, idx);
+          } else {
+            onFireHoverEnd();
+          }
+        }
+      });
     },
     click: (e) => {
       if (!fires || fires.length === 0) return;
-      const idx = findFireAtPoint(e.originalEvent.target._map, fires, e.containerPoint);
+      const idx = findFireAtPoint(map, fires, e.containerPoint, 8, gridRef);
       if (idx !== null) {
         const fireAlertId = fireAlertMap.get(idx);
         onFireClick(fireAlertId, idx, e);
       }
     },
   });
+
+  // Build grid on mount
+  useEffect(() => {
+    if (fires && fires.length > 0) {
+      gridRef.current = buildFireGrid(map, fires);
+      prevFiresRef.current = fires;
+    }
+  }, [fires, map]);
+
   return null;
 }
 
