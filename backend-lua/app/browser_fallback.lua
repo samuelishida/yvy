@@ -24,8 +24,22 @@ local function resolve_script_path()
     return "scripts/browser_fallback.py"
 end
 
+local function detect_python()
+    local override = os.getenv("PYTHON")
+    if override and override ~= "" then return override end
+    -- Linux: prefer python3
+    if package.config:sub(1, 1) == "/" then
+        return "python3"
+    end
+    return "python"
+end
+
+local function is_windows()
+    return package.config:sub(1, 1) == "\\"
+end
+
 function _M.fetch(url, mode)
-    local python = os.getenv("PYTHON") or "python"
+    local python = detect_python()
     local inner_cmd = table.concat({
         shell_quote(python),
         shell_quote(resolve_script_path()),
@@ -35,7 +49,12 @@ function _M.fetch(url, mode)
         shell_quote(mode or "feed"),
         "2>&1",
     }, " ")
-    local cmd = 'cmd /c ' .. shell_quote(inner_cmd)
+    local cmd
+    if is_windows() then
+        cmd = 'cmd /c ' .. shell_quote(inner_cmd)
+    else
+        cmd = inner_cmd
+    end
 
     local handle = io.popen(cmd, "r")
     if not handle then

@@ -71,6 +71,8 @@
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
+  /* Hidden by default; shown at >=900px (see below) */
+  display: none;
 }
 
 /* Wider screens: more spacing */
@@ -116,8 +118,22 @@
     0 0 0 1px rgba(0, 180, 216, 0.2);
 }
 
+/* >=900px: show data-source tag pill alongside icon + label */
 @media (min-width: 900px) {
-  .map-btn__tag { display: inline; }
+  .map-btn__tag { display: inline-block; }
+}
+
+/* Narrow viewport: drop label, keep icon only.
+   "Mapas Temáticos" still readable; sub-tag and label fall away gracefully. */
+@media (max-width: 520px) {
+  .map-btn__label { display: none; }
+  .map-btn {
+    padding: 7px 10px;
+    gap: 0;
+    flex: 0 0 auto;
+  }
+  .map-btn__icon { font-size: 1rem; }
+  .selector-scroll { gap: 4px; }
 }
 
 /* Active map label (right side of selector bar) */

@@ -10,6 +10,8 @@ Group={{ yvy_group }}
 WorkingDirectory={{ app_dir }}
 Environment=HOME=/home/{{ yvy_user }}
 Environment=YVY_LOCAL_DEV=0
+Environment=PYTHON={{ app_dir }}/.venv/bin/python
+Environment=PLAYWRIGHT_BROWSERS_PATH=/home/{{ yvy_user }}/.cache/ms-playwright
 ExecStart=/usr/bin/bash {{ app_dir }}/scripts/run-lua.sh
 Restart=always
 RestartSec=5

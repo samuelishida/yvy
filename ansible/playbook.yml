@@ -42,6 +42,10 @@
     c_server_bin: "{{ app_dir }}/backend-lua/yvy-server"
     c_server_src: "{{ app_dir }}/backend-lua/yvy-server.c"
     static_build_dir: "{{ app_dir }}/frontend/build"
+    # Playwright stealth scraper for blocked sources (Greenpeace, oc.eco.br, etc.)
+    install_playwright: true
+    run_backfill_after_deploy: true
+    backfill_limit: "200"
 
   tasks:
     # ── 1. System packages ─────────────────────────────────────────────────
@@ -51,6 +55,8 @@
         name:
           - git
           - python3
+          - python3-pip
+          - python3-venv
           - build-essential
           - gcc
           - make
@@ -466,6 +472,56 @@
     # ── 12. Final user-facing health checks ────────────────────────────────
     - name: Recarregar nginx (force flush handlers antes da verificacao)
       ansible.builtin.meta: flush_handlers
+
+    # ── 12.5. Playwright (venv) + stealth scrapers ────────────────────────
+    # Install Playwright into a venv at /opt/yvy/.venv to dodge Ubuntu 24.04
+    # PEP 668 (externally-managed). PYTHON env var is exported via systemd so
+    # browser_fallback.lua picks up the venv interpreter.
+    - name: Instalar Playwright em venv {{ app_dir }}/.venv
+      when: install_playwright | bool
+      ansible.builtin.pip:
+        name:
+          - playwright
+        virtualenv: "{{ app_dir }}/.venv"
+        virtualenv_command: python3 -m venv
+      become_user: "{{ yvy_user }}"
+
+    - name: Instalar browser Chromium do Playwright (no venv)
+      when: install_playwright | bool
+      ansible.builtin.command:
+        cmd: "{{ app_dir }}/.venv/bin/python -m playwright install chromium"
+      environment:
+        PLAYWRIGHT_BROWSERS_PATH: "/home/{{ yvy_user }}/.cache/ms-playwright"
+      become_user: "{{ yvy_user }}"
+      register: pw_install
+      changed_when: "'is already installed' not in pw_install.stdout"
+
+    - name: Instalar deps de sistema do Chromium (apt libs)
+      when: install_playwright | bool
+      ansible.builtin.command:
+        cmd: "{{ app_dir }}/.venv/bin/python -m playwright install-deps chromium"
+      register: pw_deps
+      changed_when: "'0 newly installed' not in pw_deps.stdout"
+      failed_when: false
+
+    - name: Backfill de imagens de noticias via Playwright
+      when: run_backfill_after_deploy | bool
+      ansible.builtin.command:
+        cmd: "{{ app_dir }}/.venv/bin/python scripts/backfill_news_images_playwright.py --limit {{ backfill_limit }} --timeout 60"
+        chdir: "{{ app_dir }}"
+      environment:
+        PLAYWRIGHT_BROWSERS_PATH: "/home/{{ yvy_user }}/.cache/ms-playwright"
+      become_user: "{{ yvy_user }}"
+      register: backfill_result
+      async: 2400
+      poll: 30
+      changed_when: "'updated=' in backfill_result.stdout and 'updated=0 ' not in backfill_result.stdout"
+      failed_when: false
+
+    - name: Mostrar resultado do backfill
+      when: run_backfill_after_deploy | bool and backfill_result.stdout is defined
+      ansible.builtin.debug:
+        msg: "{{ backfill_result.stdout_lines | default([]) }}"
 
     - name: Testar backend health (direto)
       ansible.builtin.uri:

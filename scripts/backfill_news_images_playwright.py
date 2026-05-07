@@ -18,7 +18,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = SCRIPT_DIR.parent
 
 sys.path.insert(0, str(SCRIPT_DIR))
-from browser_fallback import STEALTH_ARGS, STEALTH_SCRIPT, USER_AGENTS  # noqa: E402
+from browser_fallback import STEALTH_ARGS, STEALTH_SCRIPT, USER_AGENTS, VIEWPORTS  # noqa: E402
 
 
 DEFAULT_DBS = [
@@ -215,7 +215,13 @@ async def fetch_page_image(context, url: str, timeout_ms: int) -> tuple[str | No
         {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
             "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+            "Connection": "keep-alive",
             "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Cache-Control": "max-age=0",
         }
     )
 
@@ -258,15 +264,17 @@ async def backfill_db(path: Path, args: argparse.Namespace) -> tuple[int, int, i
     failed = 0
     processed = 0
     ua = random.choice(USER_AGENTS)
+    vp = random.choice(VIEWPORTS)
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True, args=STEALTH_ARGS)
         context = await browser.new_context(
             user_agent=ua,
             locale="pt-BR",
             timezone_id="America/Sao_Paulo",
-            viewport={"width": 1920, "height": 1080},
+            viewport=vp,
             device_scale_factor=1,
             color_scheme="light",
+            reduced_motion="no-preference",
         )
         await context.add_init_script(STEALTH_SCRIPT)
 

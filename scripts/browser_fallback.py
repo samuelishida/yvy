@@ -23,18 +23,47 @@ STEALTH_ARGS = [
     "--disable-popup-blocking",
     "--disable-renderer-backgrounding",
     "--disable-blink-features=AutomationControlled",
+    "--disable-features=IsolateOrigins,site-per-process",
     "--window-size=1920,1080",
 ]
 
+# Stealth init script — based on samuelishida/hardware-bot patterns.
+# Spoofs navigator.webdriver, plugins, languages, hardware fingerprint,
+# userAgentData, window.chrome.runtime, and Permissions API mock.
 STEALTH_SCRIPT = """
-Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+Object.defineProperty(navigator, 'webdriver', { get: () => false });
+Object.defineProperty(navigator, 'plugins', {
+    get: () => [
+        { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+        { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+        { name: 'Native Client', filename: 'internal-nacl-plugin' },
+    ],
+});
 Object.defineProperty(navigator, 'language', { get: () => 'pt-BR' });
 Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'pt', 'en-US', 'en'] });
+Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
 Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
 Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
 Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 0 });
-window.chrome = window.chrome || { runtime: {} };
+Object.defineProperty(navigator, 'userAgentData', {
+    get: () => ({
+        mobile: false,
+        platform: 'Windows',
+        brands: [
+            { brand: 'Chromium', version: '131' },
+            { brand: 'Google Chrome', version: '131' },
+            { brand: 'Not_A Brand', version: '24' }
+        ]
+    })
+});
+window.chrome = window.chrome || {};
+window.chrome.runtime = window.chrome.runtime || {
+    id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+    connect: () => ({}),
+    sendMessage: () => {},
+    getURL: () => '',
+    getManifest: () => ({ version: '1.0', name: 'Google Chrome' }),
+};
 const originalQuery = window.navigator.permissions && window.navigator.permissions.query;
 if (originalQuery) {
   window.navigator.permissions.query = (parameters) => (
@@ -46,8 +75,18 @@ if (originalQuery) {
 """
 
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+]
+
+VIEWPORTS = [
+    {"width": 1920, "height": 1080},
+    {"width": 1366, "height": 768},
+    {"width": 1536, "height": 864},
+    {"width": 1440, "height": 900},
 ]
 
 BLOCK_PATTERNS = (
@@ -157,22 +196,31 @@ async def run(url: str, mode: str) -> dict:
         return {"ok": False, "error": f"playwright import failed: {exc}"}
 
     ua = random.choice(USER_AGENTS)
+    vp = random.choice(VIEWPORTS)
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True, args=STEALTH_ARGS)
         context = await browser.new_context(
             user_agent=ua,
             locale="pt-BR",
             timezone_id="America/Sao_Paulo",
-            viewport={"width": 1920, "height": 1080},
+            viewport=vp,
             device_scale_factor=1,
             color_scheme="light",
+            reduced_motion="no-preference",
         )
         await context.add_init_script(STEALTH_SCRIPT)
 
         page = await context.new_page()
         await page.set_extra_http_headers({
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
             "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+            "Connection": "keep-alive",
             "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Cache-Control": "max-age=0",
         })
 
         async def route_handler(route):
