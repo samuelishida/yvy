@@ -5,6 +5,7 @@ import { useI18n } from '../i18n';
 import { getCache, setCache } from '../utils/cache';
 import 'leaflet/dist/leaflet.css';
 import '../Home.css';
+import L from 'leaflet';
 
 const FIRE_STYLES = {
   nominal: { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.85, radius: 5, weight: 1 },
@@ -53,8 +54,9 @@ function fireStyle(confidence) {
   return FIRE_STYLES.low;
 }
 
-function VisibleFiresCounter({ fires, showFires, onVisibleCountChange }) {
+function VisibleFiresCounter({ fires, showFires, onVisibleCountChange, onBboxChange }) {
   const timerRef = useRef(null);
+  const bboxTimerRef = useRef(null);
   const update = (map) => {
     if (!showFires || !fires) return;
     clearTimeout(timerRef.current);
@@ -64,12 +66,126 @@ function VisibleFiresCounter({ fires, showFires, onVisibleCountChange }) {
     }, 50);
   };
   const map = useMapEvents({
-    moveend: () => update(map),
+    moveend: () => {
+      update(map);
+      clearTimeout(bboxTimerRef.current);
+      bboxTimerRef.current = setTimeout(() => {
+        const b = map.getBounds();
+        onBboxChange({ sw_lat: b.getSouthWest().lat.toFixed(2), ne_lat: b.getNorthEast().lat.toFixed(2), sw_lng: b.getSouthWest().lng.toFixed(2), ne_lng: b.getNorthEast().lng.toFixed(2) });
+      }, 300);
+    },
     zoomend: () => update(map),
   });
   useEffect(() => {
     update(map);
   }, [fires, showFires]); // eslint-disable-line
+  return null;
+}
+
+// Fire hit detection for event delegation - find fire marker under cursor
+function findFireAtPoint(map, fires, point, maxRadius = 8) {
+  if (!fires || fires.length === 0) return null;
+  for (let i = 0; i < fires.length; i++) {
+    const fire = fires[i];
+    const firePoint = map.latLngToContainerPoint([fire.lat, fire.lon]);
+    const dist = Math.hypot(point.x - firePoint.x, point.y - firePoint.y);
+    const radius = fire.confidence === 'nominal' || fire.confidence === 'h' ? 5
+               : fire.confidence === 'high' ? 4 : 3;
+    if (dist <= Math.max(radius, maxRadius)) {
+      return i;
+    }
+  }
+  return null;
+}
+
+function FireEventsHandler({ fires, fireAlertMap, alertRows, onFireOver, onFireClick, onFireHoverEnd }) {
+  const map = useMapEvents({
+    mousemove: (e) => {
+      if (!fires || fires.length === 0) return;
+      const idx = findFireAtPoint(e.originalEvent.target._map, fires, e.containerPoint);
+      if (idx !== null) {
+        const fireAlertId = fireAlertMap.get(idx);
+        onFireOver(fireAlertId, idx);
+      } else {
+        onFireHoverEnd();
+      }
+    },
+    click: (e) => {
+      if (!fires || fires.length === 0) return;
+      const idx = findFireAtPoint(e.originalEvent.target._map, fires, e.containerPoint);
+      if (idx !== null) {
+        const fireAlertId = fireAlertMap.get(idx);
+        onFireClick(fireAlertId, idx, e);
+      }
+    },
+  });
+  return null;
+}
+
+const FireMarker = React.memo(function FireMarker({ fire, idx, s, fireAlert, highlighted, t }) {
+  const landTag = fireAlert && (() => {
+    if (fireAlert.type === 'indigenous_land')   return { cls: 'indigenous',   label: `Terra Indígena: ${fireAlert.meta}` };
+    if (fireAlert.type === 'conservation_unit') return { cls: 'conservation', label: `UC: ${fireAlert.meta}` };
+    if (fireAlert.type === 'night_fire')        return { cls: 'night-fire',   label: 'Foco Noturno' };
+    if (fireAlert.type === 'prodes')            return { cls: 'prodes',       label: `PRODES: ${fireAlert.meta}` };
+    return null;
+  })();
+  return (
+    <React.Fragment key={`f-${idx}`}>
+      <CircleMarker
+        center={[fire.lat, fire.lon]}
+        pathOptions={s}
+        radius={s.radius}
+      >
+        <Popup>
+          <strong>{t('home.heatFocus')}</strong><br />
+          {t('home.confidence')}: {fire.confidence}<br />
+          {t('home.date')}: {fire.acq_date} {fire.acq_time}<br />
+          {t('home.satellite')}: {fire.satellite}<br />
+          {t('home.brightnessTemp')}: {fire.bright_ti4}K
+          {landTag && (
+            <>
+              <br />
+              <span className={`fire-land-tag ${landTag.cls}`}>{landTag.label}</span>
+              {fireAlert.state && <><br /><span style={{ fontSize: 10, color: '#888' }}>{fireAlert.state}</span></>}
+            </>
+          )}
+          <br />
+          {t('home.sourceNasa')}
+        </Popup>
+      </CircleMarker>
+      {highlighted && (
+        <CircleMarker
+          center={[fire.lat, fire.lon]}
+          pathOptions={{ color: '#fff', fillColor: s.fillColor, fillOpacity: 1, radius: s.radius + 3, weight: 2 }}
+          interactive={false}
+        />
+      )}
+    </React.Fragment>
+  );
+});
+
+// MapController handles flyTo animations and smooth wheel zoom
+function MapController({ activeAlert }) {
+  const map = useMapEvents({});
+
+  useEffect(() => {
+    // Enable SmoothWheelZoom if available (Google Maps-style smooth zoom)
+    if (L && L.SmoothWheelZoom) {
+      map.options.scrollWheelZoom = 'center';
+      map.addHandler('smoothWheelZoom', L.SmoothWheelZoom);
+    }
+  }, []); // eslint-disable-line
+
+  useEffect(() => {
+    if (activeAlert?.center) {
+      map.flyTo(activeAlert.center, map.getZoom() < 6 ? 8 : map.getZoom(), {
+        duration: 1.5,
+        easeLinearity: 0.25,
+      });
+    }
+  }, [activeAlert?.id]); // eslint-disable-line
+
   return null;
 }
 
@@ -292,7 +408,7 @@ const AlertsPanel = React.memo(function AlertsPanel({ alerts, activeAlertId, onA
   );
 });
 
-const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, loading, error, t, airQuality, temperature, alerts, activeAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave }) {
+const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, loading, error, t, airQuality, temperature, alerts, activeAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, onBboxChange }) {
   const [satellite, setSatellite] = useState(true);
   const [visibleCount, setVisibleCount] = useState(null);
   const alertRows = asArray(alerts);
@@ -306,7 +422,14 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
     return m;
   }, [fireRows, alertRows]);
 
-  const activeAlert = useMemo(() => alertRows.find(a => a.id === activeAlertId) || null, [alertRows, activeAlertId]);
+  // Alert lookup for O(1) access instead of O(n) find in render loop
+  const alertByIdMap = useMemo(() => {
+    const m = new Map();
+    alertRows.forEach(a => m.set(a.id, a));
+    return m;
+  }, [alertRows]);
+
+  const activeAlert = useMemo(() => alertByIdMap.get(activeAlertId) || null, [alertByIdMap, activeAlertId]);
 
   const highlightedFires = useMemo(() => {
     if (!activeAlert?.center || fireRows.length === 0) return null;
@@ -378,11 +501,14 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
         <MapContainer
           center={[-14.235, -51.925]}
           zoom={4}
+          zoomSnap={0.5}
+          zoomDelta={0.5}
           scrollWheelZoom
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
         >
           <TileLayer key={satellite ? 'sat' : 'osm'} attribution={tileAttr} url={tileUrl} />
-          <VisibleFiresCounter fires={fireRows} showFires={showFires} onVisibleCountChange={setVisibleCount} />
+          <MapController activeAlert={activeAlert} />
+          <VisibleFiresCounter fires={fireRows} showFires={showFires} onVisibleCountChange={setVisibleCount} onBboxChange={onBboxChange} />
           <FireHoverLock
             fires={fireRows}
             hoveredFireIdx={hoveredFireIdx}
@@ -433,56 +559,34 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
               }}
             />
           )}
-          {showFires && fireRows.map((fire, idx) => {
-            const hi = highlightedFires?.has(idx);
-            const s = fireStyle(fire.confidence);
-            const fireAlertId = fireAlertMap.get(idx);
-            const fireAlert = alertRows.find(a => a.id === fireAlertId) || null;
-            const landTag = fireAlert && (() => {
-              if (fireAlert.type === 'indigenous_land')   return { cls: 'indigenous',   label: `Terra Indígena: ${fireAlert.meta}` };
-              if (fireAlert.type === 'conservation_unit') return { cls: 'conservation', label: `UC: ${fireAlert.meta}` };
-              if (fireAlert.type === 'night_fire')        return { cls: 'night-fire',   label: 'Foco Noturno' };
-              if (fireAlert.type === 'prodes')            return { cls: 'prodes',       label: `PRODES: ${fireAlert.meta}` };
-              return null;
-            })();
-            return (
-              <React.Fragment key={`f-${idx}`}>
-                <CircleMarker
-                  center={[fire.lat, fire.lon]}
-                  pathOptions={s}
-                  radius={s.radius}
-                  eventHandlers={{
-                    mouseover: () => onFireOver(fireAlertId, idx),
-                    click: (e) => onFireClick(fireAlertId, idx, e),
-                  }}
-                >
-                  <Popup>
-                    <strong>{t('home.heatFocus')}</strong><br />
-                    {t('home.confidence')}: {fire.confidence}<br />
-                    {t('home.date')}: {fire.acq_date} {fire.acq_time}<br />
-                    {t('home.satellite')}: {fire.satellite}<br />
-                    {t('home.brightnessTemp')}: {fire.bright_ti4}K
-                    {landTag && (
-                      <>
-                        <br />
-                        <span className={`fire-land-tag ${landTag.cls}`}>{landTag.label}</span>
-                        {fireAlert.state && <><br /><span style={{ fontSize: 10, color: '#888' }}>{fireAlert.state}</span></>}
-                      </>
-                    )}
-                    <br />
-                    {t('home.sourceNasa')}
-                  </Popup>
-                </CircleMarker>
-                {hi && (
-                  <CircleMarker
-                    center={[fire.lat, fire.lon]}
-                    pathOptions={{ color: '#fff', fillColor: s.fillColor, fillOpacity: 1, radius: s.radius + 3, weight: 2 }}
-                    interactive={false}
+          {showFires && (
+            <>
+              <FireEventsHandler
+                fires={fireRows}
+                fireAlertMap={fireAlertMap}
+                alertRows={alertRows}
+                onFireOver={onFireOver}
+                onFireClick={onFireClick}
+                onFireHoverEnd={onFireHoverEnd}
+              />
+              {fireRows.map((fire, idx) => {
+                const s = fireStyle(fire.confidence);
+                const fireAlertId = fireAlertMap.get(idx);
+                const fireAlert = fireAlertId ? alertByIdMap.get(fireAlertId) : null;
+                return (
+                  <FireMarker
+                    key={`f-${idx}`}
+                    fire={fire}
+                    idx={idx}
+                    s={s}
+                    fireAlert={fireAlert}
+                    highlighted={highlightedFires?.has(idx)}
+                    t={t}
                   />
-                )}
-              </React.Fragment>
-            );
-          })}
+                );
+              })}
+            </>
+          )}
         </MapContainer>
       )}
 
@@ -657,16 +761,25 @@ export default function Home() {
     return () => clearInterval(id);
   }, []);
 
-  // Fire data (cached 4h)
+  // Fire data — fetch viewport bbox for smaller payloads, fallback to global
+  const [fireBbox, setFireBbox] = useState(null);
+
   useEffect(() => {
     const validFire = f => f.lat != null && f.lon != null;
     const cached = getCache('fires', 240);
     if (cached) setFires(asArray(cached.fires).filter(validFire));
-    fetch('/api/fires')
+    const params = fireBbox
+      ? `/api/fires?sw_lat=${fireBbox.sw_lat}&ne_lat=${fireBbox.ne_lat}&sw_lng=${fireBbox.sw_lng}&ne_lng=${fireBbox.ne_lng}`
+      : '/api/fires';
+    fetch(params)
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then(d => { const f = asArray(d.fires).filter(validFire); setFires(f); setCache('fires', { fires: f, last_sync: d.last_sync }); })
+      .then(d => {
+        const f = asArray(d.fires).filter(validFire);
+        setFires(f);
+        if (!fireBbox) setCache('fires', { fires: f, last_sync: d.last_sync });
+      })
       .catch(() => { if (!cached) setFires([]); });
-  }, []);
+  }, [fireBbox]);
 
   // Weather (cached 15min in localStorage)
   useEffect(() => {
@@ -777,6 +890,7 @@ export default function Home() {
         onClearFireLock={clearFireLock}
         onAlertEnter={handleAlertEnter}
         onAlertLeave={handleAlertLeave}
+        onBboxChange={setFireBbox}
       />
     </div>
   );
