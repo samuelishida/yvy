@@ -12,6 +12,9 @@ const FIRE_STYLES = {
   low:     { color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 0.4,  radius: 3, weight: 1 },
 };
 
+const asArray = value => Array.isArray(value) ? value : [];
+const asObject = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+
 function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371, rad = Math.PI / 180;
   const p1 = lat1 * rad, p2 = lat2 * rad;
@@ -107,9 +110,10 @@ function windDir(deg) {
 }
 
 function boundsToGeoJSON(raw) {
+  const entries = Object.entries(asObject(raw)).filter(([, d]) => Array.isArray(d?.rings));
   return {
     type: 'FeatureCollection',
-    features: Object.entries(raw).map(([name, d]) => ({
+    features: entries.map(([name, d]) => ({
       type: 'Feature',
       properties: { name, state_abbr: d.state_abbr, municipality: d.municipality, category: d.category, full_name: d.full_name },
       geometry: { type: 'MultiPolygon', coordinates: d.rings.map(r => [r]) },
@@ -187,43 +191,15 @@ function DraggableCard({ className, style, children, title, collapsed: controlle
   );
 }
 
-function Sparkline({ data, color = '#2dd4ff', height = 28 }) {
-  const w = 200;
-  const max = Math.max(...data);
-  const min = Math.min(...data);
-  const range = max - min || 1;
-  const pts = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * w;
-    const y = height - ((v - min) / range) * height;
-    return `${x},${y}`;
-  }).join(' ');
-  const id = `sg${color.replace(/[^a-z0-9]/gi, '')}`;
-  return (
-    <svg viewBox={`0 0 ${w} ${height}`} className="stat-spark" preserveAspectRatio="none">
-      <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.35" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polygon points={`0,${height} ${pts} ${w},${height}`} fill={`url(#${id})`} />
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-
 const BiomePanel = React.memo(function BiomePanel() {
   const { t } = useI18n();
   const [biomes, setBiomes] = useState([]);
-  const [totalFires, setTotalFires] = useState(0);
 
   useEffect(() => {
     fetch('/api/biomes')
       .then(r => r.json())
       .then(d => {
-        setBiomes(d.biomes || []);
-        setTotalFires(d.total_fires || 0);
+        setBiomes(asArray(d.biomes));
       })
       .catch(err => {
         console.error('Failed to fetch biomes:', err);
@@ -313,17 +289,19 @@ const AlertsPanel = React.memo(function AlertsPanel({ alerts, activeAlertId, onA
 const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, loading, error, t, airQuality, temperature, alerts, activeAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave }) {
   const [satellite, setSatellite] = useState(true);
   const [visibleCount, setVisibleCount] = useState(null);
+  const alertRows = asArray(alerts);
+  const fireRows = asArray(fires);
 
-  const activeAlert = useMemo(() => alerts?.find(a => a.id === activeAlertId) || null, [alerts, activeAlertId]);
+  const activeAlert = useMemo(() => alertRows.find(a => a.id === activeAlertId) || null, [alertRows, activeAlertId]);
 
   const highlightedFires = useMemo(() => {
-    if (!activeAlert?.center || !fires) return null;
+    if (!activeAlert?.center || fireRows.length === 0) return null;
     const [alat, alon] = activeAlert.center;
     const rkm = (activeAlert.radius_km || 15) * 1.25;
     const s = new Set();
-    fires.forEach((f, i) => { if (haversineKm(f.lat, f.lon, alat, alon) <= rkm) s.add(i); });
+    fireRows.forEach((f, i) => { if (haversineKm(f.lat, f.lon, alat, alon) <= rkm) s.add(i); });
     return s;
-  }, [activeAlert, fires]);
+  }, [activeAlert, fireRows]);
 
   const ringColor = activeAlert
     ? (activeAlert.tick === 'crit' ? '#ef4444' : activeAlert.tick === 'warn' ? '#f97316' : '#2dd4ff')
@@ -336,7 +314,7 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
     ? '&copy; Esri, Earthstar Geographics'
     : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 
-  const count   = visibleCount ?? fires?.length ?? 0;
+  const count   = visibleCount ?? fireRows.length;
   const aqiVal  = airQuality ? airQuality.aqi : 0;
   const humVal  = temperature ? temperature.humidity : 0;
   const aqiColor = aqiVal <= 50 ? '#4ade80' : aqiVal <= 100 ? '#fbbf24' : '#ef4444';
@@ -390,9 +368,9 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
         >
           <TileLayer key={satellite ? 'sat' : 'osm'} attribution={tileAttr} url={tileUrl} />
-          <VisibleFiresCounter fires={fires} showFires={showFires} onVisibleCountChange={setVisibleCount} />
+          <VisibleFiresCounter fires={fireRows} showFires={showFires} onVisibleCountChange={setVisibleCount} />
           <FireHoverLock
-            fires={fires}
+            fires={fireRows}
             hoveredFireIdx={hoveredFireIdx}
             lockedFireIdx={lockedFireIdx}
             onHoverEnd={onFireHoverEnd}
@@ -441,11 +419,11 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
               }}
             />
           )}
-          {showFires && fires && fires.map((fire, idx) => {
+          {showFires && fireRows.map((fire, idx) => {
             const hi = highlightedFires?.has(idx);
             const s = fireStyle(fire.confidence);
-            const fireAlertId = alertForFire(fire, alerts || []);
-            const fireAlert = alerts?.find(a => a.id === fireAlertId) || null;
+            const fireAlertId = alertForFire(fire, alertRows);
+            const fireAlert = alertRows.find(a => a.id === fireAlertId) || null;
             const landTag = fireAlert && (() => {
               if (fireAlert.type === 'indigenous_land')   return { cls: 'indigenous',   label: `Terra Indígena: ${fireAlert.meta}` };
               if (fireAlert.type === 'conservation_unit') return { cls: 'conservation', label: `UC: ${fireAlert.meta}` };
@@ -557,7 +535,7 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
       {/* Floating: alerts panel — right, below fires count */}
       <DraggableCard className="fl-panel-alerts" title={t('home.liveAlerts')}>
         <AlertsPanel
-          alerts={alerts}
+          alerts={alertRows}
           activeAlertId={activeAlertId}
           onAlertEnter={onAlertEnter}
           onAlertLeave={onAlertLeave}
@@ -657,7 +635,7 @@ export default function Home() {
     const fetchAlerts = () => {
       fetch('/api/alerts')
         .then(r => r.json())
-        .then(d => setAlerts(d.alerts || []))
+        .then(d => setAlerts(asArray(d.alerts)))
         .catch(() => {});
     };
     fetchAlerts();
@@ -667,11 +645,12 @@ export default function Home() {
 
   // Fire data (cached 4h)
   useEffect(() => {
+    const validFire = f => f.lat != null && f.lon != null;
     const cached = getCache('fires', 240);
-    if (cached) setFires(cached.fires || []);
+    if (cached) setFires(asArray(cached.fires).filter(validFire));
     fetch('/api/fires')
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then(d => { const f = d.fires || []; setFires(f); setCache('fires', { fires: f, last_sync: d.last_sync }); })
+      .then(d => { const f = asArray(d.fires).filter(validFire); setFires(f); setCache('fires', { fires: f, last_sync: d.last_sync }); })
       .catch(() => { if (!cached) setFires([]); });
   }, []);
 
@@ -724,12 +703,13 @@ export default function Home() {
   useEffect(() => {
     if (!showDeforest || deforestFetchedRef.current) return;
     deforestFetchedRef.current = true;
+    const validRec = r => r.lat != null && r.lon != null;
     const cached = getCache('prodes_records', 15);
-    if (cached) { setRecords(cached); return; }
+    if (cached) { setRecords(cached.filter(validRec)); return; }
     setLoading(true);
     fetch('/api/data')
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then(d => { const rows = Array.isArray(d) ? d : []; setRecords(rows); setCache('prodes_records', rows); setLoading(false); })
+      .then(d => { const rows = (Array.isArray(d) ? d : []).filter(validRec); setRecords(rows); setCache('prodes_records', rows); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });
   }, [showDeforest]);
 

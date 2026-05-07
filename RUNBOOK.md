@@ -9,7 +9,7 @@
 
 - Backend: `curl -f http://localhost:5000/health`
 - Frontend: `curl -f http://localhost:5001/health`
-- SQLite: `sqlite3 backend/data/yvy.db ".tables"`
+- SQLite: `sqlite3 backend-lua/data/yvy.db ".tables"`
 
 ## Backups
 
@@ -21,8 +21,8 @@
 
 1. Stop writers to the database.
 2. Pick the backup archive to restore.
-3. Run `gunzip -c sqlite_backups/<backup>.sqlite3.gz > backend/data/yvy.db`
-4. Validate with `sqlite3 backend/data/yvy.db "SELECT COUNT(*) FROM deforestation_data;"`
+3. Run `gunzip -c sqlite_backups/<backup>.sqlite3.gz > backend-lua/data/yvy.db`
+4. Validate with `sqlite3 backend-lua/data/yvy.db "SELECT COUNT(*) FROM deforestation_data;"`
 
 ## Deploy / rollback
 

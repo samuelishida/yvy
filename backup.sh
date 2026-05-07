@@ -5,7 +5,7 @@ set -eu
 
 BACKUP_DIR="${BACKUP_DIR:-./sqlite_backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
-SQLITE_PATH="${SQLITE_PATH:-./backend/data/yvy.db}"
+SQLITE_PATH="${SQLITE_PATH:-./backend-lua/data/yvy.db}"
 
 if [ ! -f "$SQLITE_PATH" ]; then
   echo "SQLite database not found at: $SQLITE_PATH" >&2

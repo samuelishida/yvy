@@ -19,8 +19,17 @@
         name:
           - git
           - python3
-          - python3-venv
-          - python3-pip
+          - build-essential
+          - pkg-config
+          - wget
+          - unzip
+          - ca-certificates
+          - lua5.1
+          - liblua5.1-0-dev
+          - luarocks
+          - libsqlite3-dev
+          - libssl-dev
+          - libexpat1-dev
           - redis-server
           - sqlite3
           - curl
@@ -108,6 +117,39 @@
         group: "{{ yvy_group }}"
         recurse: yes
 
+    - name: Parar backend antes de preservar banco SQLite
+      ansible.builtin.systemd:
+        name: yvy-backend
+        state: stopped
+      ignore_errors: true
+
+    - name: Parar frontend antes do checkout
+      ansible.builtin.systemd:
+        name: yvy-frontend
+        state: stopped
+      ignore_errors: true
+
+    - name: Verificar banco SQLite existente antes do git checkout
+      ansible.builtin.stat:
+        path: "{{ app_dir }}/backend-lua/data/yvy.db"
+      register: existing_sqlite_db
+
+    - name: Checkpoint WAL do SQLite existente antes do backup
+      when: existing_sqlite_db.stat.exists
+      ansible.builtin.command:
+        cmd: sqlite3 {{ app_dir }}/backend-lua/data/yvy.db "PRAGMA wal_checkpoint(TRUNCATE);"
+      become_user: "{{ yvy_user }}"
+
+    - name: Preservar banco SQLite existente antes do git checkout
+      when: existing_sqlite_db.stat.exists
+      ansible.builtin.copy:
+        src: "{{ app_dir }}/backend-lua/data/yvy.db"
+        dest: "/tmp/yvy.db.predeploy"
+        remote_src: true
+        owner: "{{ yvy_user }}"
+        group: "{{ yvy_group }}"
+        mode: '0644'
+
     - name: Clonar repositório Yvy
       ansible.builtin.git:
         repo: "{{ repo_url }}"
@@ -115,6 +157,24 @@
         version: main
         force: yes
       become_user: "{{ yvy_user }}"
+
+    - name: Garantir diretorio de dados do backend Lua
+      ansible.builtin.file:
+        path: "{{ app_dir }}/backend-lua/data"
+        state: directory
+        owner: "{{ yvy_user }}"
+        group: "{{ yvy_group }}"
+        mode: '0755'
+
+    - name: Restaurar banco SQLite preservado apos git checkout
+      when: existing_sqlite_db.stat.exists
+      ansible.builtin.copy:
+        src: "/tmp/yvy.db.predeploy"
+        dest: "{{ app_dir }}/backend-lua/data/yvy.db"
+        remote_src: true
+        owner: "{{ yvy_user }}"
+        group: "{{ yvy_group }}"
+        mode: '0644'
 
     - name: Gerar secrets se .env não existir
       ansible.builtin.command:
@@ -132,10 +192,28 @@
         create: true
       become_user: "{{ yvy_user }}"
 
-    - name: Rodar setup local (venv + node_modules)
+    - name: Rodar setup Lua
       ansible.builtin.command:
-        cmd: bash scripts/setup-local.sh
+        cmd: bash scripts/setup-lua.sh
         chdir: "{{ app_dir }}"
+      become_user: "{{ yvy_user }}"
+
+    - name: Validar migracao SQLite JSONB e ingerir lookups
+      ansible.builtin.shell:
+        cmd: |
+          cd {{ app_dir }}/backend-lua
+          SQLITE_PATH={{ app_dir }}/backend-lua/data/yvy.db lua5.1 -e 'package.path="./?.lua;./?/init.lua;"..package.path; require("app.env"); local db=require("app.db"); db.init_db(); require("app.lookups.biome_lookup").load_biomes(); require("app.lookups.indigenous_lands_lookup").load_indigenous_lands(); require("app.lookups.conservation_units_lookup").load_conservation_units(); db.optimize_db(); print("sqlite jsonb migration ok")'
+        executable: /bin/bash
+      become_user: "{{ yvy_user }}"
+
+    - name: Instalar dependencias frontend
+      ansible.builtin.shell:
+        cmd: |
+          export NVM_DIR="{{ nvm_dir }}"
+          [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+          cd {{ app_dir }}/frontend
+          npm ci
+        executable: /bin/bash
       become_user: "{{ yvy_user }}"
 
     - name: Build frontend (produzir static build/)

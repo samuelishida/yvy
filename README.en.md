@@ -5,11 +5,11 @@ Environmental observability for monitoring deforestation and wildfires in Brazil
 **Production**: https://yvy.app.br/
 
 Current stack:
-- **Frontend**: React 18 + Express (server-side proxy) + Tailwind CSS + Leaflet
-- **Backend**: Quart + Hypercorn (async ASGI)
-- **Primary database**: SQLite (aiosqlite, WAL mode, connection pool, JSONB BLOB columns)
-- **SQLite version**: pysqlite3-binary (SQLite 3.51.1) — monkey-patched for JSONB support on older OS
-- **Cache/rate limiting**: Redis (redis.asyncio, in-memory fallback)
+- **Frontend**: React 18 + C HTTP server (static files + API proxy) + Tailwind CSS + Leaflet
+- **Backend**: Lua 5.1 (business logic, SQLite, Redis)
+- **Primary database**: SQLite (lsqlite3, WAL mode, connection pool, JSONB BLOB columns)
+- **SQLite version**: lsqlite3 (SQLite 5.1) — native Lua bindings
+- **Cache/rate limiting**: Redis (lua-redis, in-memory fallback)
 - **Geospatial data**: TerraBrasilis (PRODES) and NASA FIRMS
 - **News**: NewsAPI + MyMemory/LibreTranslate/Google Translate chain
 - **Deploy**: OCI baremetal via Terraform + Ansible
@@ -17,10 +17,11 @@ Current stack:
 ## Requirements
 
 - Linux, macOS, or Windows (MINGW/MSYS)
-- Python 3.11+
-- Node.js 18+
+- Lua 5.1+
+- Node.js 18+ (for frontend build only)
 - Redis running locally (default: `redis://localhost:6379/0`)
 - Git
+- GCC (to compile C server)
 
 ## Local setup
 
@@ -30,23 +31,24 @@ make setup
 ```
 
 `make setup` does:
-- creates Python venv at `$HOME/.local/share/yvy-venv` (fallback for FS without symlink)
-- installs backend deps (`backend/requirements.txt`)
+- installs Lua deps (`luasocket`, `lsqlite3`, `lua-cjson`, `copas`)
 - installs frontend deps (`frontend/package.json`)
+- compiles C server (`frontend/yvy-server.exe`)
 
 ## Run locally
 
 Start everything:
 
 ```bash
-make run
+cd scripts
+.\start-lua-stack.ps1
 ```
 
 Start separately:
 
 ```bash
-make backend
-make frontend
+.\run-lua-backend.ps1    # backend only
+.\run-c-frontend.ps1      # frontend only
 ```
 
 Stop local processes:
@@ -79,8 +81,8 @@ URLs:
 Does not run automatically with `make run`.
 
 ```bash
-cd backend
-python ingest_sqlite.py
+cd backend-lua
+lua5.1 -e 'package.path="./?.lua;./?/init.lua;"..package.path; require("app.env"); require("app.db").init_db(); require("app.ingest").run()'
 ```
 
 ## API endpoints
@@ -103,7 +105,7 @@ python ingest_sqlite.py
 ## API Key
 
 When `AUTH_REQUIRED=1`, the backend requires `X-API-Key` on protected routes.
-The frontend injects the key server-side via Express proxy — the browser never sees it.
+The frontend injects the key server-side via the C server proxy, so the browser never sees it.
 
 Example direct backend call:
 
@@ -118,13 +120,12 @@ curl "http://127.0.0.1:5000/api/data?ne_lat=-10&ne_lng=-34&sw_lat=-34&sw_lng=-74
 Browser :5001
     │
     ▼
-Express (server.js) — serve React build, proxy /api/*
+C server (yvy-server) — serve React build, proxy /api/*
     │  injects X-API-Key server-side
     ▼
-Quart (backend.py) — async routes on :5000
-    │  hypercorn + asyncio workers
-    ├──► SQLite (aiosqlite) — 7-connection pool, WAL mode
-    │     ├── pysqlite3-binary (SQLite 3.51.1) — JSONB support
+Lua backend (main.lua) — routes on :5000
+    │  copas + luasocket
+    ├──► SQLite (lsqlite3) — WAL mode + JSONB support
     │     ├── fire_data (NASA FIRMS)
     │     │     scalar: lat, lon, acq_date, ingested_at
     │     │     JSONB:  confidence, acq_time, satellite, bright_ti4, source
@@ -134,7 +135,7 @@ Quart (backend.py) — async routes on :5000
     │     └── news (articles with PT/EN translation)
     │           scalar: url, publishedAt, ingested_at
     │           JSONB:  title, description, title_en, description_en, source_name, urlToImage, content
-    ├──► Redis (redis.asyncio) — rate limiting + cache
+    ├──► Redis (Lua helper) — rate limiting + cache
     │     └── fallback: in-memory deque per IP
     ├──► NewsAPI — background sync every 15 min
     │     └── MyMemory → LibreTranslate → Google Translate
@@ -168,8 +169,8 @@ To migrate an existing database from flat-column schema to JSONB:
 make migrate
 
 # Or directly
-cd backend
-python migrate_to_jsonb.py --db data/yvy.db --vacuum
+cd backend-lua
+lua5.1 app/migrate.lua
 ```
 
 The migration script:
@@ -181,15 +182,15 @@ The migration script:
 
 The app also auto-migrates on startup if a legacy schema is detected.
 
-**Note on older SQLite:** On systems with SQLite < 3.45.0 (e.g. Ubuntu 22.04 with SQLite 3.37.2), `pysqlite3-binary` (a requirement in `requirements.txt` for Linux) provides SQLite 3.51.1. `db_sqlite.py` monkey-patches `sys.modules["sqlite3"]` before importing `aiosqlite`, ensuring JSONB support.
+**Note on older SQLite:** `scripts/setup-lua.sh` builds SQLite 3.45+ from source when the system SQLite is too old for JSONB.
 
 ## Security
 
-- **Authentication**: X-API-Key or Bearer token, constant-time comparison (`compare_digest`)
+- **Authentication**: X-API-Key or Bearer token, constant-time comparison in Lua
 - **Rate limiting**: 60 req/min per IP (configurable), Redis + in-memory fallback
 - **CSP**: Restrictive — self only, OSM tiles, Bootstrap/jsDelivr/unpkg CDN
 - **CORS**: Whitelist-based via `CORS_ORIGINS`
-- **Proxy**: API key injected server-side by Express — never exposed to the browser
+- **Proxy**: API key injected server-side by the C server, never exposed to the browser
 - **Security headers**: X-Content-Type-Options, X-Frame-Options, Permissions-Policy
 
 ## Tests
@@ -200,20 +201,18 @@ Quick test via Make:
 make test
 ```
 
-pytest suite (requires activated venv):
+Lua test suite:
 
 ```bash
-cd backend
-source $HOME/.local/share/yvy-venv/bin/activate  # or .venv
-pip install pytest pytest-asyncio
-pytest -v
+cd backend-lua
+busted --verbose tests/*.lua
 ```
 
 CI:
-- `.github/workflows/ci.yml` — Python + shell syntax validation
+- `.github/workflows/ci.yml` validates Lua, C, shell syntax, and frontend build
 - `.gitlab-ci.yml`
 
-> **Note:** `tests/test_api.py` is stale (uses mongomock). Use `test_db_sqlite.py` (pytest) or `test_sqlite_manual.py` (manual).
+> **Note:** The old Python backend/tests are removed. Use `backend-lua/tests/*.lua`.
 
 ## OCI Deploy (baremetal)
 
@@ -249,12 +248,12 @@ $SSH "if [ -d /opt/yvy ]; then cd /opt/yvy && sudo git pull; \
 $SSH "cd /opt/yvy && bash scripts/generate-secrets.sh"
 $SSH "sed -i 's|CORS_ORIGINS=.*|CORS_ORIGINS=http://$VM_IP:5001,http://localhost:5001|' /opt/yvy/.env"
 
-# 4. Setup backend (venv + deps)
-$SSH "cd /opt/yvy && bash scripts/setup-local.sh"
+# 4. Setup Lua backend
+$SSH "cd /opt/yvy && bash scripts/setup-lua.sh"
 
-# 5. Install frontend deps
+# 5. Install/build frontend
 $SSH 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" \
-  && cd /opt/yvy/frontend && rm -rf node_modules package-lock.json && npm install'
+  && cd /opt/yvy/frontend && npm ci && npm run build'
 
 # 6. Create and start systemd services
 $SSH 'sudo tee /etc/systemd/system/yvy-backend.service > /dev/null << EOF
@@ -270,7 +269,7 @@ Group=ubuntu
 WorkingDirectory=/opt/yvy
 Environment=HOME=/home/ubuntu
 Environment=YVY_LOCAL_DEV=0
-ExecStart=/usr/bin/bash /opt/yvy/scripts/run-backend.sh
+ExecStart=/usr/bin/bash /opt/yvy/scripts/run-lua.sh
 Restart=always
 RestartSec=5
 
@@ -342,12 +341,12 @@ After the VM is created, all subsequent deploys use OCI CLI + Ansible.
 | `AUTH_REQUIRED` | `0` | Set `1` in production to require API key |
 | `CORS_ORIGINS` | `http://localhost:5001,...` | Allowed CORS origins |
 | `LOG_LEVEL` | `INFO` | Log level (DEBUG, INFO, WARNING, ERROR) |
-| `SQLITE_PATH` | `backend/data/yvy.db` | SQLite database path (JSONB, WAL mode) |
+| `SQLITE_PATH` | `backend-lua/data/yvy.db` | SQLite database path (JSONB, WAL mode) |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis connection |
 | `BACKEND_URL` | `http://127.0.0.1:5000` | Backend URL for proxy |
 | `RATE_LIMIT_REQUESTS` | `60` | Max requests per window |
 | `RATE_LIMIT_WINDOW_SECONDS` | `60` | Rate limiting window (seconds) |
-| `DEV` | `0` | `1` enables Quart dev server |
+| `DEV` | `0` | Reserved for local frontend mode; backend is Lua baremetal |
 | `FIRMS_MAP_KEY` | empty | NASA FIRMS API key |
 | `NEWS_API_KEY` | empty | NewsAPI key |
 | `WAQI_TOKEN` | empty | World Air Quality Index API token |

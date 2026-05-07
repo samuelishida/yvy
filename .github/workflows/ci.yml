@@ -5,44 +5,64 @@ on:
     branches:
       - main
       - master
+      - dev
   pull_request:
 
 jobs:
-  test:
+  lua-tests:
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install backend dependencies
+      - name: Install Lua 5.1 + LuaRocks
         run: |
-          python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt
+          sudo apt-get update
+          sudo apt-get install -y lua5.1 liblua5.1-0-dev luarocks libssl-dev
 
-      - name: Compile Python sources
+      - name: Install SQLite 3.45+ from source
         run: |
-          python -m py_compile backend/backend.py backend/db_sqlite.py backend/ingest_sqlite.py backend/news_sqlite.py
+          wget -q https://sqlite.org/2024/sqlite-autoconf-3450000.tar.gz
+          tar xzf sqlite-autoconf-3450000.tar.gz
+          cd sqlite-autoconf-3450000
+          ./configure --prefix=/usr/local
+          make -j"$(nproc)"
+          sudo make install
+          sudo ldconfig
+          cd ..
+          rm -rf sqlite-autoconf-*
 
-      - name: Run SQLite manual tests
-        working-directory: ./backend
-        run: python test_sqlite_manual.py
-
-      - name: Install pytest and run suite
-        working-directory: ./backend
+      - name: Install Lua dependencies
         run: |
-          pip install pytest pytest-asyncio
-          python -m pytest test_db_sqlite.py -v
+          sudo luarocks install luasocket
+          sudo luarocks install copas
+          sudo luarocks install lsqlite3 SQLITE_DIR=/usr/local
+          sudo luarocks install lua-cjson
+          sudo luarocks install luaexpat
+          sudo luarocks install lua-csv
+          sudo luarocks install dkjson
+          sudo luarocks install busted
+
+      - name: Run Lua tests
+        working-directory: ./backend-lua
+        run: busted --verbose tests/*.lua
+
+      - name: Validate Lua syntax
+        run: |
+          for f in $(find backend-lua -name '*.lua' -not -path '*/tests/*'); do
+            luac -p "$f" || { echo "FAIL: $f"; exit 1; }
+          done
+
+  shell-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Validate shell scripts
         run: |
@@ -50,5 +70,28 @@ jobs:
           sh -n scripts/setup-local.sh
           sh -n scripts/run-backend.sh
           sh -n scripts/run-frontend.sh
+          sh -n scripts/run-local.sh
           sh -n scripts/deploy-local.sh
           sh -n scripts/deploy-nginx.sh
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: npm run build
+        env:
+          CI: true
+          DISABLE_ESLINT_PLUGIN: true

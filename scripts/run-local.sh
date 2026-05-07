@@ -27,8 +27,7 @@ cleanup() {
     if [ -n "$FRONTEND_PID" ]; then
         kill "$FRONTEND_PID" 2>/dev/null || true
     fi
-    pkill -f "[h]ypercorn backend:app" 2>/dev/null || true
-    pkill -f "[p]ython backend.py" 2>/dev/null || true
+    pkill -f "[l]ua main.lua" 2>/dev/null || true
     pkill -f "[r]eact-scripts start" 2>/dev/null || true
     pkill -f "[n]ode server.js" 2>/dev/null || true
 }
@@ -41,8 +40,8 @@ echo ""
 # Trap to kill both processes on exit
 trap cleanup INT TERM EXIT
 
-# Start backend in background
-"$SCRIPT_DIR/run-backend.sh" &
+# Start Lua backend in background
+"$SCRIPT_DIR/run-lua.sh" &
 BACKEND_PID=$!
 echo "Backend PID: $BACKEND_PID"
 
