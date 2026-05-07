@@ -54,43 +54,46 @@ function fireStyle(confidence) {
 }
 
 function VisibleFiresCounter({ fires, showFires, onVisibleCountChange }) {
+  const timerRef = useRef(null);
+  const update = (map) => {
+    if (!showFires || !fires) return;
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      const bounds = map.getBounds();
+      onVisibleCountChange(fires.filter(f => bounds.contains([f.lat, f.lon])).length);
+    }, 50);
+  };
   const map = useMapEvents({
-    moveend: () => {
-      if (!showFires || !fires) return;
-      const bounds = map.getBounds();
-      onVisibleCountChange(fires.filter(f => bounds.contains([f.lat, f.lon])).length);
-    },
-    zoomend: () => {
-      if (!showFires || !fires) return;
-      const bounds = map.getBounds();
-      onVisibleCountChange(fires.filter(f => bounds.contains([f.lat, f.lon])).length);
-    },
+    moveend: () => update(map),
+    zoomend: () => update(map),
   });
   useEffect(() => {
-    if (!showFires || !fires) return;
-    const bounds = map.getBounds();
-    onVisibleCountChange(fires.filter(f => bounds.contains([f.lat, f.lon])).length);
+    update(map);
   }, [fires, showFires]); // eslint-disable-line
   return null;
 }
 
 function FireHoverLock({ fires, hoveredFireIdx, lockedFireIdx, onHoverEnd, onClearLock }) {
+  const rafRef = useRef(null);
   const map = useMapEvents({
     mousemove: (e) => {
       if (lockedFireIdx != null) return;
       if (hoveredFireIdx == null) return;
-      const fire = fires?.[hoveredFireIdx];
-      if (!fire) {
-        onHoverEnd();
-        return;
-      }
-      const cursor = map.latLngToContainerPoint(e.latlng);
-      const firePoint = map.latLngToContainerPoint([fire.lat, fire.lon]);
-      const baseRadius = fireStyle(fire.confidence).radius;
-      const lockRadius = Math.max(baseRadius + 6, 10);
-      if (cursor.distanceTo(firePoint) > lockRadius) {
-        onHoverEnd();
-      }
+      if (rafRef.current) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        const fire = fires?.[hoveredFireIdx];
+        if (!fire) {
+          onHoverEnd();
+          return;
+        }
+        const cursor = map.latLngToContainerPoint(e.latlng);
+        const firePoint = map.latLngToContainerPoint([fire.lat, fire.lon]);
+        const baseRadius = fireStyle(fire.confidence).radius;
+        if (cursor.distanceTo(firePoint) > Math.max(baseRadius + 6, 10)) {
+          onHoverEnd();
+        }
+      });
     },
     mouseout: () => {
       if (lockedFireIdx != null) return;
@@ -241,6 +244,9 @@ const ALERT_TYPE_KEYS = {
   pm25: 'alertPm25',
 };
 
+const INDIGENOUS_STYLE = { color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.12, weight: 1.5, opacity: 0.6 };
+const CONSERVATION_STYLE = { color: '#4ade80', fillColor: '#4ade80', fillOpacity: 0.1, weight: 1.5, opacity: 0.55 };
+
 const AlertsPanel = React.memo(function AlertsPanel({ alerts, activeAlertId, onAlertEnter, onAlertLeave }) {
   const { t } = useI18n();
 
@@ -291,6 +297,14 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
   const [visibleCount, setVisibleCount] = useState(null);
   const alertRows = asArray(alerts);
   const fireRows = asArray(fires);
+
+  const fireAlertMap = useMemo(() => {
+    const m = new Map();
+    if (alertRows.length && fireRows.length) {
+      fireRows.forEach((fire, idx) => { m.set(idx, alertForFire(fire, alertRows)); });
+    }
+    return m;
+  }, [fireRows, alertRows]);
 
   const activeAlert = useMemo(() => alertRows.find(a => a.id === activeAlertId) || null, [alertRows, activeAlertId]);
 
@@ -401,7 +415,7 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
             <GeoJSON
               key="indigenous"
               data={indigenousGeo}
-              style={() => ({ color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.12, weight: 1.5, opacity: 0.6 })}
+              style={() => INDIGENOUS_STYLE}
               onEachFeature={(feature, layer) => {
                 const p = feature.properties;
                 layer.bindPopup(`<strong>🏕 ${p.name}</strong><br/>Terra Indígena · ${p.state_abbr || ''}<br/><small>${p.municipality || ''}</small>`);
@@ -412,7 +426,7 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
             <GeoJSON
               key="conservation"
               data={conservationGeo}
-              style={() => ({ color: '#4ade80', fillColor: '#4ade80', fillOpacity: 0.1, weight: 1.5, opacity: 0.55 })}
+              style={() => CONSERVATION_STYLE}
               onEachFeature={(feature, layer) => {
                 const p = feature.properties;
                 layer.bindPopup(`<strong>🌿 ${p.name}</strong><br/>${p.category || 'UC'} · ${p.state_abbr || ''}`);
@@ -422,7 +436,7 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
           {showFires && fireRows.map((fire, idx) => {
             const hi = highlightedFires?.has(idx);
             const s = fireStyle(fire.confidence);
-            const fireAlertId = alertForFire(fire, alertRows);
+            const fireAlertId = fireAlertMap.get(idx);
             const fireAlert = alertRows.find(a => a.id === fireAlertId) || null;
             const landTag = fireAlert && (() => {
               if (fireAlert.type === 'indigenous_land')   return { cls: 'indigenous',   label: `Terra Indígena: ${fireAlert.meta}` };
@@ -575,7 +589,7 @@ export default function Home() {
 
   const activeAlertId = lockedFireAlertId || alertHoverId || fireAlertId;
 
-  const handleFireOver = (id, idx) => {
+  const handleFireOver = useCallback((id, idx) => {
     if (lockedFireIdx != null && lockedFireIdx !== idx) return;
     if (fireHoverOutTimeoutRef.current) {
       clearTimeout(fireHoverOutTimeoutRef.current);
@@ -583,9 +597,9 @@ export default function Home() {
     }
     setHoveredFireIdx(idx);
     setFireAlertId(id);
-  };
+  }, [lockedFireIdx]);
 
-  const clearFireHover = () => {
+  const clearFireHover = useCallback(() => {
     if (lockedFireIdx != null) return;
     if (fireHoverOutTimeoutRef.current) {
       clearTimeout(fireHoverOutTimeoutRef.current);
@@ -595,9 +609,9 @@ export default function Home() {
       setFireAlertId(null);
       fireHoverOutTimeoutRef.current = null;
     }, 80);
-  };
+  }, [lockedFireIdx]);
 
-  const handleFireClick = (id, idx, e) => {
+  const handleFireClick = useCallback((id, idx, e) => {
     if (e?.originalEvent?.stopPropagation) e.originalEvent.stopPropagation();
     if (lockedFireIdx === idx) {
       setLockedFireIdx(null);
@@ -613,7 +627,7 @@ export default function Home() {
     setLockedFireAlertId(id);
     setHoveredFireIdx(null);
     setFireAlertId(null);
-  };
+  }, [lockedFireIdx]);
 
   const clearFireLock = useCallback(() => {
     setLockedFireIdx(null);
