@@ -71,10 +71,6 @@ export default function Navbar() {
       </div>
 
       <div className="topbar-right">
-        <div className="live-pill" aria-label="Live data">
-          <span className="live-dot" />
-          Live
-        </div>
         <button
           className="lang-toggle"
           onClick={() => switchLang(lang === 'pt' ? 'en' : 'pt')}

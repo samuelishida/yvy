@@ -106,30 +106,6 @@
   justify-self: end;
 }
 
-/* ── Live pill ────────────────────────────────────────── */
-.live-pill {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 11px;
-  border-radius: 999px;
-  background: rgba(74, 222, 128, 0.08);
-  border: 1px solid rgba(74, 222, 128, 0.22);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--accent-green);
-  white-space: nowrap;
-}
-
-.live-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent-green);
-  flex-shrink: 0;
-}
 
 /* ── Language toggle ──────────────────────────────────── */
 .lang-toggle {
@@ -191,7 +167,6 @@
 @media (max-width: 640px) {
   .navbar { display: flex; justify-content: space-between; }
   .hamburger { display: flex; }
-  .topbar-right .live-pill { display: none; }
 
   .nav-links {
     display: none;
