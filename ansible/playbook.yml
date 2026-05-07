@@ -293,11 +293,10 @@
         state: restarted
         enabled: true
 
-    - name: Ativar e iniciar frontend
-      ansible.builtin.systemd:
-        name: yvy-frontend
-        state: restarted
-        enabled: true
+    # nginx serves frontend static build directly from {{ app_dir }}/frontend/build.
+    # yvy-frontend systemd unit (node server.js on :5001) is only for local/dev
+    # without nginx — left stopped in production. Existing "Parar frontend Node.js"
+    # task downstream ensures it stays down.
 
     - name: Aguardar backend ficar saudável
       ansible.builtin.uri:
@@ -308,14 +307,11 @@
       retries: 30
       delay: 5
 
-    - name: Verificar health do frontend
-      ansible.builtin.uri:
-        url: http://localhost:5001/
-        status_code: 200
-      register: frontend_health
-      until: frontend_health.status == 200
-      retries: 15
-      delay: 5
+    - name: Verificar build do frontend existe
+      ansible.builtin.stat:
+        path: "{{ app_dir }}/frontend/build/index.html"
+      register: frontend_build
+      failed_when: not frontend_build.stat.exists
 
     - name: Obter API_KEY do .env para nginx
       ansible.builtin.shell:
