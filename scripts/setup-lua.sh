@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # setup-lua.sh — Install Lua dependencies for Yvy backend (Ubuntu/Linux)
-set -euo pipefail
+set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+INSTALL_TEST_DEPS="${YVY_INSTALL_TEST_DEPS:-1}"
 
 echo "=== Yvy Lua Backend Setup ==="
 
@@ -15,43 +16,45 @@ case "$(uname -s)" in
 esac
 
 # ── Install Lua 5.1 + LuaRocks ────────────────────────────────────────────
-if [ "$OS" = "linux" ]; then
+# Skip apt if luarocks already present (e.g. installed by Ansible before calling this script)
+if [ "$OS" = "linux" ] && ! command -v luarocks &>/dev/null; then
     echo "Installing Lua + LuaRocks..."
     sudo apt-get update -qq
     sudo apt-get install -y -qq \
         build-essential ca-certificates pkg-config wget unzip \
         lua5.1 liblua5.1-0-dev luarocks libsqlite3-dev libssl-dev libexpat1-dev
-
-    # Install SQLite 3.45+ from source for JSONB support
-    SQLITE_VERSION="3450000"
-    if ! pkg-config --atleast-version=3.45 sqlite3 2>/dev/null; then
-        echo "Installing SQLite $SQLITE_VERSION from source..."
-        cd /tmp
-        wget -q "https://sqlite.org/2024/sqlite-autoconf-${SQLITE_VERSION}.tar.gz"
-        tar xzf "sqlite-autoconf-${SQLITE_VERSION}.tar.gz"
-        cd "sqlite-autoconf-${SQLITE_VERSION}"
-        ./configure --prefix=/usr/local
-        make -j$(nproc)
-        sudo make install
-        sudo ldconfig
-        cd /tmp && rm -rf "sqlite-autoconf-${SQLITE_VERSION}"*
-    fi
 fi
 
-# ── Install Lua rocks ─────────────────────────────────────────────────────
+# ── Install Lua rocks (idempotent) ────────────────────────────────────────
 echo "Installing Lua dependencies..."
 
-# Core
-sudo luarocks install luasocket
-sudo luarocks install copas
-sudo luarocks install lsqlite3 SQLITE_DIR=/usr/local
-sudo luarocks install lua-cjson
-sudo luarocks install luaexpat
-sudo luarocks install lua-csv
-sudo luarocks install dkjson
+install_rock() {
+    local rock="$1"
+    local flag="${2:-}"
+    if luarocks list --porcelain "$rock" 2>/dev/null | grep -q "^$rock"; then
+        echo "  $rock already installed, skipping"
+        return 0
+    fi
+    echo "  installing $rock..."
+    if [ -n "${flag:-}" ]; then
+        sudo luarocks install "$rock" "$flag"
+    else
+        sudo luarocks install "$rock"
+    fi
+}
 
-# Test framework
-sudo luarocks install busted
+# Core (lsqlite3 bundles SQLite 3.51+ — no source build needed)
+install_rock luasocket
+install_rock copas
+install_rock lsqlite3
+install_rock lua-cjson
+install_rock luaexpat
+install_rock lua-csv
+install_rock dkjson
+
+if [ "$INSTALL_TEST_DEPS" = "1" ]; then
+    install_rock busted
+fi
 
 echo "=== Setup complete ==="
 echo "Run: cd backend-lua && lua main.lua"

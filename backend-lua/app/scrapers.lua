@@ -34,6 +34,13 @@ local KEYWORDS_PT = {
     "prodes", "inpe", "terrabrasillis",
     "meio ambiente", "ambiental", "ecologia", "ecológico",
     "preservação", "reflorestamento", "áreas verdes",
+    "mineração", "mineração em águas profundas", "minerais críticos", "minerais",
+    "extrativismo", "extrativista", "recursos naturais", "recursos minerais",
+    "vida marinha", "oceano", "oceanos", "fundo do mar", "fundo oceânico",
+    "águas profundas", "biodiversidade marinha", "ecossistema marinho",
+    "pesca", "sobrepesca", "mangue", "recife de coral", "coral",
+    "licença ambiental", "licenciamento ambiental", "impacto ambiental",
+    "projeto de lei", "legislação ambiental", "política ambiental",
 }
 
 local KEYWORDS_EN = {
@@ -50,6 +57,12 @@ local KEYWORDS_EN = {
     "wind energy", "energy transition", "environmental",
     "ecology", "ecological", "reforestation", "green areas",
     "ibama", "inpe",
+    "deep-sea mining", "deep sea mining", "seabed mining", "critical minerals",
+    "extractivism", "natural resources", "marine life", "ocean", "oceans",
+    "deep sea", "deep water", "marine biodiversity", "marine ecosystem",
+    "overfishing", "coral reef", "coral", "fishing",
+    "environmental license", "environmental impact", "environmental policy",
+    "environmental legislation", "mining",
 }
 
 -- Build combined keyword list (longest first for matching)

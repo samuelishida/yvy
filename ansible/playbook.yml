@@ -11,6 +11,9 @@
     node_version: "18"
     domain: "yvy.app.br"
     certbot_email: "samuel.ishida@gmail.com"
+    sqlite_backup_dir: /var/backups/yvy
+    sqlite_backup_path: /var/backups/yvy/yvy.db.predeploy
+    yvy_install_test_deps: "0"
 
   tasks:
     - name: Instalar dependencias de runtime baremetal
@@ -134,6 +137,14 @@
         path: "{{ app_dir }}/backend-lua/data/yvy.db"
       register: existing_sqlite_db
 
+    - name: Criar diretorio de backup SQLite
+      ansible.builtin.file:
+        path: "{{ sqlite_backup_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0750'
+
     - name: Checkpoint WAL do SQLite existente antes do backup
       when: existing_sqlite_db.stat.exists
       ansible.builtin.command:
@@ -144,7 +155,7 @@
       when: existing_sqlite_db.stat.exists
       ansible.builtin.copy:
         src: "{{ app_dir }}/backend-lua/data/yvy.db"
-        dest: "/tmp/yvy.db.predeploy"
+        dest: "{{ sqlite_backup_path }}"
         remote_src: true
         owner: "{{ yvy_user }}"
         group: "{{ yvy_group }}"
@@ -169,7 +180,7 @@
     - name: Restaurar banco SQLite preservado apos git checkout
       when: existing_sqlite_db.stat.exists
       ansible.builtin.copy:
-        src: "/tmp/yvy.db.predeploy"
+        src: "{{ sqlite_backup_path }}"
         dest: "{{ app_dir }}/backend-lua/data/yvy.db"
         remote_src: true
         owner: "{{ yvy_user }}"
@@ -196,15 +207,45 @@
       ansible.builtin.command:
         cmd: bash scripts/setup-lua.sh
         chdir: "{{ app_dir }}"
+      environment:
+        YVY_INSTALL_TEST_DEPS: "{{ yvy_install_test_deps }}"
       become_user: "{{ yvy_user }}"
+      async: 3600
+      poll: 15
 
-    - name: Validar migracao SQLite JSONB e ingerir lookups
-      ansible.builtin.shell:
-        cmd: |
-          cd {{ app_dir }}/backend-lua
-          SQLITE_PATH={{ app_dir }}/backend-lua/data/yvy.db lua5.1 -e 'package.path="./?.lua;./?/init.lua;"..package.path; require("app.env"); local db=require("app.db"); db.init_db(); require("app.lookups.biome_lookup").load_biomes(); require("app.lookups.indigenous_lands_lookup").load_indigenous_lands(); require("app.lookups.conservation_units_lookup").load_conservation_units(); db.optimize_db(); print("sqlite jsonb migration ok")'
-        executable: /bin/bash
-      become_user: "{{ yvy_user }}"
+    - block:
+        - name: Migrar SQLite JSONB explicitamente
+          ansible.builtin.command:
+            cmd: lua5.1 app/migrate.lua
+            chdir: "{{ app_dir }}/backend-lua"
+          environment:
+            SQLITE_PATH: "{{ app_dir }}/backend-lua/data/yvy.db"
+          become_user: "{{ yvy_user }}"
+          async: 5400
+          poll: 10
+
+        - name: Validar migracao SQLite JSONB e ingerir lookups
+          ansible.builtin.shell:
+            cmd: |
+              cd {{ app_dir }}/backend-lua
+              SQLITE_PATH={{ app_dir }}/backend-lua/data/yvy.db lua5.1 -e 'package.path="./?.lua;./?/init.lua;"..package.path; require("app.env"); local db=require("app.db"); db.init_db(); require("app.lookups.biome_lookup").load_biomes(); require("app.lookups.indigenous_lands_lookup").load_indigenous_lands(); require("app.lookups.conservation_units_lookup").load_conservation_units(); db.optimize_db(); print("sqlite jsonb migration ok")'
+            executable: /bin/bash
+          become_user: "{{ yvy_user }}"
+
+      rescue:
+        - name: Restaurar banco SQLite preservado apos falha de migracao
+          when: existing_sqlite_db.stat.exists
+          ansible.builtin.copy:
+            src: "{{ sqlite_backup_path }}"
+            dest: "{{ app_dir }}/backend-lua/data/yvy.db"
+            remote_src: true
+            owner: "{{ yvy_user }}"
+            group: "{{ yvy_group }}"
+            mode: '0644'
+
+        - name: Abortar deploy apos falha de migracao SQLite
+          ansible.builtin.fail:
+            msg: "Migração JSONB falhou; o backup SQLite foi restaurado."
 
     - name: Instalar dependencias frontend
       ansible.builtin.shell:
