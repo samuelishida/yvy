@@ -21,17 +21,15 @@
 
 .selector-scroll {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;          /* always single line */
   gap: 6px;
-  overflow-x: auto;
-  scrollbar-width: none;
   flex: 1;
-  min-width: 0;
+  min-width: 0;                /* allow children to shrink below content */
   padding: 4px 0;
   margin: -4px 0;
   justify-content: center;
+  overflow: hidden;            /* shrink rather than scroll */
 }
-.selector-scroll::-webkit-scrollbar { display: none; }
 
 .map-btn {
   display: flex;
@@ -47,11 +45,12 @@
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-  flex: 1 1 auto;
+  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, padding 0.2s ease, gap 0.2s ease;
+  /* Natural size; shrink (not grow) when bar runs out of room */
+  flex: 0 1 auto;
   position: relative;
-  min-width: 0;
-  max-width: 100%;
+  min-width: 0;                /* allow label to ellipsis when shrinking */
+  overflow: hidden;
 }
 
 .map-btn__icon {
@@ -83,7 +82,6 @@
   }
 
   .map-btn {
-    flex: 0 1 auto;
     padding: 7px 15px;
     font-size: 0.82rem;
   }

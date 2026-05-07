@@ -44,8 +44,6 @@
     static_build_dir: "{{ app_dir }}/frontend/build"
     # Playwright stealth scraper for blocked sources (Greenpeace, oc.eco.br, etc.)
     install_playwright: true
-    run_backfill_after_deploy: true
-    backfill_limit: "200"
 
   tasks:
     # ── 1. System packages ─────────────────────────────────────────────────
@@ -504,24 +502,10 @@
       changed_when: "'0 newly installed' not in pw_deps.stdout"
       failed_when: false
 
-    - name: Backfill de imagens de noticias via Playwright
-      when: run_backfill_after_deploy | bool
-      ansible.builtin.command:
-        cmd: "{{ app_dir }}/.venv/bin/python scripts/backfill_news_images_playwright.py --limit {{ backfill_limit }} --timeout 60"
-        chdir: "{{ app_dir }}"
-      environment:
-        PLAYWRIGHT_BROWSERS_PATH: "/home/{{ yvy_user }}/.cache/ms-playwright"
-      become_user: "{{ yvy_user }}"
-      register: backfill_result
-      async: 2400
-      poll: 30
-      changed_when: "'updated=' in backfill_result.stdout and 'updated=0 ' not in backfill_result.stdout"
-      failed_when: false
-
-    - name: Mostrar resultado do backfill
-      when: run_backfill_after_deploy | bool and backfill_result.stdout is defined
-      ansible.builtin.debug:
-        msg: "{{ backfill_result.stdout_lines | default([]) }}"
+    # Backfill is run by hand:
+    #   ssh ubuntu@yvy.app.br
+    #   cd /opt/yvy
+    #   .venv/bin/python scripts/backfill_news_images_playwright.py --limit 200 --timeout 60
 
     - name: Testar backend health (direto)
       ansible.builtin.uri:
