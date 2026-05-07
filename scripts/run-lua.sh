@@ -23,4 +23,8 @@ echo "=== Yvy Lua Backend ==="
 echo "Port: $PORT"
 echo "SQLite: $SQLITE_PATH"
 
+if command -v lua5.1 >/dev/null 2>&1; then
+    exec lua5.1 main.lua
+fi
+
 exec lua main.lua

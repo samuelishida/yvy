@@ -1,5 +1,5 @@
 # run-lua-frontend.ps1 - Run Yvy frontend against Lua backend on Windows
-# Uses Lua baremetal server instead of Node.js/Express
+# Uses Lua/C baremetal server instead of Node.js frontend proxy.
 
 param(
     [int]$Port = 5001,

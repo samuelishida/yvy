@@ -1,6 +1,6 @@
 ﻿#!/bin/bash
 # Yvy Frontend Nginx Deployment Script with SSL
-# Replaces Node.js Express with Nginx for 10x performance + 200MB RAM savings
+# Replaces local frontend service with Nginx for lower RAM usage.
 # Includes Let's Encrypt SSL setup (two-phase: HTTP-first, then HTTPS)
 
 set -e

@@ -117,7 +117,8 @@ $SSH "sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile \
   && echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab"
 
 # 2. Instalar deps de runtime
-$SSH "sudo apt-get update && sudo apt-get install -y git python3 python3-venv python3-pip redis-server sqlite3"
+# python3 fica apenas para Ansible/certbot; backend roda em Lua.
+$SSH "sudo apt-get update && sudo apt-get install -y git python3 build-essential pkg-config wget unzip ca-certificates lua5.1 liblua5.1-0-dev luarocks libsqlite3-dev libssl-dev libexpat1-dev redis-server sqlite3"
 
 # 3. Instalar Node 18 via nvm (Node 12 do sistema é velho demais para react-scripts 5)
 $SSH 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash'
@@ -133,12 +134,12 @@ $SSH "cd /opt/yvy && bash scripts/generate-secrets.sh"
 # Corrigir CORS_ORIGINS com IP público:
 $SSH "sed -i 's|CORS_ORIGINS=.*|CORS_ORIGINS=http://<IP_DA_VM>:5001,http://localhost:5001|' /opt/yvy/.env"
 
-# 6. Setup backend (venv + deps)
-$SSH "cd /opt/yvy && bash scripts/setup-local.sh"
+# 6. Setup backend Lua
+$SSH "cd /opt/yvy && bash scripts/setup-lua.sh"
 
-# 7. Instalar deps frontend com Node 18
+# 7. Instalar/build frontend com Node 18
 $SSH 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" \
-  && cd /opt/yvy/frontend && rm -rf node_modules package-lock.json && npm install'
+  && cd /opt/yvy/frontend && npm ci && npm run build'
 
 # 8. Criar serviços systemd
 $SSH 'sudo tee /etc/systemd/system/yvy-backend.service > /dev/null << EOF
@@ -174,7 +175,7 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=/opt/yvy
 Environment=HOME=/home/ubuntu
-Environment=YVY_LOCAL_DEV=1
+Environment=YVY_LOCAL_DEV=0
 Environment=PORT=5001
 Environment=BROWSER=none
 Environment=PATH=/home/ubuntu/.nvm/versions/node/v18.20.8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -214,7 +215,8 @@ $SSH "sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile \
   && echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab"
 
 # 2. Instalar deps de runtime
-$SSH "sudo apt-get update && sudo apt-get install -y git python3 python3-venv python3-pip redis-server sqlite3"
+# python3 fica apenas para Ansible/certbot; backend roda em Lua.
+$SSH "sudo apt-get update && sudo apt-get install -y git python3 build-essential pkg-config wget unzip ca-certificates lua5.1 liblua5.1-0-dev luarocks libsqlite3-dev libssl-dev libexpat1-dev redis-server sqlite3"
 
 # 3. Instalar Node 18 via nvm (Node 12 do sistema é velho demais para react-scripts 5)
 $SSH 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash'
@@ -230,12 +232,12 @@ $SSH "cd /opt/yvy && bash scripts/generate-secrets.sh"
 # Corrigir CORS_ORIGINS com IP público:
 $SSH "sed -i 's|CORS_ORIGINS=.*|CORS_ORIGINS=http://<IP_DA_VM>:5001,http://localhost:5001|' /opt/yvy/.env"
 
-# 6. Setup backend (venv + deps)
-$SSH "cd /opt/yvy && bash scripts/setup-local.sh"
+# 6. Setup backend Lua
+$SSH "cd /opt/yvy && bash scripts/setup-lua.sh"
 
-# 7. Instalar deps frontend com Node 18
+# 7. Instalar/build frontend com Node 18
 $SSH 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" \
-  && cd /opt/yvy/frontend && rm -rf node_modules package-lock.json && npm install'
+  && cd /opt/yvy/frontend && npm ci && npm run build'
 
 # 8. Criar serviços systemd
 $SSH 'sudo tee /etc/systemd/system/yvy-backend.service > /dev/null << EOF
@@ -271,7 +273,7 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=/opt/yvy
 Environment=HOME=/home/ubuntu
-Environment=YVY_LOCAL_DEV=1
+Environment=YVY_LOCAL_DEV=0
 Environment=PORT=5001
 Environment=BROWSER=none
 Environment=PATH=/home/ubuntu/.nvm/versions/node/v18.20.8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -310,8 +312,8 @@ Ao final, exibe a URL de acesso.
 
 - **Node 12 é velho demais** para react-scripts 5. Use nvm para instalar Node 18 na VM.
 - **VMs com 1GB RAM** precisam de swap (2GB) para npm install e webpack.
-- **Frontend roda em modo DEV** (`YVY_LOCAL_DEV=1`) na VM porque o build de produção exige mais RAM.
-- **Backend usa `run-lua.sh`** que carrega o `.env` antes de iniciar o Lua.
+- **Frontend roda em modo PROD** (`YVY_LOCAL_DEV=0`) com build estatico; nginx serve `frontend/build`.
+- **Backend usa `run-lua.sh`** que carrega o `.env` antes de iniciar o Lua 5.1.
 - **CORS_ORIGINS** deve incluir o IP público da VM para acesso via browser.
 
 ---
@@ -391,10 +393,10 @@ cd /opt/yvy && bash backup.sh
 ```bash
 cd /opt/yvy
 git pull
-bash scripts/setup-local.sh
+bash scripts/setup-lua.sh
 # Reinstalar deps do frontend se necessário:
 export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-cd frontend && rm -rf node_modules package-lock.json && npm install
+cd frontend && npm ci && npm run build
 sudo systemctl restart yvy-backend yvy-frontend
 ```
 

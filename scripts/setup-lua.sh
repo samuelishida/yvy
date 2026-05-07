@@ -18,7 +18,9 @@ esac
 if [ "$OS" = "linux" ]; then
     echo "Installing Lua + LuaRocks..."
     sudo apt-get update -qq
-    sudo apt-get install -y -qq lua5.1 liblua5.1-0-dev luarocks libsqlite3-dev libssl-dev
+    sudo apt-get install -y -qq \
+        build-essential ca-certificates pkg-config wget unzip \
+        lua5.1 liblua5.1-0-dev luarocks libsqlite3-dev libssl-dev libexpat1-dev
 
     # Install SQLite 3.45+ from source for JSONB support
     SQLITE_VERSION="3450000"

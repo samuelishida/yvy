@@ -81,8 +81,8 @@ URLs:
 Não roda automaticamente no `make run`.
 
 ```bash
-cd backend
-python ingest_sqlite.py
+cd backend-lua
+lua5.1 -e 'package.path="./?.lua;./?/init.lua;"..package.path; require("app.env"); require("app.db").init_db(); require("app.ingest").run()'
 ```
 
 ## Endpoints da API
@@ -172,7 +172,7 @@ make migrate
 
 # Ou direto
 cd backend-lua
-lua scripts/migrate_to_jsonb.lua --db backend-lua/data/yvy.db --vacuum
+lua5.1 app/migrate.lua
 ```
 
 O script de migração:
@@ -250,12 +250,12 @@ $SSH "if [ -d /opt/yvy ]; then cd /opt/yvy && sudo git pull; \
 $SSH "cd /opt/yvy && bash scripts/generate-secrets.sh"
 $SSH "sed -i 's|CORS_ORIGINS=.*|CORS_ORIGINS=http://$VM_IP:5001,http://localhost:5001|' /opt/yvy/.env"
 
-# 4. Setup Lua backend (deps + venv)
-$SSH "cd /opt/yvy && bash scripts/setup-local.sh"
+# 4. Setup Lua backend
+$SSH "cd /opt/yvy && bash scripts/setup-lua.sh"
 
-# 5. Instale deps do frontend
+# 5. Instale/build frontend
 $SSH 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" \
-  && cd /opt/yvy/frontend && rm -rf node_modules package-lock.json && npm install'
+  && cd /opt/yvy/frontend && npm ci && npm run build'
 
 # 6. Crie e inicie serviços systemd
 $SSH 'sudo tee /etc/systemd/system/yvy-backend.service > /dev/null << EOF
@@ -272,7 +272,7 @@ Environment=HOME=/home/ubuntu
 Environment=PORT=5000
 Environment=SQLITE_PATH=/opt/yvy/backend-lua/data/yvy.db
 Environment=REDIS_URL=redis://localhost:6379/0
-ExecStart=/usr/bin/bash /opt/yvy/scripts/run-lua-backend.sh
+ExecStart=/usr/bin/bash /opt/yvy/scripts/run-lua.sh
 Restart=always
 RestartSec=5
 [Install]

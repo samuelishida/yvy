@@ -17,7 +17,17 @@ function _M.decode_jsonb(blob)
     end
     if type(blob) == "string" then
         local ok, result = pcall(cjson.decode, blob)
-        if ok then return result end
+        if ok then
+            -- Some legacy lookup rows were inserted as JSON strings containing
+            -- JSON objects. Decode one extra layer so callers always get tables.
+            if type(result) == "string" and result:match("^%s*[%[{]") then
+                local ok2, nested = pcall(cjson.decode, result)
+                if ok2 then
+                    return nested
+                end
+            end
+            return result
+        end
     end
     return {}
 end

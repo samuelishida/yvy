@@ -17,14 +17,16 @@ local units = {}
 local function _build_from_parsed(parsed)
     units = {}
     for name, meta in pairs(parsed) do
-        local rings = meta.rings
-        local clean_meta = {}
-        for k, v in pairs(meta) do
-            if k ~= "rings" then
-                clean_meta[k] = v
+        if name ~= "_updated_at" and type(meta) == "table" then
+            local rings = meta.rings
+            local clean_meta = {}
+            for k, v in pairs(meta) do
+                if k ~= "rings" then
+                    clean_meta[k] = v
+                end
             end
+            units[#units + 1] = {name = name, meta = clean_meta, rings = rings}
         end
-        units[#units + 1] = {name = name, meta = clean_meta, rings = rings}
     end
 end
 

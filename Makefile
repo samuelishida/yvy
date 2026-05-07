@@ -24,7 +24,7 @@ test-lua:
 	cd backend-lua && busted --verbose tests/*.lua
 
 migrate-lua:
-	cd backend-lua && lua scripts/migrate_to_jsonb.lua --db data/yvy.db --vacuum
+	cd backend-lua && lua5.1 app/migrate.lua
 
 sqlite-access:
 	@sqlite3 backend-lua/data/yvy.db ".tables"

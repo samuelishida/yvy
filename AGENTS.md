@@ -12,8 +12,8 @@ make setup
 # 3. Run C frontend + Lua backend
 make run
 
-# 4. (Optional) Ingest PRODES data
-cd backend-lua && lua main.lua ingest
+# 4. (Optional) Ingest PRODES data if CSV/QML files exist
+cd backend-lua && lua5.1 -e 'package.path="./?.lua;./?/init.lua;"..package.path; require("app.env"); require("app.db").init_db(); require("app.ingest").run()'
 ```
 
 App runs at `http://localhost:5001`. C server on 5001 serves React build + proxies `/api/*` to Lua backend on 5000.
@@ -77,7 +77,7 @@ Expression indexes on JSONB fields:
 To migrate an existing database from the legacy flat-column schema:
 ```bash
 cd backend-lua
-lua5.1 main.lua migrate
+lua5.1 app/migrate.lua
 ```
 
 The migration script (`backend-lua/app/migrate.lua`):
@@ -94,7 +94,7 @@ The app also auto-migrates on startup if legacy schema is detected.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `DEV` | `0` | `1` runs Quart dev server instead of hypercorn |
+| `DEV` | `0` | Reserved for local frontend mode; backend is Lua baremetal |
 | `AUTH_REQUIRED` | `0` | Set `1` in production to require `X-API-Key` |
 | `API_KEY` | empty | Used by both frontend proxy and backend auth |
 | `SQLITE_PATH` | `backend-lua/data/yvy.db` | Path to SQLite database file |
@@ -135,7 +135,8 @@ $SSH "sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile \
   && echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab"
 
 # 3b. Install runtime deps
-$SSH "sudo apt-get update && sudo apt-get install -y git python3 python3-venv python3-pip redis-server sqlite3"
+# python3 remains only because Ansible/certbot need it; backend runtime is Lua.
+$SSH "sudo apt-get update && sudo apt-get install -y git python3 build-essential pkg-config wget unzip ca-certificates lua5.1 liblua5.1-0-dev luarocks libsqlite3-dev libssl-dev libexpat1-dev redis-server sqlite3"
 
 # 3c. Install Node 18 via nvm (system Node 12 is too old for react-scripts 5)
 $SSH 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash'
@@ -154,10 +155,9 @@ $SSH "sed -i 's|CORS_ORIGINS=.*|CORS_ORIGINS=http://$VM_IP:5001,http://localhost
 # 3f. Setup backend (Lua deps)
 $SSH "cd /opt/yvy && bash scripts/setup-lua.sh"
 
-# 3g. Build C frontend server
+# 3g. Install/build frontend
 $SSH 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-  && cd /opt/yvy/frontend && rm -rf node_modules package-lock.json && npm install && npm run build
-  && cd /opt/yvy/backend-lua && gcc -o yvy-server.exe yvy-server.c -lws2_32'
+  && cd /opt/yvy/frontend && npm ci && npm run build'
 
 # 3h. Create systemd services
 $SSH 'sudo tee /etc/systemd/system/yvy-backend.service > /dev/null << EOF
@@ -173,7 +173,7 @@ Group=ubuntu
 WorkingDirectory=/opt/yvy
 Environment=HOME=/home/ubuntu
 Environment=YVY_LOCAL_DEV=0
-ExecStart=/usr/bin/lua5.1 /opt/yvy/backend-lua/main.lua
+ExecStart=/usr/bin/bash /opt/yvy/scripts/run-lua.sh
 Restart=always
 RestartSec=5
 
@@ -195,8 +195,9 @@ WorkingDirectory=/opt/yvy
 Environment=HOME=/home/ubuntu
 Environment=YVY_LOCAL_DEV=0
 Environment=PORT=5001
-Environment=BUILD_DIR=/opt/yvy/frontend/build
-ExecStart=/opt/yvy/backend-lua/yvy-server.exe
+Environment=STATIC_DIR=/opt/yvy/frontend/build
+Environment=BACKEND_URL=http://127.0.0.1:5000
+ExecStart=/usr/bin/bash /opt/yvy/scripts/run-frontend.sh
 Restart=always
 RestartSec=10
 
@@ -226,7 +227,7 @@ Production services: `yvy-backend` (systemd), `yvy-frontend` (systemd).
 ### Key deployment notes
 
 - **1GB RAM VMs** need swap (2GB) for npm install and webpack compilation.
-- **C frontend server** runs in production mode (`yvy-server.exe`), serves pre-built React static files.
+- **Frontend** builds React static files; nginx serves them in production.
 - **Backend uses Lua 5.1** with lsqlite3, cjson, luasocket modules.
 - **CORS_ORIGINS** must include the VM's public IP for browser access to work.
 
@@ -235,6 +236,6 @@ Production services: `yvy-backend` (systemd), `yvy-frontend` (systemd).
 - **JSONB BLOB format**: SQLite's `jsonb()` stores data in a binary format that is NOT valid UTF-8. Always use `json(data)` in SQL queries to convert back to text, or `json_extract(data, '$.field')` for individual fields. Never try to `json.decode()` the raw BLOB in Lua.
 - **Lua version**: Must use Lua 5.1 for lsqlite3 module (compiled for 5.1 in MSYS2). `lua.exe` might be 5.5 — use `lua5.1.exe` explicitly.
 - **Old Python backend removed**: `backend/` directory deleted. All logic now in `backend-lua/`.
-- **C frontend server**: Single-threaded, no Node.js dependency. Build with MinGW/gcc (`gcc -o yvy-server.exe yvy-server.c -lws2_32`).
+- **Frontend service** is only a local/health fallback; production traffic is served by nginx from `frontend/build`.
 - **No linter/formatter configured** for Lua or C.
 - **CI** (`.github/workflows/ci.yml`) validates: Lua syntax check, C syntax check, `sh -n` on shell scripts.

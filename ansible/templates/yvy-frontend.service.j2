@@ -9,10 +9,11 @@ User={{ yvy_user }}
 Group={{ yvy_group }}
 WorkingDirectory={{ app_dir }}
 Environment=HOME=/home/{{ yvy_user }}
-Environment=YVY_LOCAL_DEV=1
+Environment=YVY_LOCAL_DEV=0
 Environment=DISABLE_ESLINT_PLUGIN=true
 Environment=PORT=5001
 Environment=BROWSER=none
+Environment=PATH={{ node_path_result.stdout | regex_replace('/node$', '') }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/usr/bin/bash {{ app_dir }}/scripts/run-frontend.sh
 Restart=always
 RestartSec=10
