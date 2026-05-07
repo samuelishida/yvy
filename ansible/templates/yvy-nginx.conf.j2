@@ -1,13 +1,16 @@
-# Yvy nginx config — HTTPS with HTTP redirect
-# Cert: Let's Encrypt via certbot
-# Renewal: automatic via /etc/cron.d/certbot-renew
+# Yvy nginx — TLS terminator + reverse proxy → C frontend server :5001
+#
+# Architecture:
+#   Browser :443 → nginx (TLS) → C server :5001 → (static OR /api → Lua :5000)
+#
+# /health bypasses C server and hits backend directly so external monitors
+# don't depend on the C server's static-file routing (it would 404 /health).
 
 # HTTP → HTTPS redirect + ACME challenges
 server {
     listen 80;
     server_name {{ domain }} www.{{ domain }};
 
-    # ACME challenge for Let's Encrypt renewal
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
@@ -21,8 +24,6 @@ server {
 server {
     listen 443 ssl;
     server_name {{ domain }} www.{{ domain }} _;
-    root {{ app_dir }}/frontend/build;
-    index index.html;
 
     # SSL certificates (managed by certbot)
     ssl_certificate /etc/letsencrypt/live/{{ domain }}/fullchain.pem;
@@ -30,41 +31,38 @@ server {
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
-    # Gzip compression
+    # Gzip (the C server doesn't compress; do it here)
     gzip on;
     gzip_vary on;
     gzip_min_length 1024;
-    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json application/javascript;
+    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/json application/javascript image/svg+xml;
 
-    # Cache static assets
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
+    # Security headers (also set by C server, but be explicit at edge)
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
-    # Health check endpoint
-    location /health {
-        proxy_pass http://127.0.0.1:5000;
+    # Health check — bypass C server, hit Lua backend directly
+    location = /health {
+        proxy_pass http://127.0.0.1:5000/health;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        access_log off;
     }
 
-    # Proxy API requests to backend (with API key for auth)
-    location /api/ {
-        proxy_pass http://127.0.0.1:5000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-API-Key {{ api_key }};
-    }
-
-    # SPA fallback
+    # Everything else → C server (serves static + proxies /api/*)
     location / {
-        try_files $uri $uri/ /index.html;
+        proxy_pass http://127.0.0.1:5001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_buffering on;
     }
 }

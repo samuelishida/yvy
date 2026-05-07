@@ -1,4 +1,28 @@
 ---
+# Yvy deploy playbook (OCI baremetal, hybrid arch)
+#
+# Architecture:
+#   Browser :443 (HTTPS)
+#     └─ nginx (TLS termination + reverse proxy)
+#         └─ C frontend server :5001  (backend-lua/yvy-server)
+#             ├─ Static React build /opt/yvy/frontend/build
+#             └─ Proxies /api/* → Lua backend :5000 (X-API-Key injection)
+#                 └─ Lua backend :5000  (backend-lua/main.lua)
+#                     ├─ SQLite /opt/yvy/backend-lua/data/yvy.db
+#                     └─ Redis localhost:6379
+#
+# Build steps (CI on the VM):
+#   1. apt deps (lua, gcc, nginx, certbot, redis, sqlite, ...)
+#   2. nvm + node (only used for `npm run build`)
+#   3. setup-lua.sh (LuaRocks deps)
+#   4. SQLite migration (block/rescue)
+#   5. npm ci + npm run build → frontend/build
+#   6. make in backend-lua → C binary yvy-server
+#   7. systemd: yvy-backend (Lua), yvy-frontend (C server)
+#   8. nginx config + Let's Encrypt cert
+#
+# Health gates: backend :5000/health, frontend :5001/, public https://{{ domain }}/
+
 - name: Deploy Yvy na OCI
   hosts: yvy
   become: true
@@ -14,8 +38,13 @@
     sqlite_backup_dir: /var/backups/yvy
     sqlite_backup_path: /var/backups/yvy/yvy.db.predeploy
     yvy_install_test_deps: "0"
+    purge_node_modules_after_build: true
+    c_server_bin: "{{ app_dir }}/backend-lua/yvy-server"
+    c_server_src: "{{ app_dir }}/backend-lua/yvy-server.c"
+    static_build_dir: "{{ app_dir }}/frontend/build"
 
   tasks:
+    # ── 1. System packages ─────────────────────────────────────────────────
     - name: Instalar dependencias de runtime baremetal
       ansible.builtin.apt:
         update_cache: true
@@ -23,6 +52,8 @@
           - git
           - python3
           - build-essential
+          - gcc
+          - make
           - pkg-config
           - wget
           - unzip
@@ -67,6 +98,7 @@
         group: www-data
         mode: '0755'
 
+    # ── 2. Node (build-time only) ──────────────────────────────────────────
     - name: Verificar se nvm esta instalado
       ansible.builtin.stat:
         path: "{{ nvm_dir }}/nvm.sh"
@@ -93,17 +125,7 @@
       register: node_install
       changed_when: "'already installed' not in node_install.stdout"
 
-    - name: Obter caminho do Node bin
-      ansible.builtin.shell:
-        cmd: |
-          export NVM_DIR="{{ nvm_dir }}"
-          [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-          which node
-        executable: /bin/bash
-      become_user: "{{ yvy_user }}"
-      register: node_path_result
-      changed_when: false
-
+    # ── 3. App directory + service stop ────────────────────────────────────
     - name: Criar diretorio da aplicacao
       ansible.builtin.file:
         path: "{{ app_dir }}"
@@ -132,6 +154,7 @@
         state: stopped
       ignore_errors: true
 
+    # ── 4. SQLite backup before checkout ───────────────────────────────────
     - name: Verificar banco SQLite existente antes do git checkout
       ansible.builtin.stat:
         path: "{{ app_dir }}/backend-lua/data/yvy.db"
@@ -161,6 +184,7 @@
         group: "{{ yvy_group }}"
         mode: '0644'
 
+    # ── 5. Source checkout ─────────────────────────────────────────────────
     - name: Clonar repositório Yvy
       ansible.builtin.git:
         repo: "{{ repo_url }}"
@@ -187,6 +211,7 @@
         group: "{{ yvy_group }}"
         mode: '0644'
 
+    # ── 6. .env + secrets ──────────────────────────────────────────────────
     - name: Gerar secrets se .env não existir
       ansible.builtin.command:
         cmd: bash scripts/generate-secrets.sh
@@ -199,10 +224,11 @@
       ansible.builtin.lineinfile:
         path: "{{ app_dir }}/.env"
         regexp: "^CORS_ORIGINS=.*"
-        line: "CORS_ORIGINS=http://{{ ansible_host }}:5001,http://localhost:5001"
+        line: "CORS_ORIGINS=https://{{ domain }},http://{{ ansible_host }}:5001,http://localhost:5001"
         create: true
       become_user: "{{ yvy_user }}"
 
+    # ── 7. Lua dependencies + migration ────────────────────────────────────
     - name: Rodar setup Lua
       ansible.builtin.command:
         cmd: bash scripts/setup-lua.sh
@@ -247,7 +273,8 @@
           ansible.builtin.fail:
             msg: "Migração JSONB falhou; o backup SQLite foi restaurado."
 
-    - name: Instalar dependencias frontend
+    # ── 8. Frontend build (React static via npm) ───────────────────────────
+    - name: Instalar dependencias frontend (build-time)
       ansible.builtin.shell:
         cmd: |
           export NVM_DIR="{{ nvm_dir }}"
@@ -267,7 +294,46 @@
         executable: /bin/bash
       become_user: "{{ yvy_user }}"
 
-    - name: Criar unidade systemd do backend
+    - name: Verificar build do frontend gerado
+      ansible.builtin.stat:
+        path: "{{ static_build_dir }}/index.html"
+      register: build_check
+      failed_when: not build_check.stat.exists
+
+    # Free RAM/disk on 1GB VM — node_modules not needed at runtime, only at build.
+    - name: Purgar node_modules apos build (liberar disco/RAM)
+      when: purge_node_modules_after_build | bool
+      ansible.builtin.file:
+        path: "{{ app_dir }}/frontend/node_modules"
+        state: absent
+
+    # ── 9. Compile C frontend server ───────────────────────────────────────
+    - name: Compilar yvy-server (C frontend)
+      ansible.builtin.command:
+        cmd: make
+        chdir: "{{ app_dir }}/backend-lua"
+      become_user: "{{ yvy_user }}"
+      register: c_build
+
+    - name: Verificar binario yvy-server existe e e executavel
+      ansible.builtin.stat:
+        path: "{{ c_server_bin }}"
+      register: bin_check
+      failed_when: (not bin_check.stat.exists) or (not bin_check.stat.executable)
+
+    # ── 10. systemd units ──────────────────────────────────────────────────
+    - name: Obter caminho do Node bin (para PATH em systemd, opcional)
+      ansible.builtin.shell:
+        cmd: |
+          export NVM_DIR="{{ nvm_dir }}"
+          [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+          which node
+        executable: /bin/bash
+      become_user: "{{ yvy_user }}"
+      register: node_path_result
+      changed_when: false
+
+    - name: Criar unidade systemd do backend (Lua)
       ansible.builtin.template:
         src: yvy-backend.service.j2
         dest: /etc/systemd/system/yvy-backend.service
@@ -275,7 +341,7 @@
         group: root
         mode: '0644'
 
-    - name: Criar unidade systemd do frontend
+    - name: Criar unidade systemd do frontend (C server)
       ansible.builtin.template:
         src: yvy-frontend.service.j2
         dest: /etc/systemd/system/yvy-frontend.service
@@ -287,16 +353,11 @@
       ansible.builtin.systemd:
         daemon_reload: true
 
-    - name: Ativar e iniciar backend
+    - name: Ativar e iniciar backend Lua
       ansible.builtin.systemd:
         name: yvy-backend
         state: restarted
         enabled: true
-
-    # nginx serves frontend static build directly from {{ app_dir }}/frontend/build.
-    # yvy-frontend systemd unit (node server.js on :5001) is only for local/dev
-    # without nginx — left stopped in production. Existing "Parar frontend Node.js"
-    # task downstream ensures it stays down.
 
     - name: Aguardar backend ficar saudável
       ansible.builtin.uri:
@@ -307,21 +368,46 @@
       retries: 30
       delay: 5
 
-    - name: Verificar build do frontend existe
-      ansible.builtin.stat:
-        path: "{{ app_dir }}/frontend/build/index.html"
-      register: frontend_build
-      failed_when: not frontend_build.stat.exists
+    - name: Ativar e iniciar frontend (C server)
+      ansible.builtin.systemd:
+        name: yvy-frontend
+        state: restarted
+        enabled: true
 
-    - name: Obter API_KEY do .env para nginx
+    - block:
+        - name: Aguardar frontend C server ficar saudável
+          ansible.builtin.uri:
+            url: http://localhost:5001/
+            status_code: 200
+          register: frontend_health
+          until: frontend_health.status == 200
+          retries: 30
+          delay: 5
+      rescue:
+        - name: Coletar journal frontend (debug)
+          ansible.builtin.command:
+            cmd: journalctl -u yvy-frontend -n 100 --no-pager
+          register: frontend_journal
+          changed_when: false
+          failed_when: false
+
+        - name: Mostrar journal frontend
+          ansible.builtin.debug:
+            var: frontend_journal.stdout_lines
+
+        - name: Falhar deploy apos health check do frontend
+          ansible.builtin.fail:
+            msg: "Frontend C server (yvy-server) health check on :5001 falhou; veja journal acima."
+
+    # ── 11. nginx (TLS termination + reverse proxy → :5001) ────────────────
+    - name: Obter API_KEY do .env (passado via systemd EnvironmentFile, nao mais nginx)
       ansible.builtin.shell:
         cmd: grep '^API_KEY=' {{ app_dir }}/.env | cut -d= -f2
       register: api_key_result
       changed_when: false
+      no_log: true
 
-    - name: Deploy nginx config (HTTPS with HTTP redirect)
-      vars:
-        api_key: "{{ api_key_result.stdout }}"
+    - name: Deploy nginx config (HTTPS → C server :5001)
       ansible.builtin.template:
         src: yvy-nginx.conf.j2
         dest: /etc/nginx/sites-available/yvy
@@ -377,29 +463,35 @@
         group: root
         mode: '0644'
 
-    - name: Parar frontend Node.js (liberar RAM)
-      ansible.builtin.systemd:
-        name: yvy-frontend
-        state: stopped
-        enabled: false
-      ignore_errors: true
+    # ── 12. Final user-facing health checks ────────────────────────────────
+    - name: Recarregar nginx (force flush handlers antes da verificacao)
+      ansible.builtin.meta: flush_handlers
 
-    - name: Testar backend health
+    - name: Testar backend health (direto)
       ansible.builtin.uri:
         url: "http://localhost:5000/health"
         status_code: 200
-      register: backend_health_check
-      until: backend_health_check.status == 200
+      register: backend_final_health
+      until: backend_final_health.status == 200
       retries: 5
       delay: 5
 
-    - name: Testar frontend via nginx HTTPS
+    - name: Testar frontend C server (direto)
+      ansible.builtin.uri:
+        url: "http://localhost:5001/"
+        status_code: 200
+      register: frontend_final_health
+      until: frontend_final_health.status == 200
+      retries: 5
+      delay: 5
+
+    - name: Testar site público via nginx HTTPS
       ansible.builtin.uri:
         url: "https://{{ domain }}/"
         status_code: 200
         validate_certs: false
-      register: frontend_health_check
-      until: frontend_health_check.status == 200
+      register: public_health
+      until: public_health.status == 200
       retries: 5
       delay: 5
 
@@ -407,8 +499,10 @@
       ansible.builtin.debug:
         msg: |
           ✅ Yvy disponível em: https://{{ domain }}
-          Backend health: https://{{ domain }}/health
-          API: https://{{ domain }}/api/
+          Backend health:    https://{{ domain }}/health
+          API:               https://{{ domain }}/api/
+          Local backend:     http://127.0.0.1:5000
+          Local C frontend:  http://127.0.0.1:5001
 
   handlers:
     - name: reload nginx

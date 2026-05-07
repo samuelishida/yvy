@@ -1,5 +1,5 @@
 [Unit]
-Description=Yvy Frontend Service
+Description=Yvy Frontend (C server)
 After=network.target yvy-backend.service
 Wants=yvy-backend.service
 
@@ -7,16 +7,17 @@ Wants=yvy-backend.service
 Type=simple
 User={{ yvy_user }}
 Group={{ yvy_group }}
-WorkingDirectory={{ app_dir }}
-Environment=HOME=/home/{{ yvy_user }}
-Environment=YVY_LOCAL_DEV=0
-Environment=DISABLE_ESLINT_PLUGIN=true
-Environment=PORT=5001
-Environment=BROWSER=none
-Environment=PATH={{ node_path_result.stdout | regex_replace('/node$', '') }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/usr/bin/bash {{ app_dir }}/scripts/run-frontend.sh
+WorkingDirectory={{ app_dir }}/backend-lua
+EnvironmentFile=-{{ app_dir }}/.env
+ExecStart={{ c_server_bin }} --port 5001 --backend 127.0.0.1 --static {{ static_build_dir }} --api-key ${API_KEY}
 Restart=always
-RestartSec=10
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Resource limits (1GB VM)
+MemoryMax=128M
+TasksMax=64
 
 [Install]
 WantedBy=multi-user.target

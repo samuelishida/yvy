@@ -1,5 +1,5 @@
 [Unit]
-Description=Yvy Backend Service
+Description=Yvy Backend (Lua)
 After=network.target redis-server.service
 Wants=redis-server.service
 
@@ -13,6 +13,8 @@ Environment=YVY_LOCAL_DEV=0
 ExecStart=/usr/bin/bash {{ app_dir }}/scripts/run-lua.sh
 Restart=always
 RestartSec=5
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
