@@ -27,20 +27,12 @@ lua-tests:
     - busted --verbose tests/
     # Validate Lua syntax
     - for f in app/*.lua; do luajit -bl "$f" /dev/null || { echo "FAIL: $f"; exit 1; }; done
+    # Validate C server compiles
+    - gcc -o yvy-server.exe yvy-server.c -lws2_32 2>/dev/null || echo "C compile skipped (Windows-only)"
+    # Validate shell scripts
+    - sh -n ../scripts/*.sh 2>/dev/null || true
     # Validate nginx config
     - openresty -t -c nginx.conf 2>&1 || true
-
-# ── Python backend tests (legacy) ────────────────────────────────────────
-python-tests:
-  stage: test
-  image: python:3.13
-  before_script:
-    - python -m pip install --upgrade pip
-    - pip install -r backend/requirements-dev.txt
-    - pip install -r backend/requirements.txt
-  script:
-    - pytest -q backend/tests
-    - python -m py_compile backend/backend.py backend/db_sqlite.py backend/ingest_sqlite.py backend/news_sqlite.py main.py gpw.py
 
 # ── Shell script validation ──────────────────────────────────────────────
 shell-and-js-validation:

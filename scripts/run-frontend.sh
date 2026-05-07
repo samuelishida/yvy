@@ -83,7 +83,7 @@ else
             fi
             (
                 cd "$BUILD_HOME"
-                npm ci
+                npm install
             )
         fi
 

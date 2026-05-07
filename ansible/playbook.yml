@@ -142,7 +142,7 @@
           export NVM_DIR="{{ nvm_dir }}"
           [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
           cd {{ app_dir }}/frontend
-          npm ci
+          npm install
         executable: /bin/bash
       become_user: "{{ yvy_user }}"
 

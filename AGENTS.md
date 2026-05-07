@@ -6,54 +6,54 @@
 # 1. Set up env
 cp .env.example .env
 
-# 2. Install dependencies + create venv
+# 2. Install dependencies
 make setup
 
-# 3. Run backend + frontend
+# 3. Run C frontend + Lua backend
 make run
 
 # 4. (Optional) Ingest PRODES data
-cd backend && python ingest_sqlite.py
+cd backend-lua && lua main.lua ingest
 ```
 
-App runs at `http://localhost:5001`. Express proxy on 5001 forwards `/api/*` to Quart on 5000 (internal only).
+App runs at `http://localhost:5001`. C server on 5001 serves React build + proxies `/api/*` to Lua backend on 5000.
 
 ## Running Tests
 
 ```bash
 # Quick smoke test (SQLite schema validation)
-make test
+make test-lua
 
-# Full pytest suite (requires venv activated)
-cd backend
-source $HOME/.local/share/yvy-venv/bin/activate  # or .venv
-pip install -r requirements-test.txt
-pytest -v
+# Lua unit tests
+cd backend-lua/tests && lua5.1 test_db.lua && lua5.1 test_geo.lua
 ```
 
-- Tests use **aiosqlite** (file-based SQLite) — no running DB server needed.
-- `rasterio` is imported lazily inside `parse_tif()`, so tests don't need it installed.
-- Tests use **pytest-asyncio** for Quart's async test client.
-- **Note:** `tests/test_api.py` is stale (still uses mongomock). `test_db_sqlite.py` and `test_sqlite_manual.py` are current.
+- Tests use **lsqlite3** (file-based SQLite) — no running DB server needed.
+- Lua 5.1 required for lsqlite3 module (MSYS2/UCRT64 installation).
+- **Note:** Old Python tests (`tests/test_api.py`) are stale and removed.
 
 ## Architecture
 
 ```
-Browser :5001 → Express (React build + /api/* proxy + X-API-Key injection)
-                      → Quart :5000 (async, hypercorn + asyncio workers)
-                            → SQLite (aiosqlite, file-based at SQLITE_PATH)
-                              └─ JSONB BLOB columns for flexible fields
-                              └─ json_extract() for indexed field queries
-                              └─ json() for reading JSONB back to text
-                            → Redis :6379 (rate limiting, async redis.asyncio)
-                            → NewsAPI + MyMemory (background sync for /api/news)
+Browser :5001 → C HTTP server (yvy-server.c)
+                    ├─ Serves React static files from frontend/build/
+                    └─ Proxies /api/* → Lua backend :5000
+                          └─ Injects X-API-Key header server-side
+                          
+                    Lua backend :5000 (main.lua + app/*.lua)
+                          ├─ SQLite (lsqlite3, file-based at SQLITE_PATH)
+                          │   └─ JSONB BLOB columns for flexible fields
+                          │   └─ json_extract() for indexed field queries
+                          │   └─ json() for reading JSONB back to text
+                          ├─ Redis :6379 (rate limiting, connection pooling)
+                          └─ curl.exe (HTTP client for news scraping, translation)
 ```
 
-- **Express proxy** (`frontend/server.js`) injects `X-API-Key` header server-side so the browser never sees the API key.
-- **Quart backend** (`backend/backend.py`) — async routes, aiosqlite (async SQLite), redis.asyncio (rate limiting), httpx (async HTTP), structured JSON logging.
-- **SQLite layer** (`backend/db_sqlite.py`) — custom async connection pool (asyncio.Queue, 7 connections, WAL mode). Schema uses **JSONB BLOB columns** for flexible fields (fire metadata, deforestation attributes, news content). Scalar columns (lat, lon, url, dates) remain for indexed queries. Uses `jsonb()` for writes and `json()`/`json_extract()` for reads. Auto-migrates from legacy flat-column schema on startup.
-- **Rate limiting** uses Redis via `redis.asyncio`. Falls back to in-memory per-process buckets if Redis is down.
-- **ingest_sqlite.py** is an async script using `db_sqlite` module (not pymongo).
+- **C frontend server** (`backend-lua/yvy-server.c`) — Single-threaded HTTP server, serves React build, proxies API requests, injects `X-API-Key` header server-side so browser never sees it.
+- **Lua backend** (`backend-lua/main.lua` + `backend-lua/app/`) — Routes in `app/routes/`, lookups in `app/lookups/`, middleware in `app/middleware/`. Uses `lsqlite3`, `cjson`, `luasocket`.
+- **SQLite layer** (`backend-lua/app/db.lua`) — JSONB support via `jsonb(?)` for writes, `json(data)` for reads, expression indexes on JSON fields. Auto-migrates from legacy flat-column schema.
+- **Rate limiting** uses Redis via `app/redis.lua` with connection pooling.
+- **ingest** via `app/ingest.lua` (Lua script, not Python).
 
 ### JSONB Schema
 
@@ -76,11 +76,11 @@ Expression indexes on JSONB fields:
 
 To migrate an existing database from the legacy flat-column schema:
 ```bash
-cd backend
-python migrate_to_jsonb.py --db data/yvy.db --vacuum
+cd backend-lua
+lua5.1 main.lua migrate
 ```
 
-The migration script:
+The migration script (`backend-lua/app/migrate.lua`):
 1. Creates backup of the database
 2. Detects legacy schema (columns like `confidence` in fire_data)
 3. Creates new JSONB tables, copies data using `jsonb()`
@@ -151,12 +151,13 @@ $SSH "cd /opt/yvy && bash scripts/generate-secrets.sh"
 # Then fix CORS_ORIGINS with your public IP:
 $SSH "sed -i 's|CORS_ORIGINS=.*|CORS_ORIGINS=http://$VM_IP:5001,http://localhost:5001|' /opt/yvy/.env"
 
-# 3f. Setup backend (Python venv + deps)
-$SSH "cd /opt/yvy && bash scripts/setup-local.sh"
+# 3f. Setup backend (Lua deps)
+$SSH "cd /opt/yvy && bash scripts/setup-lua.sh"
 
-# 3g. Install frontend deps with Node 18
-$SSH 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" \
-  && cd /opt/yvy/frontend && rm -rf node_modules package-lock.json && npm install'
+# 3g. Build C frontend server
+$SSH 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+  && cd /opt/yvy/frontend && rm -rf node_modules package-lock.json && npm install && npm run build
+  && cd /opt/yvy/backend-lua && gcc -o yvy-server.exe yvy-server.c -lws2_32'
 
 # 3h. Create systemd services
 $SSH 'sudo tee /etc/systemd/system/yvy-backend.service > /dev/null << EOF
@@ -172,7 +173,7 @@ Group=ubuntu
 WorkingDirectory=/opt/yvy
 Environment=HOME=/home/ubuntu
 Environment=YVY_LOCAL_DEV=0
-ExecStart=/usr/bin/bash /opt/yvy/scripts/run-lua.sh
+ExecStart=/usr/bin/lua5.1 /opt/yvy/backend-lua/main.lua
 Restart=always
 RestartSec=5
 
@@ -192,11 +193,10 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=/opt/yvy
 Environment=HOME=/home/ubuntu
-Environment=YVY_LOCAL_DEV=1
+Environment=YVY_LOCAL_DEV=0
 Environment=PORT=5001
-Environment=BROWSER=none
-Environment=PATH=/home/ubuntu/.nvm/versions/node/v18.20.8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/usr/bin/bash /opt/yvy/scripts/run-frontend.sh
+Environment=BUILD_DIR=/opt/yvy/frontend/build
+ExecStart=/opt/yvy/backend-lua/yvy-server.exe
 Restart=always
 RestartSec=10
 
@@ -225,20 +225,16 @@ Production services: `yvy-backend` (systemd), `yvy-frontend` (systemd).
 
 ### Key deployment notes
 
-- **Node 12 is too old** for react-scripts 5. Use nvm to install Node 18 on the VM.
 - **1GB RAM VMs** need swap (2GB) for npm install and webpack compilation.
-- **Frontend runs in DEV mode** (`YVY_LOCAL_DEV=1`) on the VM because production build requires more RAM.
-- **Backend uses `run-lua.sh`** which sources `.env` before starting Lua.
+- **C frontend server** runs in production mode (`yvy-server.exe`), serves pre-built React static files.
+- **Backend uses Lua 5.1** with lsqlite3, cjson, luasocket modules.
 - **CORS_ORIGINS** must include the VM's public IP for browser access to work.
 
 ## Gotchas
 
-- **JSONB BLOB format**: SQLite's `jsonb()` stores data in a binary format that is NOT valid UTF-8. Always use `json(data)` in SQL queries to convert back to text, or `json_extract(data, '$.field')` for individual fields. Never try to `json.loads()` the raw BLOB in Python.
-- **`test_api.py` is stale** — still uses mongomock and patches `bk.mongo_db`. Use `test_sqlite_manual.py` instead.
-- **`requirements-dev.txt` is stale** — still lists motor/pymongo/mongomock. Don't use it.
-- **`.env.example` is stale** — still has MongoDB variables, missing SQLITE_PATH and others.
-- Legacy Python ingest files are removed; Lua uses `backend-lua/data/`.
-- **Quart/async**: All route handlers are `async def`. DB queries use `await` with aiosqlite. Redis uses `redis.asyncio`.
-- **No frontend tests exist** despite `package.json` having a `test` script (react-scripts test).
-- **No linter/formatter configured** for either Python or JS.
-- **CI** (`.github/workflows/ci.yml`) validates backend: py_compile on Python sources, `sh -n` on shell scripts. Does NOT run pytest.
+- **JSONB BLOB format**: SQLite's `jsonb()` stores data in a binary format that is NOT valid UTF-8. Always use `json(data)` in SQL queries to convert back to text, or `json_extract(data, '$.field')` for individual fields. Never try to `json.decode()` the raw BLOB in Lua.
+- **Lua version**: Must use Lua 5.1 for lsqlite3 module (compiled for 5.1 in MSYS2). `lua.exe` might be 5.5 — use `lua5.1.exe` explicitly.
+- **Old Python backend removed**: `backend/` directory deleted. All logic now in `backend-lua/`.
+- **C frontend server**: Single-threaded, no Node.js dependency. Build with MinGW/gcc (`gcc -o yvy-server.exe yvy-server.c -lws2_32`).
+- **No linter/formatter configured** for Lua or C.
+- **CI** (`.github/workflows/ci.yml`) validates: Lua syntax check, C syntax check, `sh -n` on shell scripts.
