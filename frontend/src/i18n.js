@@ -60,6 +60,7 @@ const translations = {
       readMore: 'Ler mais',
       loadingMore: 'Carregando mais notícias...',
       errorLoading: 'Erro ao carregar notícias. Tente novamente mais tarde.',
+      noMore: 'Fim das notícias.',
     },
     dashboard: {
       title: 'Dashboard de Desmatamento',
@@ -147,6 +148,7 @@ const translations = {
       readMore: 'Read more',
       loadingMore: 'Loading more news...',
       errorLoading: 'Error loading news. Please try again later.',
+      noMore: 'No more news.',
     },
     dashboard: {
       title: 'Deforestation Dashboard',

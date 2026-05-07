@@ -415,7 +415,7 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
             <GeoJSON
               key="indigenous"
               data={indigenousGeo}
-              style={() => INDIGENOUS_STYLE}
+              style={INDIGENOUS_STYLE}
               onEachFeature={(feature, layer) => {
                 const p = feature.properties;
                 layer.bindPopup(`<strong>🏕 ${p.name}</strong><br/>Terra Indígena · ${p.state_abbr || ''}<br/><small>${p.municipality || ''}</small>`);
@@ -426,7 +426,7 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
             <GeoJSON
               key="conservation"
               data={conservationGeo}
-              style={() => CONSERVATION_STYLE}
+              style={CONSERVATION_STYLE}
               onEachFeature={(feature, layer) => {
                 const p = feature.properties;
                 layer.bindPopup(`<strong>🌿 ${p.name}</strong><br/>${p.category || 'UC'} · ${p.state_abbr || ''}`);

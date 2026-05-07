@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run frontend locally (no Docker)
-set -euo pipefail
+set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -18,6 +18,10 @@ fi
 
 cd "$PROJECT_DIR/frontend"
 
+# Save PORT before .env overrides it (systemd sets PORT=5001)
+_SAVED_PORT="${PORT:-5001}"
+_SAVED_DEV="${YVY_LOCAL_DEV:-${DEV:-1}}"
+
 # Load environment variables
 if [ -f "$PROJECT_DIR/.env" ]; then
     set -a
@@ -25,12 +29,12 @@ if [ -f "$PROJECT_DIR/.env" ]; then
     set +a
 fi
 
-export PORT="${PORT:-5001}"
+export PORT="${_SAVED_PORT}"
 # Force local backend URL when running without Docker
 export BACKEND_URL="http://127.0.0.1:5000"
 export API_KEY="${API_KEY:-}"
 export REACT_APP_API_KEY="${API_KEY:-}"
-export DEV="${YVY_LOCAL_DEV:-${DEV:-1}}"
+export DEV="${_SAVED_DEV}"
 # Disable ESLint plugin to avoid Node.js compatibility issues in production
 export DISABLE_ESLINT_PLUGIN="${DISABLE_ESLINT_PLUGIN:-true}"
 
@@ -45,6 +49,24 @@ echo "=== Yvy Frontend (local) ==="
 echo "Backend URL: $BACKEND_URL"
 echo "Port:        $PORT"
 echo ""
+
+# Kill any stale react-scripts/node bound to $PORT before starting (prevents stacked dev servers → OOM)
+if command -v lsof >/dev/null 2>&1; then
+    STALE_PID="$(lsof -ti tcp:"$PORT" 2>/dev/null || true)"
+    if [ -n "$STALE_PID" ]; then
+        echo "Killing stale process(es) on port $PORT: $STALE_PID"
+        kill -9 $STALE_PID 2>/dev/null || true
+    fi
+elif command -v ss >/dev/null 2>&1; then
+    STALE_PID="$(ss -tlnp 2>/dev/null | awk -v p=":$PORT" '$4 ~ p { match($0, /pid=([0-9]+)/, a); if (a[1]) print a[1] }' | sort -u)"
+    if [ -n "$STALE_PID" ]; then
+        echo "Killing stale process(es) on port $PORT: $STALE_PID"
+        kill -9 $STALE_PID 2>/dev/null || true
+    fi
+fi
+
+# Cap Node heap to prevent runaway memory if file watcher/HMR loops
+export NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=2048"
 
 # Check if we should run dev server or production build
 if [ "${DEV:-1}" = "1" ]; then
@@ -83,7 +105,7 @@ else
             fi
             (
                 cd "$BUILD_HOME"
-                npm install
+                npm install --max-workers=2
             )
         fi
 

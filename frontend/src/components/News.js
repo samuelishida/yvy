@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useI18n } from '../i18n';
 import { getCache, setCache } from '../utils/cache';
 import './News.css';
 
 const PAGE_SIZE = 20;
+const MAX_PAGES = 5;
 
 const normalizeArticles = (payload) => {
   if (Array.isArray(payload)) {
@@ -57,9 +58,13 @@ const News = () => {
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState(null);
   const cacheKey = `news_${lang}`;
+  const fetchingRef = useRef(false);
+  const sentinelRef = useRef(null);
 
   useEffect(() => {
     const fetchNews = async () => {
+      if (fetchingRef.current) return;
+      fetchingRef.current = true;
       let cacheUsed = false;
       try {
         setError(null);
@@ -101,7 +106,7 @@ const News = () => {
           setArticles((prevArticles) => [...prevArticles, ...data]);
         }
 
-        if (data.length < PAGE_SIZE) {
+        if (data.length < PAGE_SIZE || page >= MAX_PAGES) {
           setHasMore(false);
         }
       } catch (err) {
@@ -112,28 +117,27 @@ const News = () => {
         }
       } finally {
         setLoading(false);
+        fetchingRef.current = false;
       }
     };
 
     fetchNews();
   }, [page, lang, t, cacheKey]);
 
-  const handleScroll = useCallback(() => {
-    const navbarHeight = 62;
-    const scrollBottom = window.innerHeight + document.documentElement.scrollTop;
-    const pageHeight = document.documentElement.offsetHeight;
-    if (scrollBottom + navbarHeight < pageHeight || loading || !hasMore) {
-      return;
-    }
-    setPage((prevPage) => prevPage + 1);
-  }, [loading, hasMore]);
-
   useEffect(() => {
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [handleScroll]);
+    const node = sentinelRef.current;
+    if (!node || !hasMore) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && !fetchingRef.current && hasMore) {
+        setPage((prevPage) => prevPage + 1);
+      }
+    }, { rootMargin: '200px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMore]);
 
   const handleLangChange = useCallback(() => {
+    fetchingRef.current = false;
     setArticles([]);
     setPage(1);
     setHasMore(true);
@@ -200,6 +204,10 @@ const News = () => {
           <span className="news-spinner" aria-hidden="true" />
           {t('news.loadingMore')}
         </p>
+      )}
+      {hasMore && !error && <div ref={sentinelRef} className="news-sentinel" aria-hidden="true" />}
+      {!hasMore && !error && articles.length > 0 && (
+        <p className="news-loading">{t('news.noMore')}</p>
       )}
     </div>
   );

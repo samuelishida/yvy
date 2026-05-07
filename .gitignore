@@ -183,3 +183,6 @@ frontend/node_modules/
 *.swo
 backend/data/
 backend/__pycache__/
+backend-lua/data/*.db
+backend-lua/data/*.db-shm
+backend-lua/data/*.db-wal
