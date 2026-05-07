@@ -122,7 +122,8 @@ function FireEventsHandler({ fires, fireAlertMap, alertRows, onFireOver, onFireC
   return null;
 }
 
-const FireMarker = React.memo(function FireMarker({ fire, idx, s, fireAlert, highlighted, t }) {
+// FirePopupContent - single shared popup content (not thousands)
+function FirePopupContent({ fire, fireAlert, t }) {
   const landTag = fireAlert && (() => {
     if (fireAlert.type === 'indigenous_land')   return { cls: 'indigenous',   label: `Terra Indígena: ${fireAlert.meta}` };
     if (fireAlert.type === 'conservation_unit') return { cls: 'conservation', label: `UC: ${fireAlert.meta}` };
@@ -131,29 +132,34 @@ const FireMarker = React.memo(function FireMarker({ fire, idx, s, fireAlert, hig
     return null;
   })();
   return (
+    <>
+      <strong>{t('home.heatFocus')}</strong><br />
+      {t('home.confidence')}: {fire.confidence}<br />
+      {t('home.date')}: {fire.acq_date} {fire.acq_time}<br />
+      {t('home.satellite')}: {fire.satellite}<br />
+      {t('home.brightnessTemp')}: {fire.bright_ti4}K
+      {landTag && (
+        <>
+          <br />
+          <span className={`fire-land-tag ${landTag.cls}`}>{landTag.label}</span>
+          {fireAlert.state && <><br /><span style={{ fontSize: 10, color: '#888' }}>{fireAlert.state}</span></>}
+        </>
+      )}
+      <br />
+      {t('home.sourceNasa')}
+    </>
+  );
+}
+
+// FireMarker - no Popup child (heavy!). Popup shown via single shared component.
+const FireMarker = React.memo(function FireMarker({ fire, idx, s, highlighted }) {
+  return (
     <React.Fragment key={`f-${idx}`}>
       <CircleMarker
         center={[fire.lat, fire.lon]}
         pathOptions={s}
         radius={s.radius}
-      >
-        <Popup>
-          <strong>{t('home.heatFocus')}</strong><br />
-          {t('home.confidence')}: {fire.confidence}<br />
-          {t('home.date')}: {fire.acq_date} {fire.acq_time}<br />
-          {t('home.satellite')}: {fire.satellite}<br />
-          {t('home.brightnessTemp')}: {fire.bright_ti4}K
-          {landTag && (
-            <>
-              <br />
-              <span className={`fire-land-tag ${landTag.cls}`}>{landTag.label}</span>
-              {fireAlert.state && <><br /><span style={{ fontSize: 10, color: '#888' }}>{fireAlert.state}</span></>}
-            </>
-          )}
-          <br />
-          {t('home.sourceNasa')}
-        </Popup>
-      </CircleMarker>
+      />
       {highlighted && (
         <CircleMarker
           center={[fire.lat, fire.lon]}
@@ -569,22 +575,29 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
                 onFireClick={onFireClick}
                 onFireHoverEnd={onFireHoverEnd}
               />
-              {fireRows.map((fire, idx) => {
-                const s = fireStyle(fire.confidence);
-                const fireAlertId = fireAlertMap.get(idx);
-                const fireAlert = fireAlertId ? alertByIdMap.get(fireAlertId) : null;
-                return (
-                  <FireMarker
-                    key={`f-${idx}`}
-                    fire={fire}
-                    idx={idx}
-                    s={s}
-                    fireAlert={fireAlert}
-                    highlighted={highlightedFires?.has(idx)}
+              {fireRows.map((fire, idx) => (
+                <FireMarker
+                  key={`f-${idx}`}
+                  fire={fire}
+                  idx={idx}
+                  s={fireStyle(fire.confidence)}
+                  highlighted={highlightedFires?.has(idx)}
+                />
+              ))}
+              {/* Single shared Popup for hovered/locked fire - avoids thousands of Popup components */}
+              {(hoveredFireIdx != null || lockedFireIdx != null) && fireRows[hoveredFireIdx ?? lockedFireIdx] && (
+                <Popup
+                  position={[fireRows[hoveredFireIdx ?? lockedFireIdx].lat, fireRows[hoveredFireIdx ?? lockedFireIdx].lon]}
+                  autoClose={!lockedFireIdx}
+                  closeOnClick={false}
+                >
+                  <FirePopupContent
+                    fire={fireRows[hoveredFireIdx ?? lockedFireIdx]}
+                    fireAlert={alertByIdMap.get(fireAlertMap.get(hoveredFireIdx ?? lockedFireIdx))}
                     t={t}
                   />
-                );
-              })}
+                </Popup>
+              )}
             </>
           )}
         </MapContainer>
