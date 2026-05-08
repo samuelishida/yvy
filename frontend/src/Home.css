@@ -324,11 +324,18 @@
   right: 18px;
   top: auto;
   left: auto;
-  width: 240px;
-  max-height: 340px;
+  width: 280px;
+  max-height: 480px;
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+@media (max-width: 720px) {
+  .fl-panel-alerts {
+    width: 180px;
+    max-height: 300px;
+  }
 }
 
 /* Propagate flex column through card-body → panel so panel-body scrolls */

@@ -33,7 +33,7 @@ local NIGHT_START_HHMM     = 1800
 local NIGHT_END_HHMM       = 600
 
 local PM25_THRESHOLD       = 55
-local MAX_ALERTS           = 20
+local MAX_ALERTS           = 50
 
 -- WAQI station IDs for major Brazilian cities
 local WAQI_STATIONS = {
@@ -65,15 +65,45 @@ local function is_in_brazil_bbox(lat, lon)
     return lat >= -34 and lat <= 5.5 and lon >= -74 and lon <= -28
 end
 
+-- Country/region lookup based on coordinates
+local function get_region_for_coords(lat, lon)
+    -- Brazil check first
+    if is_in_brazil_bbox(lat, lon) then
+        return "Brasil"
+    end
+
+    -- South American countries with approximate bounding boxes
+    local countries = {
+        { name = "Argentina",   lat_min = -55, lat_max = -21, lon_min = -74, lon_max = -53 },
+        { name = "Colombia",    lat_min = -4,  lat_max = 13,  lon_min = -79, lon_max = -67 },
+        { name = "Peru",        lat_min = -18, lat_max = 0,   lon_min = -81, lon_max = -68 },
+        { name = "Bolivia",     lat_min = -23, lat_max = -9,  lon_min = -70, lon_max = -57 },
+        { name = "Paraguay",    lat_min = -28, lat_max = -19, lon_min = -63, lon_max = -54 },
+        { name = "Uruguay",     lat_min = -35, lat_max = -30, lon_min = -58, lon_max = -53 },
+        { name = "Chile",       lat_min = -56, lat_max = -17, lon_min = -81, lon_max = -66 },
+        { name = "Venezuela",   lat_min = 1,   lat_max = 12,  lon_min = -73, lon_max = -59 },
+        { name = "Guyana",      lat_min = 1,   lat_max = 9,   lon_min = -61, lon_max = -56 },
+        { name = "Suriname",    lat_min = 2,   lat_max = 6,   lon_min = -58, lon_max = -54 },
+        { name = "Ecuador",     lat_min = -5,  lat_max = 2,   lon_min = -81, lon_max = -75 },
+        { name = "Guiana Francesa", lat_min = 2, lat_max = 6, lon_min = -54, lon_max = -51 },
+    }
+
+    for _, country in ipairs(countries) do
+        if lat >= country.lat_min and lat <= country.lat_max and
+           lon >= country.lon_min and lon <= country.lon_max then
+            return country.name
+        end
+    end
+
+    return "América do Sul"
+end
+
 local function meta_for_fire(lat, lon)
     local biome = biome_lookup.classify_point(lat, lon)
     if biome then
         return biome
     end
-    if is_in_brazil_bbox(lat, lon) then
-        return "Brasil"
-    end
-    return "América do Sul"
+    return get_region_for_coords(lat, lon)
 end
 
 -- ── Time utilities ───────────────────────────────────────────────────────
@@ -173,7 +203,7 @@ local function cluster_alerts(fires)
     local now = os.time()
     local alerts = {}
 
-    for idx = 1, math.min(5, #clusters) do
+    for idx = 1, math.min(15, #clusters) do
         local cluster = clusters[idx]
         local sum_lat, sum_lon = 0, 0
         for _, f in ipairs(cluster) do
@@ -218,7 +248,7 @@ local function night_fire_alerts(fires)
     local now = os.time()
     local alerts = {}
 
-    for idx = 1, math.min(5, #clusters) do
+    for idx = 1, math.min(15, #clusters) do
         local cluster = clusters[idx]
         local sum_lat, sum_lon = 0, 0
         for _, f in ipairs(cluster) do
@@ -279,11 +309,10 @@ local function indigenous_land_alerts(fires)
 
     local now = os.time()
     local alerts = {}
-    for idx = 1, math.min(5, #sorted) do
+    for idx = 1, math.min(15, #sorted) do
         local item = sorted[idx]
         local info = item.data.info
-        local state_abbr = info.state_abbr or "BR"
-        local state_name = info.state_name or "Brasil"
+        local state_abbr = info.state_abbr or ""
         local lats, lons = item.data.lats, item.data.lons
         local clat = 0; for _, v in ipairs(lats) do clat = clat + v end; clat = clat / #lats
         local clon = 0; for _, v in ipairs(lons) do clon = clon + v end; clon = clon / #lons
@@ -295,14 +324,15 @@ local function indigenous_land_alerts(fires)
         end
         local radius_km = math.max(5.0, max_d)
 
-        local meta = state_name .. " · " .. item.name
+        local region = meta_for_fire(clat, clon)
+        local meta = region .. " · " .. item.name
         local safe_id = item.name:sub(1, 20):gsub(" ", "_")
         alerts[#alerts + 1] = {
             id = "ti_" .. safe_id,
             type = "indigenous_land",
             tick = "crit",
             meta = meta,
-            state = state_abbr .. " · " .. #lats .. " focos",
+            state = (state_abbr ~= "" and state_abbr or region) .. " · " .. #lats .. " focos",
             center = {clat, clon},
             radius_km = radius_km,
             generated_at = now,
@@ -339,10 +369,10 @@ local function conservation_unit_alerts(fires)
 
     local now = os.time()
     local alerts = {}
-    for idx = 1, math.min(5, #sorted) do
+    for idx = 1, math.min(15, #sorted) do
         local item = sorted[idx]
         local info = item.data.info
-        local state_abbr = info.state_abbr or "BR"
+        local state_abbr = info.state_abbr or ""
         local category = info.category or "UC"
         local lats, lons = item.data.lats, item.data.lons
         local clat = 0; for _, v in ipairs(lats) do clat = clat + v end; clat = clat / #lats
@@ -355,6 +385,7 @@ local function conservation_unit_alerts(fires)
         end
         local radius_km = math.max(5.0, max_d)
 
+        local region = meta_for_fire(clat, clon)
         local meta = category .. " · " .. item.name:sub(1, 30)
         local safe_id = item.name:sub(1, 20):gsub(" ", "_")
         alerts[#alerts + 1] = {
@@ -362,7 +393,7 @@ local function conservation_unit_alerts(fires)
             type = "conservation_unit",
             tick = "crit",
             meta = meta,
-            state = state_abbr .. " · " .. #lats .. " focos",
+            state = (state_abbr ~= "" and state_abbr or region) .. " · " .. #lats .. " focos",
             center = {clat, clon},
             radius_km = radius_km,
             generated_at = now,
