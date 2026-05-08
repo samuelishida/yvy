@@ -599,7 +599,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           {showDeforest && (
             <TileLayer
               url="/api/tiles/prodes?z={z}&x={x}&y={y}"
-              opacity={0.8}
+              opacity={0.33}
               tileSize={256}
               maxNativeZoom={12}
               attribution="&copy; INPE/TerraBrasilis PRODES"
