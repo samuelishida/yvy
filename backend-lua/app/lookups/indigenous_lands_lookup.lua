@@ -77,6 +77,8 @@ function _M.load_indigenous_lands()
     logger.info("Loaded ", #lands, " indigenous land polygons from file (saved to DB)")
 end
 
+function _M.count() return #lands end
+
 function _M.classify_point(lon, lat)
     for _, entry in ipairs(lands) do
         if geo.point_in_polygon(lon, lat, entry.rings) then

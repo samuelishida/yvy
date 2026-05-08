@@ -292,7 +292,7 @@ local function night_fire_alerts(fires)
 end
 
 local function indigenous_land_alerts(fires)
-    if not ti_lookup._lands or #ti_lookup._lands == 0 then
+    if ti_lookup.count() == 0 then
         return {}
     end
 
@@ -352,7 +352,7 @@ local function indigenous_land_alerts(fires)
 end
 
 local function conservation_unit_alerts(fires)
-    if not uc_lookup._units or #uc_lookup._units == 0 then
+    if uc_lookup.count() == 0 then
         return {}
     end
 

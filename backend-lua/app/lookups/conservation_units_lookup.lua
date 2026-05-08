@@ -76,6 +76,8 @@ function _M.load_conservation_units()
     logger.info("Loaded ", #units, " conservation unit polygons from file (saved to DB)")
 end
 
+function _M.count() return #units end
+
 function _M.classify_point(lon, lat)
     for _, entry in ipairs(units) do
         if geo.point_in_polygon(lon, lat, entry.rings) then
