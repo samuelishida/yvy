@@ -130,8 +130,18 @@ function FireEventsHandler({ fires, fireAlertMap, alertRows, onFireOver, onFireC
   const lastIdxRef = useRef(null);
   const gridRef = useRef(new Map());
   const prevFiresRef = useRef(null);
+  const isZoomingRef = useRef(false);
 
   const map = useMapEvents({
+    zoomstart: () => { isZoomingRef.current = true; },
+    zoomend: () => {
+      isZoomingRef.current = false;
+      // Rebuild grid after zoom (screen positions changed)
+      if (fires && fires.length > 0) {
+        gridRef.current = buildFireGrid(map, fires);
+        prevFiresRef.current = fires;
+      }
+    },
     moveend: () => {
       // Rebuild grid when map moves (fires screen positions changed)
       if (fires && fires.length > 0) {
@@ -140,6 +150,7 @@ function FireEventsHandler({ fires, fireAlertMap, alertRows, onFireOver, onFireC
       }
     },
     mousemove: (e) => {
+      if (isZoomingRef.current) return; // skip hover during zoom animation
       if (!fires || fires.length === 0) return;
       // Rebuild grid if fires array changed
       if (prevFiresRef.current !== fires) {
@@ -149,7 +160,9 @@ function FireEventsHandler({ fires, fireAlertMap, alertRows, onFireOver, onFireC
       if (rafRef.current) return; // throttle: skip if already scheduled
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = null;
-        const idx = findFireAtPoint(map, fires, e.containerPoint, 8, gridRef);
+        const rawIdx = findFireAtPoint(map, fires, e.containerPoint, 8, gridRef);
+        // Only hover fires with associated alert — protect from non-alert point glitches
+        const idx = (rawIdx !== null && fireAlertMap.get(rawIdx) != null) ? rawIdx : null;
         if (idx !== lastIdxRef.current) {
           lastIdxRef.current = idx;
           if (idx !== null) {
@@ -162,22 +175,29 @@ function FireEventsHandler({ fires, fireAlertMap, alertRows, onFireOver, onFireC
       });
     },
     click: (e) => {
+      if (isZoomingRef.current) return;
       if (!fires || fires.length === 0) return;
       const idx = findFireAtPoint(map, fires, e.containerPoint, 8, gridRef);
-      if (idx !== null) {
+      // Only click fires with associated alert
+      if (idx !== null && fireAlertMap.get(idx) != null) {
         const fireAlertId = fireAlertMap.get(idx);
         onFireClick(fireAlertId, idx, e);
       }
     },
   });
 
-  // Build grid on mount
+  // Build grid on mount/fires change
   useEffect(() => {
     if (fires && fires.length > 0) {
       gridRef.current = buildFireGrid(map, fires);
       prevFiresRef.current = fires;
     }
   }, [fires, map]);
+
+  // Cancel pending RAF on unmount
+  useEffect(() => {
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, []);
 
   return null;
 }
@@ -231,7 +251,7 @@ const FireMarker = React.memo(function FireMarker({ fire, idx, s, highlighted })
   );
 });
 
-// MapController handles flyTo animations and smooth wheel zoom
+// MapController handles pan-to-alert and smooth wheel zoom
 function MapController({ activeAlert }) {
   const map = useMapEvents({});
 
@@ -245,9 +265,10 @@ function MapController({ activeAlert }) {
 
   useEffect(() => {
     if (activeAlert?.center) {
-      map.flyTo(activeAlert.center, map.getZoom() < 6 ? 8 : map.getZoom(), {
-        duration: 1.5,
-        easeLinearity: 0.25,
+      // setView instead of flyTo: pans directly without zoom-out-zoom-in animation
+      map.setView(activeAlert.center, Math.max(map.getZoom(), 8), {
+        animate: true,
+        duration: 1.0,
       });
     }
   }, [activeAlert?.id]); // eslint-disable-line
@@ -474,7 +495,7 @@ const AlertsPanel = React.memo(function AlertsPanel({ alerts, activeAlertId, onA
   );
 });
 
-const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, loading, error, t, airQuality, temperature, alerts, activeAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, onBboxChange }) {
+const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, t, airQuality, temperature, alerts, activeAlertId, flyToAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, onBboxChange }) {
   const [satellite, setSatellite] = useState(true);
   const [visibleCount, setVisibleCount] = useState(null);
   const alertRows = asArray(alerts);
@@ -496,6 +517,8 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
   }, [alertRows]);
 
   const activeAlert = useMemo(() => alertByIdMap.get(activeAlertId) || null, [alertByIdMap, activeAlertId]);
+  // flyToAlert only tracks explicit panel hover — not fire dot hover — to avoid unwanted map pans
+  const flyToAlert = useMemo(() => alertByIdMap.get(flyToAlertId) || null, [alertByIdMap, flyToAlertId]);
 
   const highlightedFires = useMemo(() => {
     if (!activeAlert?.center || fireRows.length === 0) return null;
@@ -561,10 +584,7 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
       </div>
 
       {/* Map */}
-      {loading && <div className="map-loading">{t('home.loading')}</div>}
-      {error   && <div className="map-error">{t('home.error')}: {error}</div>}
-      {!loading && !error && (
-        <MapContainer
+      <MapContainer
           center={[-14.235, -51.925]}
           zoom={4}
           zoomSnap={0.5}
@@ -573,7 +593,7 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
         >
           <TileLayer key={satellite ? 'sat' : 'osm'} attribution={tileAttr} url={tileUrl} />
-          <MapController activeAlert={activeAlert} />
+          <MapController activeAlert={flyToAlert} />
           <VisibleFiresCounter fires={fireRows} showFires={showFires} onVisibleCountChange={setVisibleCount} onBboxChange={onBboxChange} />
           <FireHoverLock
             fires={fireRows}
@@ -582,20 +602,15 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
             onHoverEnd={onFireHoverEnd}
             onClearLock={onClearFireLock}
           />
-          {showDeforest && records && records.slice(0, 500).map((rec, idx) => (
-            <CircleMarker
-              key={`d-${idx}`}
-              center={[rec.lat, rec.lon]}
-              pathOptions={{ color: rec.color || '#2dd4ff', fillColor: rec.color, fillOpacity: 0.5 }}
-              radius={3}
-            >
-              <Popup>
-                <strong>{classLabel(rec.clazz, t)}</strong><br />
-                {t('home.source')}: PRODES/INPE<br />
-                Lat: {rec.lat.toFixed(4)}, Lng: {rec.lon.toFixed(4)}
-              </Popup>
-            </CircleMarker>
-          ))}
+          {showDeforest && (
+            <TileLayer
+              url="/api/tiles/prodes?z={z}&x={x}&y={y}"
+              opacity={0.8}
+              tileSize={256}
+              maxNativeZoom={12}
+              attribution="&copy; INPE/TerraBrasilis PRODES"
+            />
+          )}
           {showFires && activeAlert?.center && (
             <Circle
               center={activeAlert.center}
@@ -661,7 +676,6 @@ const MapaCard = React.memo(function MapaCard({ records, fires, showDeforest, sh
             </>
           )}
         </MapContainer>
-      )}
 
       {/* Floating: fires — top right */}
       <DraggableCard className="fl-card fl-stats" title={t('home.heatFocus')}>
@@ -741,10 +755,7 @@ const DEFAULT_LON = -51.925;
 
 export default function Home() {
   const { t } = useI18n();
-  const [records,        setRecords]        = useState(null);
   const [fires,          setFires]          = useState(null);
-  const [loading,        setLoading]        = useState(false);
-  const [error,          setError]          = useState(null);
   const [airQuality,     setAirQuality]     = useState(null);
   const [temperature,    setTemperature]    = useState(null);
   const [showDeforest,   setShowDeforest]   = useState(false);
@@ -760,7 +771,7 @@ export default function Home() {
   const [lockedFireIdx,  setLockedFireIdx]  = useState(null);
   const [lockedFireAlertId, setLockedFireAlertId] = useState(null);
   const fireHoverOutTimeoutRef = useRef(null);
-  const deforestFetchedRef  = useRef(false);
+  const alertFlyToTimerRef  = useRef(null);
   const indiFetchedRef      = useRef(false);
   const consFetchedRef      = useRef(false);
 
@@ -813,13 +824,22 @@ export default function Home() {
     setFireAlertId(null);
   }, []);
 
-  const handleAlertEnter = useCallback(id => setAlertHoverId(id), []);
-  const handleAlertLeave = useCallback(() => setAlertHoverId(null), []);
+  const [flyToAlertId, setFlyToAlertId] = useState(null);
+
+  const handleAlertEnter = useCallback(id => {
+    setAlertHoverId(id);
+    // Debounce flyTo 400ms: prevents accidental pan when mouse briefly crosses panel while panning
+    clearTimeout(alertFlyToTimerRef.current);
+    alertFlyToTimerRef.current = setTimeout(() => setFlyToAlertId(id), 400);
+  }, []);
+  const handleAlertLeave = useCallback(() => {
+    setAlertHoverId(null);
+    clearTimeout(alertFlyToTimerRef.current);
+  }, []);
 
   useEffect(() => () => {
-    if (fireHoverOutTimeoutRef.current) {
-      clearTimeout(fireHoverOutTimeoutRef.current);
-    }
+    if (fireHoverOutTimeoutRef.current) clearTimeout(fireHoverOutTimeoutRef.current);
+    if (alertFlyToTimerRef.current) clearTimeout(alertFlyToTimerRef.current);
   }, []);
 
   useEffect(() => {
@@ -899,19 +919,6 @@ export default function Home() {
     }
   }, []);
 
-  // Lazy-load PRODES deforestation points (only when layer enabled)
-  useEffect(() => {
-    if (!showDeforest || deforestFetchedRef.current) return;
-    deforestFetchedRef.current = true;
-    const validRec = r => r.lat != null && r.lon != null;
-    const cached = getCache('prodes_records', 15);
-    if (cached) { setRecords(cached.filter(validRec)); return; }
-    setLoading(true);
-    fetch('/api/data')
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then(d => { const rows = (Array.isArray(d) ? d : []).filter(validRec); setRecords(rows); setCache('prodes_records', rows); setLoading(false); })
-      .catch(e => { setError(e.message); setLoading(false); });
-  }, [showDeforest]);
 
   // Lazy-load indigenous lands boundary
   useEffect(() => {
@@ -936,7 +943,6 @@ export default function Home() {
   return (
     <div className="home-main">
       <MapaCard
-        records={records}
         fires={fires}
         showDeforest={showDeforest}
         showFires={showFires}
@@ -948,13 +954,12 @@ export default function Home() {
         setShowConservation={setShowConservation}
         indigenousGeo={indigenousGeo}
         conservationGeo={conservationGeo}
-        loading={loading}
-        error={error}
         t={t}
         airQuality={airQuality}
         temperature={temperature}
         alerts={alerts}
         activeAlertId={activeAlertId}
+        flyToAlertId={flyToAlertId}
         hoveredFireIdx={hoveredFireIdx}
         lockedFireIdx={lockedFireIdx}
         onFireOver={handleFireOver}

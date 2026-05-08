@@ -29,8 +29,9 @@ local CLUSTER_WINDOW_HOURS = 24
 local NIGHT_RADIUS_KM      = 10.0
 local NIGHT_MIN_FIRES      = 3
 local NIGHT_WINDOW_HOURS   = 12
-local NIGHT_START_HHMM     = 1800
-local NIGHT_END_HHMM       = 600
+-- FIRMS acq_time is UTC. BRT = UTC-3, so 21:00 UTC ≈ 18:00 BRT (night start)
+local NIGHT_START_HHMM     = 2100
+local NIGHT_END_HHMM       = 900
 
 local PM25_THRESHOLD       = 55
 local MAX_ALERTS           = 50
@@ -48,6 +49,13 @@ local WAQI_STATIONS = {
     {"GO", "Goiânia",      "goiania"},
     {"DF", "Brasília",     "brasilia"},
 }
+
+-- Stable short ID from an arbitrary string (djb2, base-36, 6 chars)
+local function name_hash(s)
+    local h = 5381
+    for i = 1, #s do h = ((h * 33) + s:byte(i)) % 0x100000 end
+    return string.format("%05x", h)
+end
 
 -- ── Geometry helpers ─────────────────────────────────────────────────────
 
@@ -203,7 +211,7 @@ local function cluster_alerts(fires)
     local now = os.time()
     local alerts = {}
 
-    for idx = 1, math.min(15, #clusters) do
+    for idx = 1, #clusters do
         local cluster = clusters[idx]
         local sum_lat, sum_lon = 0, 0
         for _, f in ipairs(cluster) do
@@ -222,7 +230,7 @@ local function cluster_alerts(fires)
 
         local meta = meta_for_fire(clat, clon)
         alerts[#alerts + 1] = {
-            id = string.format("cluster_%.2f_%.2f", clat, clon),
+            id = string.format("cluster_%.2f_%.2f_%d", clat, clon, #cluster),
             type = "cluster",
             tick = "crit",
             meta = meta,
@@ -248,7 +256,7 @@ local function night_fire_alerts(fires)
     local now = os.time()
     local alerts = {}
 
-    for idx = 1, math.min(15, #clusters) do
+    for idx = 1, #clusters do
         local cluster = clusters[idx]
         local sum_lat, sum_lon = 0, 0
         for _, f in ipairs(cluster) do
@@ -267,7 +275,7 @@ local function night_fire_alerts(fires)
 
         local meta = meta_for_fire(clat, clon)
         alerts[#alerts + 1] = {
-            id = string.format("night_%.2f_%.2f", clat, clon),
+            id = string.format("night_%.2f_%.2f_%d", clat, clon, #cluster),
             type = "night_fire",
             tick = "warn",
             meta = meta,
@@ -309,7 +317,7 @@ local function indigenous_land_alerts(fires)
 
     local now = os.time()
     local alerts = {}
-    for idx = 1, math.min(15, #sorted) do
+    for idx = 1, #sorted do
         local item = sorted[idx]
         local info = item.data.info
         local state_abbr = info.state_abbr or ""
@@ -326,9 +334,8 @@ local function indigenous_land_alerts(fires)
 
         local region = meta_for_fire(clat, clon)
         local meta = region .. " · " .. item.name
-        local safe_id = item.name:sub(1, 20):gsub(" ", "_")
         alerts[#alerts + 1] = {
-            id = "ti_" .. safe_id,
+            id = "ti_" .. name_hash(item.name),
             type = "indigenous_land",
             tick = "crit",
             meta = meta,
@@ -369,7 +376,7 @@ local function conservation_unit_alerts(fires)
 
     local now = os.time()
     local alerts = {}
-    for idx = 1, math.min(15, #sorted) do
+    for idx = 1, #sorted do
         local item = sorted[idx]
         local info = item.data.info
         local state_abbr = info.state_abbr or ""
@@ -387,9 +394,8 @@ local function conservation_unit_alerts(fires)
 
         local region = meta_for_fire(clat, clon)
         local meta = category .. " · " .. item.name:sub(1, 30)
-        local safe_id = item.name:sub(1, 20):gsub(" ", "_")
         alerts[#alerts + 1] = {
-            id = "uc_" .. safe_id,
+            id = "uc_" .. name_hash(item.name),
             type = "conservation_unit",
             tick = "crit",
             meta = meta,
@@ -404,27 +410,49 @@ local function conservation_unit_alerts(fires)
 end
 
 local function prodes_alerts()
-    local ok, records = pcall(db.find_deforestation, -34.0, 5.5, -74.0, -34.0, 10)
+    local ok, records = pcall(db.find_deforestation, -34.0, 5.5, -74.0, -28.0, 10000)
     if not ok or not records or #records == 0 then
         return {}
     end
 
+    -- Cluster PRODES records (50 km radius, min 3 records, yearly window)
+    local clusters = cluster_fires(records, 50.0, 3, 24*365)
     local now = os.time()
-    local first = records[1]
-    local meta = meta_for_fire(first.lat or -14.235, first.lon or -51.925)
-    local area_km2 = #records * 2
+    local alerts = {}
 
-    return {{
-        id = "prodes_latest",
-        type = "prodes",
-        tick = "info",
-        meta = meta,
-        state = area_km2 .. " km²",
-        center = {first.lat or -14.235, first.lon or -51.925},
-        radius_km = 50,
-        generated_at = now,
-        ts = ts_label(now),
-    }}
+    for idx = 1, #clusters do
+        local cluster = clusters[idx]
+        local sum_lat, sum_lon = 0, 0
+        for _, rec in ipairs(cluster) do
+            sum_lat = sum_lat + rec.lat
+            sum_lon = sum_lon + rec.lon
+        end
+        local clat = sum_lat / #cluster
+        local clon = sum_lon / #cluster
+
+        local max_d = 5.0
+        for _, rec in ipairs(cluster) do
+            local d = haversine_km(clat, clon, rec.lat, rec.lon)
+            if d > max_d then max_d = d end
+        end
+        local radius_km = math.max(5.0, max_d)
+
+        local meta = meta_for_fire(clat, clon)
+        local area_km2 = math.floor(#cluster * 2)
+        alerts[#alerts + 1] = {
+            id = string.format("prodes_%.2f_%.2f_%d", clat, clon, #cluster),
+            type = "prodes",
+            tick = "info",
+            meta = meta,
+            state = area_km2 .. " km²",
+            center = {clat, clon},
+            radius_km = radius_km,
+            generated_at = now,
+            ts = ts_label(now),
+        }
+    end
+
+    return alerts
 end
 
 local function pm25_alerts(waqi_token)
@@ -446,18 +474,20 @@ local function pm25_alerts(waqi_token)
             if ok and data.status == "ok" then
                 local pm25 = data.data and data.data.iaqi and data.data.iaqi.pm25 and data.data.iaqi.pm25.v
                 if pm25 and tonumber(pm25) >= PM25_THRESHOLD then
-                    alerts[#alerts + 1] = {
-                        id = "pm25_" .. station_id,
-                        type = "pm25",
-                        tick = "warn",
-                        meta = state .. " · " .. city,
-                        state = state .. " · " .. pm25 .. " µg/m³",
-                        center = {data.data.city and data.data.city.geo and data.data.city.geo[1] or 0,
-                                  data.data.city and data.data.city.geo and data.data.city.geo[2] or 0},
-                        radius_km = 15,
-                        generated_at = now,
-                        ts = ts_label(now),
-                    }
+                    local geo = data.data.city and data.data.city.geo
+                    if geo and geo[1] and geo[2] and (geo[1] ~= 0 or geo[2] ~= 0) then
+                        alerts[#alerts + 1] = {
+                            id = "pm25_" .. station_id,
+                            type = "pm25",
+                            tick = "warn",
+                            meta = state .. " · " .. city,
+                            state = state .. " · " .. pm25 .. " µg/m³",
+                            center = {geo[1], geo[2]},
+                            radius_km = 15,
+                            generated_at = now,
+                            ts = ts_label(now),
+                        }
+                    end
                 end
             end
         end
@@ -495,13 +525,6 @@ function _M.generate_all_alerts(fires, deforestation_data, waqi_token)
         if ta ~= tb then return ta < tb end
         return (a.id or "") < (b.id or "")
     end)
-
-    -- Cap
-    if #all_alerts > MAX_ALERTS then
-        local capped = {}
-        for i = 1, MAX_ALERTS do capped[i] = all_alerts[i] end
-        all_alerts = capped
-    end
 
     local now = os.time()
     return {

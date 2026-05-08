@@ -186,3 +186,5 @@ backend/__pycache__/
 backend-lua/data/*.db
 backend-lua/data/*.db-shm
 backend-lua/data/*.db-wal
+backend-lua/data/prodes_brasil_2024_v20260407/
+backend-lua/data/tiles_prodes.db

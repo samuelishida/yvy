@@ -26,6 +26,7 @@ local biomes        = require("app.routes.biomes")
 local weather       = require("app.routes.weather")
 local news          = require("app.routes.news")
 local alerts        = require("app.routes.alerts")
+local tiles         = require("app.routes.tiles")
 local auth          = require("app.middleware.auth")
 local rl            = require("app.middleware.rate_limit")
 local db            = require("app.db")
@@ -76,8 +77,11 @@ server.route("GET", "/api/fires", fires.get_fires)
 server.route("POST", "/api/fires/sync", fires.sync_fires)
 server.route("POST", "/api/admin/firms/sync", fires.admin_firms_sync)
 
--- Deforestation
+-- Deforestation data
 server.route("GET", "/api/data", deforestation.get_data)
+
+-- PRODES tiles (WMS proxy/cache)
+server.route("GET", "/api/tiles/prodes", tiles.get_tile)
 
 -- Biomes
 server.route("GET", "/api/biomes", biomes.get_biomes)

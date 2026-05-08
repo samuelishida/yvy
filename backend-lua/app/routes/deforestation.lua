@@ -10,7 +10,7 @@ local cjson = require("cjson")
 
 local _M = {}
 
-local BRAZIL_BOUNDS = {min_lat = -34.0, max_lat = 5.5, min_lon = -74.0, max_lon = -34.0}
+local BRAZIL_BOUNDS = {min_lat = -34.0, max_lat = 5.5, min_lon = -74.0, max_lon = -28.0}
 local MAX_RESULTS = tonumber(os.getenv("MAX_RESULTS_PER_REQUEST") or "10000")
 
 local function clamp_bbox_to_brazil(ne_lat, ne_lng, sw_lat, sw_lng)

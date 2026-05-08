@@ -16,11 +16,14 @@ function _M.parse_qml(file_path)
     file:close()
 
     local color_legend = {}
-    for value, color, label in xml_text:gmatch([[paletteEntry value="(%d+)" color="([^"]+)" label="([^"]+)"]]) do
-        color_legend[tonumber(value)] = {
-            color = color,
-            label = label,
-        }
+    -- Extract each paletteEntry tag and parse attributes individually (order-independent)
+    for entry in xml_text:gmatch("<paletteEntry[^/]-/>") do
+        local value = entry:match([[value="(%d+)"]])
+        local color = entry:match([[color="([^"]+)"]])
+        local label = entry:match([[label="([^"]+)"]])
+        if value and color and label then
+            color_legend[tonumber(value)] = { color = color, label = label }
+        end
     end
 
     return color_legend
@@ -90,16 +93,14 @@ function _M.run()
     end
 
     local csv_path = env.first_existing({
-        (os.getenv("DATA_DIR") or "") .. "/prodes_brasil_2023.csv",
-        "data/prodes_brasil_2023.csv",
-        "../backend/prodes_brasil_2023.csv",
-        "/opt/yvy/backend-lua/data/prodes_brasil_2023.csv",
+        (os.getenv("DATA_DIR") or "") .. "/prodes_brasil_2024_v20260407.csv",
+        "data/prodes_brasil_2024_v20260407/prodes_brasil_2024_v20260407.csv",
+        "/opt/yvy/backend-lua/data/prodes_brasil_2024_v20260407/prodes_brasil_2024_v20260407.csv",
     })
     local qml_path = env.first_existing({
-        (os.getenv("DATA_DIR") or "") .. "/prodes_brasil_2023.qml",
-        "data/prodes_brasil_2023.qml",
-        "../backend/prodes_brasil_2023.qml",
-        "/opt/yvy/backend-lua/data/prodes_brasil_2023.qml",
+        (os.getenv("DATA_DIR") or "") .. "/prodes_brasil_2024_v20260407.qml",
+        "data/prodes_brasil_2024_v20260407/prodes_brasil_2024_v20260407.qml",
+        "/opt/yvy/backend-lua/data/prodes_brasil_2024_v20260407/prodes_brasil_2024_v20260407.qml",
     })
 
     if not csv_path or not qml_path then

@@ -50,9 +50,24 @@ function Read-LogTail {
     return ((Get-Content $Path -Tail 20 -ErrorAction SilentlyContinue) -join [Environment]::NewLine)
 }
 
+$FrontendDir = Join-Path $ProjectDir "frontend"
+
 New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 
 & $StopScript
+
+if (-not $SkipFrontendBuild) {
+    Write-Host "Building frontend..."
+    $buildLog = Join-Path $RuntimeDir "build.log"
+    & npm --prefix $FrontendDir run build > $buildLog
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host (Get-Content $buildLog -Raw -ErrorAction SilentlyContinue)
+        throw "Frontend build failed (exit $LASTEXITCODE). See: $buildLog"
+    }
+    Write-Host "Frontend build done."
+} else {
+    Write-Host "Skipping frontend build (-SkipFrontendBuild)."
+}
 
 $BackendOut = Join-Path $RuntimeDir "backend.out.log"
 $BackendErr = Join-Path $RuntimeDir "backend.err.log"
