@@ -274,13 +274,26 @@ function _M.fetch_and_save_news()
         return db.get_news_page(1, 20, "pt")
     end
 
+    local function norm_title(s)
+        if type(s) ~= "string" then return "" end
+        return s:lower():gsub("[%p%s]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+    end
+
     local deduped = {}
     local seen_urls = {}
+    local seen_titles = {}
     for _, article in ipairs(fetched) do
-        if article.url and article.url ~= "" and not seen_urls[article.url] then
-            seen_urls[article.url] = true
-            article.ingested_at = article.ingested_at or utils.now_iso()
-            deduped[#deduped + 1] = article
+        local url = article.url or ""
+        url = url:gsub("/$", "")  -- strip trailing slash
+        if url ~= "" and not seen_urls[url] then
+            local nt = norm_title(article.title)
+            if nt == "" or not seen_titles[nt] then
+                seen_urls[url] = true
+                if nt ~= "" then seen_titles[nt] = true end
+                article.url = url
+                article.ingested_at = article.ingested_at or utils.now_iso()
+                deduped[#deduped + 1] = article
+            end
         end
     end
 

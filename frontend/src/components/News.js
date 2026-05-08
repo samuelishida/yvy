@@ -103,7 +103,10 @@ const News = () => {
           setArticles(data);
           setCache(cacheKey, data);
         } else {
-          setArticles((prevArticles) => [...prevArticles, ...data]);
+          setArticles((prevArticles) => {
+            const seen = new Set(prevArticles.map(a => a.url));
+            return [...prevArticles, ...data.filter(a => !seen.has(a.url))];
+          });
         }
 
         if (data.length < PAGE_SIZE || page >= MAX_PAGES) {

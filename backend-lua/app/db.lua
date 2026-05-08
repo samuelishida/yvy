@@ -459,7 +459,7 @@ function _M.get_news_page(page, page_size, lang)
         FROM news
         ORDER BY COALESCE(datetime(publishedAt), datetime(ingested_at)) DESC,
                  datetime(ingested_at) DESC,
-                 url DESC
+                 id DESC
         LIMIT ? OFFSET ?
     ]]
 
