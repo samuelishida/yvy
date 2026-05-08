@@ -495,9 +495,8 @@ const AlertsPanel = React.memo(function AlertsPanel({ alerts, activeAlertId, onA
   );
 });
 
-const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, t, airQuality, temperature, alerts, activeAlertId, flyToAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, onBboxChange }) {
+const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, t, alerts, activeAlertId, flyToAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, onBboxChange }) {
   const [satellite, setSatellite] = useState(true);
-  const [visibleCount, setVisibleCount] = useState(null);
   const alertRows = asArray(alerts);
   const fireRows = asArray(fires);
 
@@ -539,11 +538,6 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
   const tileAttr = satellite
     ? '&copy; Esri, Earthstar Geographics'
     : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
-
-  const count   = visibleCount ?? fireRows.length;
-  const aqiVal  = airQuality ? airQuality.aqi : 0;
-  const humVal  = temperature ? temperature.humidity : 0;
-  const aqiColor = aqiVal <= 50 ? '#4ade80' : aqiVal <= 100 ? '#fbbf24' : '#ef4444';
 
   return (
     <div className="map-stage">
@@ -594,7 +588,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
         >
           <TileLayer key={satellite ? 'sat' : 'osm'} attribution={tileAttr} url={tileUrl} />
           <MapController activeAlert={flyToAlert} />
-          <VisibleFiresCounter fires={fireRows} showFires={showFires} onVisibleCountChange={setVisibleCount} onBboxChange={onBboxChange} />
+          <VisibleFiresCounter fires={fireRows} showFires={showFires} onVisibleCountChange={() => {}} onBboxChange={onBboxChange} />
           <FireHoverLock
             fires={fireRows}
             hoveredFireIdx={hoveredFireIdx}
@@ -677,67 +671,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           )}
         </MapContainer>
 
-      {/* Floating: fires — top right */}
-      <DraggableCard className="fl-card fl-stats" title={t('home.heatFocus')}>
-        <div className="fl-big-number" style={{ color: '#fda4af' }}>
-          {count.toLocaleString('pt-BR')}
-          <span className="unit">focos</span>
-        </div>
-        <a
-          href="https://firms.modaps.eosdis.nasa.gov/map/?lang=pt"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="fl-link"
-        >
-          <span>NASA FIRMS</span>
-          <span>↗</span>
-        </a>
-      </DraggableCard>
-
-      {/* Floating: 4-gauge weather card — bottom left */}
-      <DraggableCard className="fl-card fl-weather" title={temperature?.city ? `CLIMA · ${temperature.city}` : 'CLIMA'}>
-        <div className="fl-weather__gauges">
-          <div className="fl-weather__gauge">
-            <div className="fl-weather__gauge-svg">
-              <GaugeRing value={aqiVal} max={300} color={aqiColor} size={56} />
-              <div className="fl-weather__gauge-num" style={{ color: aqiColor }}>{airQuality ? aqiVal : '—'}</div>
-            </div>
-            <div className="fl-weather__gauge-label">AQI</div>
-            <div className="fl-weather__gauge-sub">{airQuality ? `PM2.5·${airQuality.pm25}` : '—'}</div>
-          </div>
-          <div className="fl-weather__gauge">
-            <div className="fl-weather__gauge-svg">
-              <GaugeRing value={humVal} max={100} color="#3b82f6" size={56} />
-              <div className="fl-weather__gauge-num">{humVal || '—'}</div>
-            </div>
-            <div className="fl-weather__gauge-label">{t('home.humidity')}</div>
-            <div className="fl-weather__gauge-sub">%</div>
-          </div>
-          <div className="fl-weather__gauge">
-            <div className="fl-weather__gauge-svg">
-              <GaugeRing value={temperature ? Math.max(temperature.temp, 0) : 0} max={45} color="#fb923c" size={56} />
-              <div className="fl-weather__gauge-num">{temperature ? temperature.temp.toFixed(0) : '—'}</div>
-            </div>
-            <div className="fl-weather__gauge-label">Temp</div>
-            <div className="fl-weather__gauge-sub">{temperature ? `SC ${temperature.feels_like.toFixed(0)}°` : '—'}</div>
-          </div>
-          <div className="fl-weather__gauge">
-            <div className="fl-weather__gauge-svg">
-              <GaugeRing value={temperature?.wind_speed ?? 0} max={80} color="#2dd4ff" size={56} />
-              <div className="fl-weather__gauge-num">{temperature?.wind_speed != null ? Math.round(temperature.wind_speed) : '—'}</div>
-            </div>
-            <div className="fl-weather__gauge-label">Vento</div>
-            <div className="fl-weather__gauge-sub">{windDir(temperature?.wind_direction)}</div>
-          </div>
-        </div>
-      </DraggableCard>
-
-      {/* Floating: biome panel — top left */}
-      <DraggableCard className="fl-panel-biome" title={t('home.focosByBiome')}>
-        <BiomePanel />
-      </DraggableCard>
-
-      {/* Floating: alerts panel — right, below fires count */}
+      {/* Floating: alerts panel — bottom right */}
       <DraggableCard className="fl-panel-alerts" title={t('home.liveAlerts')}>
         <AlertsPanel
           alerts={alertRows}
@@ -940,6 +874,9 @@ export default function Home() {
       .catch(() => {});
   }, [showConservation]);
 
+  const aqiVal   = airQuality ? airQuality.aqi : 0;
+  const aqiColor = aqiVal <= 50 ? '#4ade80' : aqiVal <= 100 ? '#fbbf24' : '#ef4444';
+
   return (
     <div className="home-main">
       <MapaCard
@@ -955,8 +892,6 @@ export default function Home() {
         indigenousGeo={indigenousGeo}
         conservationGeo={conservationGeo}
         t={t}
-        airQuality={airQuality}
-        temperature={temperature}
         alerts={alerts}
         activeAlertId={activeAlertId}
         flyToAlertId={flyToAlertId}
@@ -970,6 +905,48 @@ export default function Home() {
         onAlertLeave={handleAlertLeave}
         onBboxChange={setFireBbox}
       />
+      <div className="dashboard">
+        <div className="dash-card dash-weather">
+          <div className="dash-card-title">CLIMA{temperature?.city ? ` · ${temperature.city}` : ''}</div>
+          <div className="fl-weather__gauges">
+            <div className="fl-weather__gauge">
+              <div className="fl-weather__gauge-svg">
+                <GaugeRing value={aqiVal} max={300} color={aqiColor} size={56} />
+                <div className="fl-weather__gauge-num" style={{ color: aqiColor }}>{airQuality ? aqiVal : '—'}</div>
+              </div>
+              <div className="fl-weather__gauge-label">AQI</div>
+              <div className="fl-weather__gauge-sub">{airQuality ? `PM2.5·${airQuality.pm25}` : '—'}</div>
+            </div>
+            <div className="fl-weather__gauge">
+              <div className="fl-weather__gauge-svg">
+                <GaugeRing value={temperature ? temperature.humidity : 0} max={100} color="#3b82f6" size={56} />
+                <div className="fl-weather__gauge-num">{temperature ? temperature.humidity : '—'}</div>
+              </div>
+              <div className="fl-weather__gauge-label">{t('home.humidity')}</div>
+              <div className="fl-weather__gauge-sub">%</div>
+            </div>
+            <div className="fl-weather__gauge">
+              <div className="fl-weather__gauge-svg">
+                <GaugeRing value={temperature ? Math.max(temperature.temp, 0) : 0} max={45} color="#fb923c" size={56} />
+                <div className="fl-weather__gauge-num">{temperature ? temperature.temp.toFixed(0) : '—'}</div>
+              </div>
+              <div className="fl-weather__gauge-label">Temp</div>
+              <div className="fl-weather__gauge-sub">{temperature ? `SC ${temperature.feels_like.toFixed(0)}°` : '—'}</div>
+            </div>
+            <div className="fl-weather__gauge">
+              <div className="fl-weather__gauge-svg">
+                <GaugeRing value={temperature?.wind_speed ?? 0} max={80} color="#2dd4ff" size={56} />
+                <div className="fl-weather__gauge-num">{temperature?.wind_speed != null ? Math.round(temperature.wind_speed) : '—'}</div>
+              </div>
+              <div className="fl-weather__gauge-label">Vento</div>
+              <div className="fl-weather__gauge-sub">{windDir(temperature?.wind_direction)}</div>
+            </div>
+          </div>
+        </div>
+        <div className="dash-card dash-biome">
+          <BiomePanel />
+        </div>
+      </div>
     </div>
   );
 }
