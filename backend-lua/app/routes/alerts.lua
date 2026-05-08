@@ -23,7 +23,7 @@ local _M = {}
 -- ── Constants ────────────────────────────────────────────────────────────
 
 local CLUSTER_RADIUS_KM    = 15.0
-local CLUSTER_MIN_FIRES    = 5
+local CLUSTER_MIN_FIRES    = 4
 local CLUSTER_WINDOW_HOURS = 24
 
 local NIGHT_RADIUS_KM      = 10.0
@@ -237,6 +237,7 @@ local function cluster_alerts(fires)
             state = #cluster .. " focos",
             center = {clat, clon},
             radius_km = radius_km,
+            out_of_brazil = not is_in_brazil_bbox(clat, clon),
             generated_at = now,
             ts = ts_label(now),
         }
@@ -282,6 +283,7 @@ local function night_fire_alerts(fires)
             state = #cluster .. " focos",
             center = {clat, clon},
             radius_km = radius_km,
+            out_of_brazil = not is_in_brazil_bbox(clat, clon),
             generated_at = now,
             ts = ts_label(now),
         }

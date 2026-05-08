@@ -9,162 +9,127 @@
 .selector-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  background: rgba(8, 14, 28, 0.95);
+  padding: 0 16px;
+  height: 52px;
+  background: rgba(10, 15, 13, 0.92);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  border-bottom: 1px solid rgba(42, 53, 48, 1);
   flex-shrink: 0;
-  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.3);
 }
 
 .selector-scroll {
   display: flex;
-  flex-wrap: nowrap;          /* always single line */
-  gap: 6px;
+  flex-wrap: nowrap;
+  gap: 4px;
   flex: 1;
-  min-width: 0;                /* allow children to shrink below content */
-  padding: 4px 0;
-  margin: -4px 0;
+  min-width: 0;
   justify-content: center;
-  overflow: hidden;            /* shrink rather than scroll */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
+.selector-scroll::-webkit-scrollbar { display: none; }
 
+/* ── Map selector pills ───────────────────────────────── */
 .map-btn {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 7px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text-muted, #6b7a96);
-  font-family: inherit;
-  font-size: 0.78rem;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 9999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(232, 240, 236, 0.5);
   cursor: pointer;
+  border: 1px solid transparent;
+  background: rgba(10, 15, 13, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   white-space: nowrap;
-  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, padding 0.2s ease, gap 0.2s ease;
-  /* Natural size; shrink (not grow) when bar runs out of room */
+  transition: color 0.15s ease-out, background 0.15s ease-out, border-color 0.15s ease-out;
+  min-height: 44px;
   flex: 0 1 auto;
-  position: relative;
-  min-width: 0;                /* allow label to ellipsis when shrinking */
+  min-width: 0;
   overflow: hidden;
 }
 
-.map-btn__icon {
-  font-size: 0.88rem;
-  flex-shrink: 0;
+.map-btn:hover {
+  color: #E8F0EC;
+  background: rgba(20, 26, 23, 0.85);
+  border-color: rgba(232, 240, 236, 0.1);
 }
+
+.map-btn--active {
+  color: #00C97A;
+  background: rgba(0, 201, 122, 0.08);
+  border-color: rgba(0, 201, 122, 0.22);
+}
+
+.map-btn--active:hover {
+  background: rgba(0, 201, 122, 0.12);
+  border-color: rgba(0, 201, 122, 0.36);
+}
+
+/* ── Per-map color dot ────────────────────────────────── */
+.map-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+  opacity: 0.75;
+}
+
+.map-btn--active .map-dot { opacity: 1; }
+
+/* ── Label + tag ──────────────────────────────────────── */
 .map-btn__label {
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
 .map-btn__tag {
-  font-size: 0.63rem;
-  color: var(--text-muted, #4a5568);
-  background: rgba(255, 255, 255, 0.04);
+  font-size: 9px;
+  color: rgba(77, 99, 88, 1);
+  background: rgba(42, 53, 48, 0.4);
   padding: 1px 6px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  border: 1px solid rgba(42, 53, 48, 0.8);
   flex-shrink: 0;
-  /* Hidden by default; shown at >=900px (see below) */
   display: none;
 }
 
-/* Wider screens: more spacing */
-@media (min-width: 768px) {
-  .selector-bar {
-    gap: 12px;
-    padding: 10px 22px;
-  }
-
-  .map-btn {
-    padding: 7px 15px;
-    font-size: 0.82rem;
-  }
-
-  .map-btn__icon { font-size: 0.95rem; }
-}
-
-.map-btn:hover {
-  color: var(--text-primary, #e2e8f0);
-  border-color: rgba(0, 180, 216, 0.35);
-  background: rgba(0, 180, 216, 0.06);
-  box-shadow: 0 0 12px rgba(0, 180, 216, 0.08);
-}
-
-.map-btn--active {
-  color: var(--accent, #00b4d8);
-  border-color: rgba(0, 180, 216, 0.5);
-  background: rgba(0, 180, 216, 0.12);
-  box-shadow:
-    0 0 18px rgba(0, 180, 216, 0.2),
-    inset 0 0 10px rgba(0, 180, 216, 0.06),
-    0 0 0 1px rgba(0, 180, 216, 0.15);
-  font-weight: 600;
-}
-
-.map-btn--active:hover {
-  background: rgba(0, 180, 216, 0.16);
-  border-color: rgba(0, 180, 216, 0.65);
-  box-shadow:
-    0 0 22px rgba(0, 180, 216, 0.25),
-    inset 0 0 10px rgba(0, 180, 216, 0.08),
-    0 0 0 1px rgba(0, 180, 216, 0.2);
-}
-
-/* >=900px: show data-source tag pill alongside icon + label */
+/* Show tag on wide viewports */
 @media (min-width: 900px) {
   .map-btn__tag { display: inline-block; }
 }
 
-/* Narrow viewport: drop label, keep icon only.
-   "Mapas Temáticos" still readable; sub-tag and label fall away gracefully. */
+/* Narrow: keep dot, hide label — buttons still identifiable */
 @media (max-width: 520px) {
   .map-btn__label { display: none; }
   .map-btn {
-    padding: 7px 10px;
+    padding: 5px 10px;
     gap: 0;
-    flex: 0 0 auto;
+    flex-shrink: 0;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(10, 15, 13, 0.85);
   }
-  .map-btn__icon { font-size: 1rem; }
-  .selector-scroll { gap: 4px; }
-}
-
-/* Active map label (right side of selector bar) */
-.active-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.8rem;
-  color: var(--accent, #00b4d8);
-  font-weight: 500;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.active-label__tag {
-  font-size: 0.68rem;
-  color: var(--text-muted, #4a5568);
-  background: rgba(0, 180, 216, 0.06);
-  padding: 2px 8px;
-  border-radius: 10px;
-  border: 1px solid rgba(0, 180, 216, 0.14);
-}
-
-@media (max-width: 640px) {
-  .active-label { display: none; }
-  .selector-bar { padding: 8px 12px; }
+  .map-dot { display: inline-block; }
+  .selector-scroll { gap: 5px; justify-content: flex-start; padding: 0 12px; }
 }
 
 /* ── Map panel ────────────────────────────────────────── */
 .map-panel {
   flex: 1;
   position: relative;
-  background: #030710;
+  background: #0A0F0D;
   overflow: hidden;
 }
 
@@ -184,43 +149,7 @@
   pointer-events: auto;
 }
 
-/* Corner badge */
-.map-overlay-corner {
-  position: absolute;
-  bottom: 18px;
-  right: 18px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 13px;
-  background: rgba(5, 11, 24, 0.88);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 180, 216, 0.2);
-  border-radius: 20px;
-  pointer-events: none;
-  z-index: 10;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
-}
-
-.overlay-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--green, #38a169);
-  animation: pulse 2s infinite;
-  flex-shrink: 0;
-}
-
-@keyframes pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(56, 161, 105, 0.45); }
-  50%       { box-shadow: 0 0 0 4px rgba(56, 161, 105, 0); }
-}
-
-.overlay-text {
-  font-size: 0.69rem;
-  color: var(--text-secondary, #8892a4);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  font-weight: 500;
+@media (prefers-reduced-motion: reduce) {
+  .map-btn    { transition: none; }
+  .map-iframe { transition: none; }
 }

@@ -101,6 +101,21 @@ function _M.classify_point(lat, lon)
     return nil
 end
 
+function _M.get_geojson()
+    if #biome_rings == 0 then
+        return { type = "FeatureCollection", features = {} }
+    end
+    local features = {}
+    for _, entry in ipairs(biome_rings) do
+        features[#features + 1] = {
+            type = "Feature",
+            properties = { name = entry.name },
+            geometry = { type = "Polygon", coordinates = { entry.ring } }
+        }
+    end
+    return { type = "FeatureCollection", features = features }
+end
+
 function _M.classify_fires(fires)
     if #biome_rings == 0 then
         return {}

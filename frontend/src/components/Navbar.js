@@ -8,18 +8,18 @@ import './Navbar.css';
 const LogoTextPt = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 1100 500" role="img" className="navbar-logo navbar-logo--text">
     <title>Yvy Texto</title>
-    <text x="0" y="340" fill="#22d3ee" fontFamily="Outfit, sans-serif" fontSize="240" fontWeight="700">Yvy</text>
-    <text x="500" y="275" fill="#4ade80" fontFamily="Outfit, sans-serif" fontSize="64" fontWeight="500">OBSERVABILIDADE</text>
-    <text x="500" y="350" fill="#4ade80" fontFamily="Outfit, sans-serif" fontSize="64" fontWeight="500">AMBIENTAL</text>
+    <text x="0" y="340" fill="#00C97A" fontFamily="Outfit, sans-serif" fontSize="240" fontWeight="700">Yvy</text>
+    <text x="500" y="275" fill="#8A9E93" fontFamily="Outfit, sans-serif" fontSize="64" fontWeight="500">OBSERVABILIDADE</text>
+    <text x="500" y="350" fill="#8A9E93" fontFamily="Outfit, sans-serif" fontSize="64" fontWeight="500">AMBIENTAL</text>
   </svg>
 );
 
 const LogoTextEn = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 1100 500" role="img" className="navbar-logo navbar-logo--text">
     <title>Yvy Text EN</title>
-    <text x="0" y="340" fill="#22d3ee" fontFamily="Outfit, sans-serif" fontSize="240" fontWeight="700">Yvy</text>
-    <text x="500" y="275" fill="#4ade80" fontFamily="Outfit, sans-serif" fontSize="64" fontWeight="500">ENVIRONMENTAL</text>
-    <text x="500" y="350" fill="#4ade80" fontFamily="Outfit, sans-serif" fontSize="64" fontWeight="500">OBSERVABILITY</text>
+    <text x="0" y="340" fill="#00C97A" fontFamily="Outfit, sans-serif" fontSize="240" fontWeight="700">Yvy</text>
+    <text x="500" y="275" fill="#8A9E93" fontFamily="Outfit, sans-serif" fontSize="64" fontWeight="500">ENVIRONMENTAL</text>
+    <text x="500" y="350" fill="#8A9E93" fontFamily="Outfit, sans-serif" fontSize="64" fontWeight="500">OBSERVABILITY</text>
   </svg>
 );
 
@@ -45,28 +45,28 @@ export default function Navbar() {
           className={location.pathname === '/' ? 'nav-link nav-link--active' : 'nav-link'}
           onClick={close}
         >
-          <span className="nav-icon">🏠</span> {t('nav.home')}
+          {t('nav.home')}
         </Link>
         <Link
           to="/news"
           className={location.pathname === '/news' ? 'nav-link nav-link--active' : 'nav-link'}
           onClick={close}
         >
-          <span className="nav-icon">📰</span> {t('nav.news')}
+          {t('nav.news')}
         </Link>
         <Link
           to="/dashboard"
           className={location.pathname === '/dashboard' ? 'nav-link nav-link--active' : 'nav-link'}
           onClick={close}
         >
-          <span className="nav-icon">📊</span> {t('nav.dashboard')}
+          {t('nav.dashboard')}
         </Link>
         <Link
           to="/mapas-tematicos"
           className={location.pathname === '/mapas-tematicos' ? 'nav-link nav-link--active' : 'nav-link'}
           onClick={close}
         >
-          <span className="nav-icon">🗺️</span> {t('nav.thematicMaps')}
+          {t('nav.thematicMaps')}
         </Link>
       </div>
 

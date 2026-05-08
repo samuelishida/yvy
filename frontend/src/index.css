@@ -4,38 +4,42 @@
 
 /* ── Design tokens ────────────────────────────────────── */
 :root {
-  --bg-deep:          #04101f;
-  --bg-base:          #061626;
-  --bg-elevated:      #0a1d33;
+  /* Forest-dark surfaces (replaces blue-navy) */
+  --bg-deep:          #090E0C;
+  --bg-base:          #0E1512;
+  --bg-elevated:      #141B18;
 
-  --ink-1:            #e6f0ff;
-  --ink-2:            #a8b8cf;
-  --ink-3:            #6a7a93;
-  --ink-4:            #455467;
+  /* Text — green-grey scale */
+  --ink-1:            #E8F0EC;
+  --ink-2:            #8A9E93;
+  --ink-3:            #4D6358;
+  --ink-4:            #2A3530;
 
-  --line:             rgba(255, 255, 255, 0.07);
-  --line-strong:      rgba(255, 255, 255, 0.14);
+  /* Borders */
+  --line:             rgba(42, 53, 48, 0.8);
+  --line-strong:      rgba(42, 53, 48, 1);
 
+  /* Semantic accents */
   --accent-cyan:      #2dd4ff;
   --accent-cyan-dim:  rgba(45, 212, 255, 0.18);
-  --accent-green:     #4ade80;
-  --accent-green-dim: rgba(74, 222, 128, 0.18);
+  --accent-green:     #00C97A;
+  --accent-green-dim: rgba(0, 201, 122, 0.18);
   --accent-amber:     #fbbf24;
   --accent-orange:    #fb923c;
-  --accent-red:       #ef4444;
+  --accent-red:       #EF5350;
   --accent-violet:    #a78bfa;
 
-  /* legacy compat aliases used by other components */
+  /* Legacy compat aliases — now green-first */
   --bg-surface:     var(--bg-elevated);
   --bg-card:        var(--bg-elevated);
-  --bg-card-hover:  #0d2440;
-  --accent:         var(--accent-cyan);
-  --accent-dim:     var(--accent-cyan-dim);
-  --accent-border:  rgba(45, 212, 255, 0.25);
-  --accent-glow:    rgba(45, 212, 255, 0.18);
+  --bg-card-hover:  #1A2420;
+  --accent:         var(--accent-green);
+  --accent-dim:     var(--accent-green-dim);
+  --accent-border:  rgba(0, 201, 122, 0.25);
+  --accent-glow:    rgba(0, 201, 122, 0.18);
   --green:          var(--accent-green);
   --green-dim:      var(--accent-green-dim);
-  --green-border:   rgba(74, 222, 128, 0.28);
+  --green-border:   rgba(0, 201, 122, 0.28);
   --orange:         var(--accent-orange);
   --text-primary:   var(--ink-1);
   --text-secondary: var(--ink-2);
@@ -48,7 +52,7 @@
   --radius-xl:      20px;
   --shadow-card:    0 4px 24px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.2);
   --shadow-hover:   0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25);
-  --shadow-glow:    0 0 24px rgba(45,212,255,0.12);
+  --shadow-glow:    0 0 24px rgba(0, 201, 122, 0.12);
   --transition:     0.22s ease;
 
   --font-display: 'Inter Tight', 'Inter', system-ui, sans-serif;
@@ -90,9 +94,8 @@ body {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 1200px 600px at 80% -10%, rgba(45, 212, 255, 0.08), transparent 60%),
-    radial-gradient(ellipse 900px 500px at 10% 100%, rgba(74, 222, 128, 0.05), transparent 60%),
-    radial-gradient(ellipse 600px 400px at 50% 50%, rgba(167, 139, 250, 0.03), transparent 70%),
+    radial-gradient(ellipse 1200px 600px at 80% -10%, rgba(0, 201, 122, 0.06), transparent 60%),
+    radial-gradient(ellipse 900px 500px at 10% 100%, rgba(0, 201, 122, 0.04), transparent 60%),
     var(--bg-deep);
 }
 
@@ -102,8 +105,8 @@ body {
   z-index: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(rgba(45, 212, 255, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(45, 212, 255, 0.04) 1px, transparent 1px);
+    linear-gradient(rgba(0, 201, 122, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 201, 122, 0.03) 1px, transparent 1px);
   background-size: 80px 80px;
   mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black, transparent 90%);
   -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black, transparent 90%);
@@ -112,28 +115,28 @@ body {
 /* ── Scrollbar ────────────────────────────────────────── */
 ::-webkit-scrollbar       { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(45, 212, 255, 0.35); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(45, 212, 255, 0.6); }
+::-webkit-scrollbar-thumb { background: rgba(0, 201, 122, 0.25); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 201, 122, 0.45); }
 
 /* ── Links ────────────────────────────────────────────── */
 a {
-  color: var(--accent-cyan);
+  color: #00C97A;
   text-decoration: none;
   transition: color var(--transition);
 }
-a:hover { color: #7ce8ff; }
+a:hover { color: #33e096; }
 
 /* ── Focus ring ───────────────────────────────────────── */
 :focus-visible {
-  outline: 2px solid var(--accent-cyan);
+  outline: 2px solid #00C97A;
   outline-offset: 2px;
   border-radius: 4px;
 }
 
 /* ── Glass utility ────────────────────────────────────── */
 .glass {
-  background: linear-gradient(160deg, rgba(8, 22, 40, 0.86) 0%, rgba(4, 14, 26, 0.82) 100%);
+  background: linear-gradient(160deg, rgba(13, 19, 16, 0.86) 0%, rgba(9, 14, 12, 0.82) 100%);
   backdrop-filter: blur(22px);
   -webkit-backdrop-filter: blur(22px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(42, 53, 48, 0.8);
 }

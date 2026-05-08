@@ -86,6 +86,19 @@ server.route("GET", "/api/tiles/prodes", tiles.get_tile)
 -- Biomes
 server.route("GET", "/api/biomes", biomes.get_biomes)
 
+-- Biome boundaries GeoJSON (for map highlight)
+server.route("GET", "/api/biome-boundaries", function(ctx)
+    if not rl.enforce(ctx) then return end
+    local cached = redis.get("biome:boundaries")
+    if cached then ctx:send(200, cached); return end
+    local bl = require("app.lookups.biome_lookup")
+    local ok, geojson = pcall(bl.get_geojson)
+    if not ok then ctx:json(500, {error = "biome data unavailable"}); return end
+    local body = cjson.encode(geojson)
+    redis.set("biome:boundaries", body, 3600)
+    ctx:send(200, body)
+end)
+
 -- Alerts
 server.route("GET", "/api/alerts", function(ctx)
     if not auth.enforce(ctx) then return end

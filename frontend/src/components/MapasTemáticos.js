@@ -6,42 +6,42 @@ const MAPS = [
   {
     id: 'forest',
     labelKey: 'maps.globalForests',
-    icon: '🌲',
+    color: '#4ade80',
     tag: 'Global Forest Watch',
     src: 'https://www.globalforestwatch.org/map/?lang=pt_BR&map=eyJjZW50ZXIiOnsibGF0IjotMTQuODM5NDU2MDI0MjIzNDQsImxuZyI6LTU3LjMxMDExNzE1MDUyODc2fSwiem9vbSI6NC4xOTIyMzU2Njc2Njc4MDh9',
   },
   {
     id: 'deforestation',
     labelKey: 'maps.deforestation',
-    icon: '🌳',
+    color: '#FF6200',
     tag: 'PRODES · INPE',
     src: 'https://terrabrasilis.dpi.inpe.br/app/map/deforestation?hl=pt_br',
   },
   {
     id: 'air-quality',
     labelKey: 'maps.airQuality',
-    icon: '💨',
+    color: 'rgba(138, 158, 147, 1)',
     tag: 'WAQI',
     src: 'https://waqi.info/#/c/-14.636/-58.315/5.1z?lang=pt',
   },
   {
     id: 'temperature',
     labelKey: 'maps.temperature',
-    icon: '🌡️',
+    color: '#EF5350',
     tag: 'OpenWeatherMap',
     src: 'https://openweathermap.org/weathermap?basemap=map&cities=true&layer=temperature&lat=-22.8042&lon=-47.0668&zoom=5&lang=pt_br',
   },
   {
     id: 'windy',
     labelKey: 'maps.storms',
-    icon: '🌩️',
+    color: '#a78bfa',
     tag: 'Windy',
     src: 'https://embed.windy.com/embed2.html?lat=-22.952&lon=-43.212&detailLat=-22.952&detailLon=-43.212&width=650&height=450&zoom=5&level=surface&overlay=clouds&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=true&type=map&location=coordinates&detail=true&metricWind=default&metricTemp=default&radarRange=-1',
   },
   {
     id: 'sea-level',
     labelKey: 'maps.seaLevel',
-    icon: '🌊',
+    color: '#2dd4ff',
     tag: 'Climate Central',
     src: 'https://coastal.climatecentral.org/embed/map/10/-43.3654/-22.7935/?theme=water_level&map_type=water_level_above_mhhw&basemap=roadmap&contiguous=true&elevation_model=best_available&water_level=1.0&water_unit=m',
   },
@@ -62,7 +62,7 @@ export default function MapasTemáticos() {
               className={`map-btn ${active === m.id ? 'map-btn--active' : ''}`}
               onClick={() => startTransition(() => setActive(m.id))}
             >
-              <span className="map-btn__icon">{m.icon}</span>
+              <span className="map-dot" style={{ background: m.color }} />
               <span className="map-btn__label">{t(m.labelKey)}</span>
               {m.tag && <span className="map-btn__tag">{m.tag}</span>}
             </button>

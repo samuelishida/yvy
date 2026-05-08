@@ -5,7 +5,7 @@ const asArray = v => Array.isArray(v) ? v : [];
 
 function StatCard({ icon, label, value, accent }) {
   return (
-    <div className="stat-card" style={{ '--accent': accent || '#00b4d8' }}>
+    <div className="stat-card" style={{ '--accent': accent || '#00C97A' }}>
       <div className="stat-card__icon">{icon}</div>
       <div className="stat-card__body">
         <div className="stat-card__value">{value ?? '—'}</div>
@@ -16,12 +16,12 @@ function StatCard({ icon, label, value, accent }) {
 }
 
 const ALERT_TYPES = [
-  { key: 'cluster',           label: 'Clusters de Fogo',   color: '#ef4444' },
-  { key: 'night_fire',        label: 'Focos Noturnos',      color: '#a855f7' },
+  { key: 'cluster',           label: 'Clusters de Fogo',   color: '#EF5350' },
+  { key: 'night_fire',        label: 'Focos Noturnos',      color: '#a78bfa' },
   { key: 'indigenous_land',   label: 'Terras Indígenas',    color: '#f59e0b' },
   { key: 'conservation_unit', label: 'Unid. Conservação',   color: '#4ade80' },
-  { key: 'prodes',            label: 'Zonas Desmatadas',    color: '#2dd4ff' },
-  { key: 'pm25',              label: 'Qualidade do Ar',     color: '#94a3b8' },
+  { key: 'prodes',            label: 'Zonas Desmatadas',    color: '#00C97A' },
+  { key: 'pm25',              label: 'Qualidade do Ar',     color: 'rgba(138, 158, 147, 1)' },
 ];
 
 export default function Dashboard() {
@@ -65,10 +65,10 @@ export default function Dashboard() {
       </div>
 
       <div className="stat-grid">
-        <StatCard icon="🔥" label="Focos de Calor"     value={stats?.fires?.toLocaleString('pt-BR')}         accent="#ef4444" />
-        <StatCard icon="🌳" label="Registros PRODES"   value={stats?.deforestation?.toLocaleString('pt-BR')} accent="#22c55e" />
-        <StatCard icon="⚠️" label="Alertas Ativos"     value={alerts?.length?.toLocaleString('pt-BR')}       accent="#f97316" />
-        <StatCard icon="📰" label="Notícias Indexadas" value={stats?.news?.toLocaleString('pt-BR')}          accent="#3b82f6" />
+        <StatCard icon="FC" label="Focos de Calor"     value={stats?.fires?.toLocaleString('pt-BR')}         accent="#EF5350" />
+        <StatCard icon="PD" label="Registros PRODES"   value={stats?.deforestation?.toLocaleString('pt-BR')} accent="#00C97A" />
+        <StatCard icon="AL" label="Alertas Ativos"     value={alerts?.length?.toLocaleString('pt-BR')}       accent="#FF6200" />
+        <StatCard icon="NI" label="Notícias Indexadas" value={stats?.news?.toLocaleString('pt-BR')}          accent="#00C97A" />
       </div>
 
       <div className="dash-body">

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Circle, Popup, GeoJSON, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Circle, Popup, GeoJSON, useMapEvents, useMap } from 'react-leaflet';
 import { TreePine, Flame, ChevronDown } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { getCache, setCache } from '../utils/cache';
@@ -7,10 +7,27 @@ import 'leaflet/dist/leaflet.css';
 import '../Home.css';
 import L from 'leaflet';
 
+// Each MapContainer mount gets a unique key so React creates a fresh DOM node
+// and Leaflet never sees a container with a stale _leaflet_id.
+let _mapMountCounter = 0;
+
+const BRAZIL_BIOMES = new Set(['Amazônia', 'Cerrado', 'Mata Atlântica', 'Caatinga', 'Pantanal', 'Pampa']);
+const isOutOfBrazil = (a) => a.out_of_brazil === true ||
+  (!BRAZIL_BIOMES.has(a.meta) && !Array.from(BRAZIL_BIOMES).some(b => a.meta?.startsWith(b)));
+
+const BIOME_HIGHLIGHT_COLORS = {
+  'Amazônia':       '#ef4444',
+  'Cerrado':        '#fb923c',
+  'Caatinga':       '#fbbf24',
+  'Mata Atlântica': '#a78bfa',
+  'Pantanal':       '#2dd4ff',
+  'Pampa':          '#4ade80',
+};
+
 const FIRE_STYLES = {
-  nominal: { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.85, radius: 5, weight: 1 },
-  high:    { color: '#f97316', fillColor: '#f97316', fillOpacity: 0.8,  radius: 4, weight: 1 },
-  low:     { color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 0.4,  radius: 3, weight: 1 },
+  nominal: { color: '#EF5350', fillColor: '#EF5350', fillOpacity: 0.88, radius: 2.5, weight: 0 },
+  high:    { color: '#f97316', fillColor: '#f97316', fillOpacity: 0.72, radius: 2,   weight: 0 },
+  low:     { color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 0.55, radius: 1.5, weight: 0 },
 };
 
 const asArray = value => Array.isArray(value) ? value : [];
@@ -252,6 +269,20 @@ const FireMarker = React.memo(function FireMarker({ fire, idx, s, highlighted })
 });
 
 // MapController handles pan-to-alert and smooth wheel zoom
+function LayerReadyController({ showDeforest }) {
+  const map = useMap();
+  const prevRef = useRef(false);
+  useEffect(() => {
+    if (showDeforest && !prevRef.current) {
+      // TileLayer just mounted but Leaflet won't request tiles for the current
+      // viewport unless a move/zoom event fires. Nudge it.
+      map.fire('moveend');
+    }
+    prevRef.current = showDeforest;
+  }, [showDeforest, map]);
+  return null;
+}
+
 function MapController({ activeAlert }) {
   const map = useMapEvents({});
 
@@ -342,74 +373,128 @@ function GaugeRing({ value, max, color, size = 64 }) {
   );
 }
 
-function DraggableCard({ className, style, children, title, collapsed: controlledCollapsed, onToggleCollapse }) {
-  const [internalCollapsed, setInternalCollapsed] = useState(false);
-  const collapsed = controlledCollapsed != null ? controlledCollapsed : internalCollapsed;
-  const handleToggle = onToggleCollapse || (() => setInternalCollapsed(c => !c));
-  const [offset, setOffset] = useState(null);
-  const isDragging = useRef(false);
-  const startData = useRef(null);
-  const elRef = useRef(null);
+const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAlertEnter, onAlertLeave, airQuality, temperature, onBiomeHover }) {
+  const [open, setOpen] = useState(true);
+  const [tab, setTab] = useState('biomes');
+  const { t } = useI18n();
+  const critCount = alerts.filter(a => a.tick === 'crit').length;
+  const warnCount = alerts.filter(a => a.tick === 'warn').length;
+  const aqiVal = airQuality ? airQuality.aqi : 0;
+  const aqiColor = aqiVal <= 50 ? '#4ade80' : aqiVal <= 100 ? '#fbbf24' : '#ef4444';
 
-  const onMouseDown = (e) => {
-    if (e.button !== 0) return;
-    const el = elRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const parent = el.offsetParent?.getBoundingClientRect() || { top: 0, left: 0 };
-    startData.current = {
-      mouseX: e.clientX, mouseY: e.clientY,
-      top:  offset ? offset.top  : rect.top  - parent.top,
-      left: offset ? offset.left : rect.left - parent.left,
-      moved: false,
-    };
-    isDragging.current = true;
-  };
-
-  useEffect(() => {
-    const onMove = (e) => {
-      if (!isDragging.current || !startData.current) return;
-      const dx = e.clientX - startData.current.mouseX;
-      const dy = e.clientY - startData.current.mouseY;
-      if (!startData.current.moved && Math.hypot(dx, dy) < 4) return;
-      startData.current.moved = true;
-      setOffset({ top: startData.current.top + dy, left: startData.current.left + dx });
-    };
-    const onUp = () => { isDragging.current = false; };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-  }, []);
-
-  const posStyle = offset ? { top: offset.top, left: offset.left, right: 'auto', bottom: 'auto' } : {};
   return (
-    <div ref={elRef} className={`${className}${collapsed ? ' card-collapsed' : ''}`} style={{ ...style, ...posStyle, cursor: 'grab', userSelect: 'none' }} onMouseDown={onMouseDown}>
-      {title && (
-        <div className="card-collapse-bar" onMouseDown={e => e.stopPropagation()} onClick={handleToggle}>
-          <span className="card-collapse-title">{title}</span>
-          <ChevronDown size={14} className={`card-collapse-chevron${collapsed ? ' flipped' : ''}`} />
+    <div className={`float-panel${open ? ' float-panel--open' : ''}`}>
+      <button className="fp-summary" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+        <div className="fp-hero">
+          <span className="fp-count">{alerts.length > 0 ? alerts.length.toLocaleString('pt-BR') : '—'}</span>
+          <span className="fp-unit">alertas</span>
+        </div>
+        <div className="fp-right">
+          {critCount > 0 && <span className="fp-badge fp-badge--crit">{critCount}</span>}
+          {warnCount > 0 && <span className="fp-badge fp-badge--warn">{warnCount}</span>}
+          <ChevronDown size={14} className={`fp-chevron${open ? ' fp-chevron--open' : ''}`} />
+        </div>
+      </button>
+      {open && (
+        <div className="fp-body">
+          <div className="fp-tabs">
+            <button className={`fp-tab${tab === 'alerts' ? ' fp-tab--active' : ''}`} onClick={() => setTab('alerts')}>
+              ALERTAS ({alerts.length})
+            </button>
+            <button className={`fp-tab${tab === 'biomes' ? ' fp-tab--active' : ''}`} onClick={() => { setTab('biomes'); onBiomeHover?.(null); }}>
+              BIOMAS
+            </button>
+            <button className={`fp-tab${tab === 'clima' ? ' fp-tab--active' : ''}`} onClick={() => { setTab('clima'); onBiomeHover?.(null); }}>
+              CLIMA
+            </button>
+          </div>
+          <div className="fp-content">
+            {tab === 'alerts' && (
+              <div className="fp-alerts">
+                {(() => {
+                  const visible = alerts.filter(a => !isOutOfBrazil(a));
+                  return visible.length === 0 ? (
+                    <div className="fp-empty">Sem alertas ativos</div>
+                  ) : visible.slice(0, 12).map((a, i) => (
+                  <div
+                    key={a.id || i}
+                    className={`alert-row${activeAlertId === a.id ? ' alert-row--active' : ''}`}
+                    onMouseEnter={() => onAlertEnter(a.id)}
+                    onMouseLeave={onAlertLeave}
+                  >
+                    <div className={`alert-tick ${a.tick}`} />
+                    <div className="alert-body">
+                      <div className="alert-title">
+                        <span>{t('home.' + (ALERT_TYPE_KEYS[a.type] || a.type))}</span>
+                        <span className="ts">{a.ts}</span>
+                      </div>
+                      <div className="alert-meta">{a.meta} <span className="sep">/</span> {a.state}</div>
+                    </div>
+                  </div>
+                  ))
+                })()}
+              </div>
+            )}
+            {tab === 'biomes' && (
+              <div className="fp-biomes">
+                <BiomePanel onBiomeHover={onBiomeHover} />
+              </div>
+            )}
+            {tab === 'clima' && (
+              <div className="fp-clima">
+                {temperature?.city && <div className="fp-clima-city">{temperature.city}</div>}
+                <div className="fp-gauges">
+                  <div className="fp-gauge">
+                    <div className="fp-gauge-svg">
+                      <GaugeRing value={aqiVal} max={300} color={aqiColor} size={52} />
+                      <div className="fp-gauge-num" style={{ color: aqiColor }}>{airQuality ? aqiVal : '—'}</div>
+                    </div>
+                    <div className="fp-gauge-label">AQI</div>
+                    {airQuality && <div className="fp-gauge-sub">PM2.5·{airQuality.pm25}</div>}
+                  </div>
+                  <div className="fp-gauge">
+                    <div className="fp-gauge-svg">
+                      <GaugeRing value={temperature ? temperature.humidity : 0} max={100} color="#3b82f6" size={52} />
+                      <div className="fp-gauge-num">{temperature ? temperature.humidity : '—'}</div>
+                    </div>
+                    <div className="fp-gauge-label">Umidade</div>
+                    <div className="fp-gauge-sub">%</div>
+                  </div>
+                  <div className="fp-gauge">
+                    <div className="fp-gauge-svg">
+                      <GaugeRing value={temperature ? Math.max(temperature.temp, 0) : 0} max={45} color="#fb923c" size={52} />
+                      <div className="fp-gauge-num">{temperature ? temperature.temp.toFixed(0) : '—'}</div>
+                    </div>
+                    <div className="fp-gauge-label">Temp</div>
+                    <div className="fp-gauge-sub">{temperature ? `SC ${temperature.feels_like.toFixed(0)}°` : '—'}</div>
+                  </div>
+                  <div className="fp-gauge">
+                    <div className="fp-gauge-svg">
+                      <GaugeRing value={temperature?.wind_speed ?? 0} max={80} color="#2dd4ff" size={52} />
+                      <div className="fp-gauge-num">{temperature?.wind_speed != null ? Math.round(temperature.wind_speed) : '—'}</div>
+                    </div>
+                    <div className="fp-gauge-label">Vento</div>
+                    <div className="fp-gauge-sub">{windDir(temperature?.wind_direction)}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
-      <div className={`card-body${collapsed ? ' card-body-hidden' : ''}`}>
-        {children}
-      </div>
     </div>
   );
-}
+});
 
-const BiomePanel = React.memo(function BiomePanel() {
+const BiomePanel = React.memo(function BiomePanel({ onBiomeHover }) {
   const { t } = useI18n();
   const [biomes, setBiomes] = useState([]);
 
   useEffect(() => {
     fetch('/api/biomes')
       .then(r => r.json())
-      .then(d => {
-        setBiomes(asArray(d.biomes));
-      })
-      .catch(err => {
-        console.error('Failed to fetch biomes:', err);
-      });
+      .then(d => { setBiomes(asArray(d.biomes)); })
+      .catch(() => {});
   }, []);
 
   return (
@@ -425,7 +510,12 @@ const BiomePanel = React.memo(function BiomePanel() {
         {biomes
           .sort((a, b) => b.count - a.count)
           .map((b, i) => (
-          <div key={i} className="biome-row">
+          <div
+            key={i}
+            className="biome-row"
+            onMouseEnter={() => onBiomeHover?.(b.name)}
+            onMouseLeave={() => onBiomeHover?.(null)}
+          >
             <div className="biome-name">{b.name}</div>
             <div className="biome-bar">
               <div className="biome-bar-fill" style={{ width: `${b.pct}%`, background: b.color }} />
@@ -447,56 +537,39 @@ const ALERT_TYPE_KEYS = {
   pm25: 'alertPm25',
 };
 
-const INDIGENOUS_STYLE = { color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.12, weight: 1.5, opacity: 0.6 };
-const CONSERVATION_STYLE = { color: '#4ade80', fillColor: '#4ade80', fillOpacity: 0.1, weight: 1.5, opacity: 0.55 };
+const INDIGENOUS_STYLE = { color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.22, weight: 2.5, opacity: 0.9, dashArray: '6 4' };
+const CONSERVATION_STYLE = { color: '#4ade80', fillColor: '#4ade80', fillOpacity: 0.2, weight: 2.5, opacity: 0.9, dashArray: '6 4' };
 
-const AlertsPanel = React.memo(function AlertsPanel({ alerts, activeAlertId, onAlertEnter, onAlertLeave }) {
-  const { t } = useI18n();
 
-  return (
-    <div className="panel">
-      <div className="panel-header">
-        <div className="panel-title">
-          <span className="panel-icon" style={{ color: '#fb923c' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-              <line x1="12" y1="9" x2="12" y2="13" />
-              <line x1="12" y1="17" x2="12.01" y2="17" />
-            </svg>
-          </span>
-          <span className="panel-title-text">{t('home.liveAlerts')}</span>
-        </div>
-        <span className="panel-meta">{alerts.length} {t('home.active')}</span>
-      </div>
-      <div className="panel-body" style={{ paddingTop: 4, paddingBottom: 8 }}>
-        {alerts.length === 0 ? (
-          <div className="alert-empty">{t('home.noAlerts')}</div>
-        ) : alerts.map((a, i) => (
-          <div
-            key={a.id || i}
-            className={`alert-row${activeAlertId === a.id ? ' alert-row--active' : ''}`}
-            onMouseEnter={() => onAlertEnter(a.id)}
-            onMouseLeave={onAlertLeave}
-          >
-            <div className={`alert-tick ${a.tick}`} />
-            <div className="alert-body">
-              <div className="alert-title">
-                <span>{t('home.' + (ALERT_TYPE_KEYS[a.type] || a.type))}</span>
-                <span className="ts">{a.ts}</span>
-              </div>
-              <div className="alert-meta">
-                {a.meta} <span className="sep">/</span> {a.state}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-});
+function BiomeHighlightLayer({ activeBiome, biomeGeoJSON }) {
+  const map = useMap();
+  const layerRef = useRef(null);
 
-const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, t, alerts, activeAlertId, flyToAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, onBboxChange }) {
+  useEffect(() => {
+    if (layerRef.current) { layerRef.current.remove(); layerRef.current = null; }
+    if (!activeBiome || !biomeGeoJSON) return;
+    const color = BIOME_HIGHLIGHT_COLORS[activeBiome] || '#00C97A';
+    const features = biomeGeoJSON.features?.filter(f => f.properties?.name === activeBiome);
+    if (!features || features.length === 0) return;
+    const layer = L.geoJSON({ type: 'FeatureCollection', features }, {
+      style: { color, fillColor: color, fillOpacity: 0.18, weight: 2.5, opacity: 0.9, dashArray: '5 4' },
+      interactive: false,
+    }).addTo(map);
+    layerRef.current = layer;
+    try {
+      const bounds = layer.getBounds();
+      if (bounds.isValid()) map.fitBounds(bounds, { maxZoom: 7, padding: [30, 30], animate: true, duration: 0.8 });
+    } catch (_) {}
+    return () => { if (layerRef.current) { layerRef.current.remove(); layerRef.current = null; } };
+  }, [activeBiome, biomeGeoJSON, map]); // eslint-disable-line
+
+  return null;
+}
+
+const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, t, alerts, activeAlertId, flyToAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, onBboxChange, airQuality, temperature, activeBiome, biomeGeoJSON, onBiomeHover }) {
   const [satellite, setSatellite] = useState(true);
+  // Unique per-mount key prevents "Map container already initialized" on remount
+  const [mapKey] = useState(() => ++_mapMountCounter);
   const alertRows = asArray(alerts);
   const fireRows = asArray(fires);
 
@@ -541,35 +614,35 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
 
   return (
     <div className="map-stage">
-      {/* Header overlay */}
-      <div className="map-overlay-top">
+      {/* Layer bar */}
+      <div className="layer-bar">
         <div className="layer-toggles">
           <button
-            className={`layer-toggle${showDeforest ? ' on-cyan' : ''}`}
+            className={`layer-toggle${showDeforest ? ' active' : ''}`}
             onClick={() => setShowDeforest(!showDeforest)}
           >
             <span className="lt-dot" /> {t('home.layerDeforestation')}<span className="lt-sub">PRODES</span>
           </button>
           <button
-            className={`layer-toggle${showFires ? ' on-red' : ''}`}
+            className={`layer-toggle${showFires ? ' active' : ''}`}
             onClick={() => setShowFires(!showFires)}
           >
             <Flame size={10} /> {t('home.layerFires')}<span className="lt-sub">FIRMS</span>
           </button>
           <button
-            className={`layer-toggle${satellite ? ' on-violet' : ''}`}
+            className={`layer-toggle${satellite ? ' active' : ''}`}
             onClick={() => setSatellite(!satellite)}
           >
             <span className="lt-dot" /> {t('home.layerSatellite')}
           </button>
           <button
-            className={`layer-toggle${showIndigenous ? ' on-amber' : ''}`}
+            className={`layer-toggle${showIndigenous ? ' active' : ''}`}
             onClick={() => setShowIndigenous(!showIndigenous)}
           >
             <span className="lt-dot" /> {t('home.layerIndigenous')}
           </button>
           <button
-            className={`layer-toggle${showConservation ? ' on-green' : ''}`}
+            className={`layer-toggle${showConservation ? ' active' : ''}`}
             onClick={() => setShowConservation(!showConservation)}
           >
             <span className="lt-dot" /> {t('home.layerConservation')}
@@ -579,6 +652,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
 
       {/* Map */}
       <MapContainer
+          key={mapKey}
           center={[-14.235, -51.925]}
           zoom={4}
           zoomSnap={0.5}
@@ -588,6 +662,8 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
         >
           <TileLayer key={satellite ? 'sat' : 'osm'} attribution={tileAttr} url={tileUrl} />
           <MapController activeAlert={flyToAlert} />
+          <LayerReadyController showDeforest={showDeforest} />
+          <BiomeHighlightLayer activeBiome={activeBiome} biomeGeoJSON={biomeGeoJSON} />
           <VisibleFiresCounter fires={fireRows} showFires={showFires} onVisibleCountChange={() => {}} onBboxChange={onBboxChange} />
           <FireHoverLock
             fires={fireRows}
@@ -671,15 +747,16 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           )}
         </MapContainer>
 
-      {/* Floating: alerts panel — bottom right */}
-      <DraggableCard className="fl-panel-alerts" title={t('home.liveAlerts')}>
-        <AlertsPanel
-          alerts={alertRows}
-          activeAlertId={activeAlertId}
-          onAlertEnter={onAlertEnter}
-          onAlertLeave={onAlertLeave}
-        />
-      </DraggableCard>
+      {/* Consolidated float panel — bottom right */}
+      <FloatPanel
+        alerts={alertRows}
+        activeAlertId={activeAlertId}
+        onAlertEnter={onAlertEnter}
+        onAlertLeave={onAlertLeave}
+        airQuality={airQuality}
+        temperature={temperature}
+        onBiomeHover={onBiomeHover}
+      />
     </div>
   );
 });
@@ -692,10 +769,10 @@ export default function Home() {
   const [fires,          setFires]          = useState(null);
   const [airQuality,     setAirQuality]     = useState(null);
   const [temperature,    setTemperature]    = useState(null);
-  const [showDeforest,   setShowDeforest]   = useState(false);
+  const [showDeforest,   setShowDeforest]   = useState(true);
   const [showFires,      setShowFires]      = useState(true);
-  const [showIndigenous, setShowIndigenous] = useState(true);
-  const [showConservation, setShowConservation] = useState(true);
+  const [showIndigenous, setShowIndigenous] = useState(false);
+  const [showConservation, setShowConservation] = useState(false);
   const [indigenousGeo,  setIndigenousGeo]  = useState(null);
   const [conservationGeo, setConservationGeo] = useState(null);
   const [alerts,         setAlerts]         = useState([]);
@@ -704,10 +781,13 @@ export default function Home() {
   const [hoveredFireIdx, setHoveredFireIdx] = useState(null);
   const [lockedFireIdx,  setLockedFireIdx]  = useState(null);
   const [lockedFireAlertId, setLockedFireAlertId] = useState(null);
+  const [activeBiome,    setActiveBiome]    = useState(null);
+  const [biomeGeoJSON,   setBiomeGeoJSON]   = useState(null);
   const fireHoverOutTimeoutRef = useRef(null);
   const alertFlyToTimerRef  = useRef(null);
   const indiFetchedRef      = useRef(false);
   const consFetchedRef      = useRef(false);
+  const biomeFetchedRef     = useRef(false);
 
   const activeAlertId = lockedFireAlertId || alertHoverId || fireAlertId;
 
@@ -769,6 +849,17 @@ export default function Home() {
   const handleAlertLeave = useCallback(() => {
     setAlertHoverId(null);
     clearTimeout(alertFlyToTimerRef.current);
+  }, []);
+
+  const handleBiomeHover = useCallback((name) => {
+    setActiveBiome(name);
+    if (name && !biomeFetchedRef.current) {
+      biomeFetchedRef.current = true;
+      fetch('/api/biome-boundaries')
+        .then(r => r.json())
+        .then(d => setBiomeGeoJSON(d))
+        .catch(() => {});
+    }
   }, []);
 
   useEffect(() => () => {
@@ -874,9 +965,6 @@ export default function Home() {
       .catch(() => {});
   }, [showConservation]);
 
-  const aqiVal   = airQuality ? airQuality.aqi : 0;
-  const aqiColor = aqiVal <= 50 ? '#4ade80' : aqiVal <= 100 ? '#fbbf24' : '#ef4444';
-
   return (
     <div className="home-main">
       <MapaCard
@@ -904,49 +992,12 @@ export default function Home() {
         onAlertEnter={handleAlertEnter}
         onAlertLeave={handleAlertLeave}
         onBboxChange={setFireBbox}
+        airQuality={airQuality}
+        temperature={temperature}
+        activeBiome={activeBiome}
+        biomeGeoJSON={biomeGeoJSON}
+        onBiomeHover={handleBiomeHover}
       />
-      <div className="dashboard">
-        <div className="dash-card dash-weather">
-          <div className="dash-card-title">CLIMA{temperature?.city ? ` · ${temperature.city}` : ''}</div>
-          <div className="fl-weather__gauges">
-            <div className="fl-weather__gauge">
-              <div className="fl-weather__gauge-svg">
-                <GaugeRing value={aqiVal} max={300} color={aqiColor} size={56} />
-                <div className="fl-weather__gauge-num" style={{ color: aqiColor }}>{airQuality ? aqiVal : '—'}</div>
-              </div>
-              <div className="fl-weather__gauge-label">AQI</div>
-              <div className="fl-weather__gauge-sub">{airQuality ? `PM2.5·${airQuality.pm25}` : '—'}</div>
-            </div>
-            <div className="fl-weather__gauge">
-              <div className="fl-weather__gauge-svg">
-                <GaugeRing value={temperature ? temperature.humidity : 0} max={100} color="#3b82f6" size={56} />
-                <div className="fl-weather__gauge-num">{temperature ? temperature.humidity : '—'}</div>
-              </div>
-              <div className="fl-weather__gauge-label">{t('home.humidity')}</div>
-              <div className="fl-weather__gauge-sub">%</div>
-            </div>
-            <div className="fl-weather__gauge">
-              <div className="fl-weather__gauge-svg">
-                <GaugeRing value={temperature ? Math.max(temperature.temp, 0) : 0} max={45} color="#fb923c" size={56} />
-                <div className="fl-weather__gauge-num">{temperature ? temperature.temp.toFixed(0) : '—'}</div>
-              </div>
-              <div className="fl-weather__gauge-label">Temp</div>
-              <div className="fl-weather__gauge-sub">{temperature ? `SC ${temperature.feels_like.toFixed(0)}°` : '—'}</div>
-            </div>
-            <div className="fl-weather__gauge">
-              <div className="fl-weather__gauge-svg">
-                <GaugeRing value={temperature?.wind_speed ?? 0} max={80} color="#2dd4ff" size={56} />
-                <div className="fl-weather__gauge-num">{temperature?.wind_speed != null ? Math.round(temperature.wind_speed) : '—'}</div>
-              </div>
-              <div className="fl-weather__gauge-label">Vento</div>
-              <div className="fl-weather__gauge-sub">{windDir(temperature?.wind_direction)}</div>
-            </div>
-          </div>
-        </div>
-        <div className="dash-card dash-biome">
-          <BiomePanel />
-        </div>
-      </div>
     </div>
   );
 }
