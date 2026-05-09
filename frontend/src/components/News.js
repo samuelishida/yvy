@@ -3,8 +3,8 @@ import { useI18n } from '../i18n';
 import { getCache, setCache } from '../utils/cache';
 import './News.css';
 
-const PAGE_SIZE = 20;
-const MAX_PAGES = 5;
+const PAGE_SIZE = 10;
+const MAX_PAGES = 3;
 
 const normalizeArticles = (payload) => {
   if (Array.isArray(payload)) {
