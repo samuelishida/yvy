@@ -3,7 +3,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 32px 20px 56px;
+  padding: 32px 24px 56px;
   max-width: 1200px;
   margin: 0 auto;
   width: 100%;
@@ -13,9 +13,9 @@
 .news-article {
   width: 100%;
   max-width: 860px;
-  margin: 0 0 14px;
+  margin: 0 0 16px;
   border: 1px solid rgba(42, 53, 48, 0.8);
-  border-radius: 10px;
+  border-radius: 8px;
   background: rgba(13, 19, 16, 0.95);
   overflow: hidden;
   transition: border-color 0.15s ease-out, background 0.15s ease-out;
@@ -60,11 +60,11 @@
 }
 
 .news-content h3 {
-  font-family: var(--font-display, 'Inter Tight');
+  font-family: var(--font-display, 'IBM Plex Sans');
   font-size: 1.1rem;
   color: #E8F0EC;
   margin-bottom: 8px;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.35;
   letter-spacing: -0.02em;
 }
@@ -86,19 +86,19 @@
 }
 
 .news-source {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
   color: #00C97A;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
 }
 
 .news-date {
   font-family: var(--font-mono);
-  font-size: 9px;
-  color: rgba(77, 99, 88, 1);
-  letter-spacing: 0.06em;
+  font-size: 12px;
+  color: rgba(138, 158, 147, 1);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -114,16 +114,16 @@
 .news-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
+  gap: 8px;
+  padding: 8px 16px;
   background: rgba(0, 201, 122, 0.08);
   color: #00C97A;
   border: 1px solid rgba(0, 201, 122, 0.22);
   border-radius: 9999px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   text-decoration: none;
   transition: background 0.15s ease-out, border-color 0.15s ease-out;
@@ -139,33 +139,33 @@
 
 /* ── States ───────────────────────────────────────────── */
 .news-error {
-  font-family: var(--font-mono);
-  font-size: 10px;
+  font-family: var(--font-body);
+  font-size: 12px;
   color: #EF5350;
   text-align: center;
   padding: 16px 20px;
   background: rgba(198, 40, 40, 0.07);
   border: 1px solid rgba(198, 40, 40, 0.2);
-  border-radius: 10px;
+  border-radius: 8px;
   width: 100%;
   max-width: 860px;
   margin: 16px 0;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
 }
 
 .news-loading {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: rgba(77, 99, 88, 1);
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: rgba(138, 158, 147, 1);
   text-align: center;
   padding: 40px 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.04em;
 }
 
 .news-spinner {
@@ -186,7 +186,7 @@
 
 /* ── Responsive ───────────────────────────────────────── */
 @media (max-width: 768px) {
-  .news-container { padding: 20px 14px 44px; }
+  .news-container { padding: 20px 16px 44px; }
   .news-content   { padding: 14px 16px 18px; }
   .news-content h3 { font-size: 1rem; }
 }

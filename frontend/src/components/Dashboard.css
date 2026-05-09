@@ -1,6 +1,6 @@
 /* ── Dashboard layout ─────────────────────────────────── */
 .dashboard {
-  padding: 32px 28px 56px;
+  padding: 32px 24px 56px;
   max-width: 1200px;
   margin: 0 auto;
   width: 100%;
@@ -12,12 +12,12 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
   flex-wrap: wrap;
 }
 
 .dash-title {
-  font-family: var(--font-display, 'Inter Tight');
+  font-family: var(--font-display, 'IBM Plex Sans');
   font-size: 1.75rem;
   font-weight: 700;
   color: #E8F0EC;
@@ -26,21 +26,21 @@
 }
 
 .dash-sub {
-  font-family: var(--font-mono);
-  font-size: 10px;
+  font-family: var(--font-body);
+  font-size: 12px;
   color: rgba(138, 158, 147, 1);
-  margin-top: 7px;
-  font-weight: 400;
+  margin-top: 8px;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.06em;
 }
 
 /* ── Loading ──────────────────────────────────────────── */
 .dash-loading {
-  font-family: var(--font-mono);
-  font-size: 10px;
+  font-family: var(--font-body);
+  font-size: 12px;
   color: rgba(77, 99, 88, 1);
-  letter-spacing: 0.07em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: 24px 0;
   text-align: center;
@@ -62,40 +62,27 @@
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
+  gap: 16px;
   margin-bottom: 16px;
 }
 
 .stat-card {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 18px 20px;
+  gap: 16px;
+  padding: 16px 20px;
   background: rgba(13, 19, 16, 0.95);
   border: 1px solid rgba(42, 53, 48, 0.8);
-  border-radius: 10px;
+  border-radius: 8px;
   transition: border-color 0.15s ease-out, background 0.15s ease-out;
   position: relative;
   overflow: hidden;
-}
-
-.stat-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: var(--accent, #00C97A);
-  opacity: 0.45;
 }
 
 .stat-card:hover {
   border-color: rgba(42, 53, 48, 1);
   background: rgba(20, 26, 23, 0.95);
 }
-
-.stat-card:hover::before { opacity: 0.75; }
 
 .stat-card__icon {
   width: 36px;
@@ -107,9 +94,9 @@
   align-items: center;
   justify-content: center;
   font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   color: var(--accent, #00C97A);
   flex-shrink: 0;
 }
@@ -117,7 +104,7 @@
 .stat-card__body { min-width: 0; }
 
 .stat-card__value {
-  font-family: var(--font-display, 'Inter Tight');
+  font-family: var(--font-display, 'IBM Plex Sans');
   font-size: 1.35rem;
   font-weight: 700;
   color: #E8F0EC;
@@ -127,21 +114,21 @@
 }
 
 .stat-card__label {
-  font-family: var(--font-mono);
-  font-size: 9px;
+  font-family: var(--font-body);
+  font-size: 12px;
   color: rgba(138, 158, 147, 1);
   margin-top: 4px;
   font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.04em;
 }
 
 /* ── Bar chart card ───────────────────────────────────── */
 .chart-card {
   background: rgba(13, 19, 16, 0.95);
   border: 1px solid rgba(42, 53, 48, 0.8);
-  border-radius: 10px;
-  padding: 20px 22px;
+  border-radius: 8px;
+  padding: 20px;
   transition: border-color 0.15s ease-out;
 }
 
@@ -157,24 +144,24 @@
 }
 
 .chart-card__header h2 {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
   color: rgba(138, 158, 147, 1);
-  letter-spacing: 0.07em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .chart-card__total {
   font-family: var(--font-mono);
-  font-size: 9px;
-  color: rgba(77, 99, 88, 1);
+  font-size: 12px;
+  color: rgba(138, 158, 147, 1);
   background: rgba(42, 53, 48, 0.4);
   padding: 2px 8px;
   border-radius: 4px;
   border: 1px solid rgba(42, 53, 48, 0.8);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
 }
 
 /* ── Bar rows ────────────────────────────────────────── */
@@ -200,13 +187,13 @@
 }
 
 .bar-label {
-  font-family: var(--font-mono);
-  font-size: 10px;
+  font-family: var(--font-body);
+  font-size: 12px;
   color: rgba(138, 158, 147, 1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.01em;
 }
 
 .bar-track {
@@ -232,7 +219,7 @@
 
 .bar-count {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: #E8F0EC;
   letter-spacing: -0.01em;
@@ -241,17 +228,17 @@
 
 .bar-pct {
   font-family: var(--font-mono);
-  font-size: 9px;
-  color: rgba(77, 99, 88, 1);
+  font-size: 12px;
+  color: rgba(138, 158, 147, 1);
   margin-top: 1px;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.01em;
 }
 
 /* ── Dashboard body ──────────────────────────────────── */
 .dash-body {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  gap: 16px;
 }
 
 /* ── Responsive ──────────────────────────────────────── */
@@ -260,7 +247,7 @@
 }
 
 @media (max-width: 640px) {
-  .dashboard { padding: 16px 14px 44px; }
+  .dashboard { padding: 16px 16px 44px; }
   .dash-title { font-size: 1.35rem; }
 
   .bar-row {
@@ -270,7 +257,7 @@
   .bar-track {
     grid-column: 1 / -1;
     grid-row: 2;
-    margin-left: 18px;
+    margin-left: 16px;
   }
 }
 

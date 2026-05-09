@@ -55,9 +55,9 @@
   --shadow-glow:    0 0 24px rgba(0, 201, 122, 0.12);
   --transition:     0.22s ease;
 
-  --font-display: 'Inter Tight', 'Inter', system-ui, sans-serif;
-  --font-body:    'Inter Tight', 'Inter', system-ui, sans-serif;
-  --font-mono:    'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+  --font-display: 'IBM Plex Sans', 'Inter', system-ui, sans-serif;
+  --font-body:    'IBM Plex Sans', 'Inter', system-ui, sans-serif;
+  --font-mono:    'IBM Plex Mono', 'JetBrains Mono', ui-monospace, monospace;
 }
 
 *,
