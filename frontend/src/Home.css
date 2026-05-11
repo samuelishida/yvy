@@ -406,7 +406,7 @@
   }
   .fp-count { font-size: 22px; }
   .fp-summary { padding: 8px 10px; }
-  .fp-body { max-height: 260px; }
+  .fp-body { max-height: 180px; }
 
   /* Tabs: equal share, smaller type so all three fit */
   .fp-tab {

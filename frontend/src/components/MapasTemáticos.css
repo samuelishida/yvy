@@ -110,18 +110,33 @@
   .map-btn__tag { display: inline-block; }
 }
 
-/* Narrow: keep dot, hide label — buttons still identifiable */
+/* Default: hide abbreviation (shown only on narrow screens) */
+.map-btn__abbr { display: none; }
+
+/* Narrow: keep dot + abbreviation */
 @media (max-width: 520px) {
   .map-btn__label { display: none; }
+  .map-btn__abbr {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: inherit;
+  }
   .map-btn {
     padding: 5px 10px;
-    gap: 0;
+    gap: 6px;
     flex-shrink: 0;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     background: rgba(10, 15, 13, 0.85);
   }
-  .map-dot { display: inline-block; }
+  .map-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+  }
   .selector-scroll { gap: 5px; justify-content: flex-start; padding: 0 12px; }
 }
 
