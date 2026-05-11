@@ -75,17 +75,17 @@
   border-color: rgba(0, 201, 122, 0.36);
 }
 
-/* ── Per-map color dot ────────────────────────────────── */
-.map-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
+/* ── Per-map icon (replaces dot) ──────────────────────── */
+.map-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
-  display: inline-block;
-  opacity: 0.75;
+  opacity: 0.85;
 }
-
-.map-btn--active .map-dot { opacity: 1; }
+.map-btn--active .map-icon { opacity: 1; }
 
 /* ── Label + tag ──────────────────────────────────────── */
 .map-btn__label {
@@ -113,7 +113,7 @@
 /* Default: hide abbreviation (shown only on narrow screens) */
 .map-btn__abbr { display: none; }
 
-/* Narrow: keep dot + abbreviation */
+/* Narrow: icon + abbreviation, hide label */
 @media (max-width: 520px) {
   .map-btn__label { display: none; }
   .map-btn__abbr {
@@ -132,12 +132,11 @@
     -webkit-backdrop-filter: none;
     background: rgba(10, 15, 13, 0.85);
   }
-  .map-dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
+  .map-icon {
+    width: 14px;
+    height: 14px;
   }
-  .selector-scroll { gap: 5px; justify-content: flex-start; padding: 0 12px; }
+  .selector-scroll { gap: 5px; justify-content: center; padding: 0 12px; }
 }
 
 /* ── Map panel ────────────────────────────────────────── */

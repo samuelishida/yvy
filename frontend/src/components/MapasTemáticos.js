@@ -1,4 +1,5 @@
 import React, { useState, startTransition } from 'react';
+import { Globe, TreePine, Wind, Thermometer, CloudLightning, Waves } from 'lucide-react';
 import { useI18n } from '../i18n';
 import './MapasTemáticos.css';
 
@@ -6,7 +7,8 @@ const MAPS = [
   {
     id: 'forest',
     labelKey: 'maps.globalForests',
-    abbr: 'GF',
+    abbr: { pt: 'Fl', en: 'GF' },
+    icon: Globe,
     color: '#4ade80',
     tag: 'Global Forest Watch',
     src: 'https://www.globalforestwatch.org/map/?lang=pt_BR&map=eyJjZW50ZXIiOnsibGF0IjotMTQuODM5NDU2MDI0MjIzNDQsImxuZyI6LTU3LjMxMDExNzE1MDUyODc2fSwiem9vbSI6NC4xOTIyMzU2Njc2Njc4MDh9',
@@ -14,7 +16,8 @@ const MAPS = [
   {
     id: 'deforestation',
     labelKey: 'maps.deforestation',
-    abbr: 'Df',
+    abbr: { pt: 'De', en: 'Df' },
+    icon: TreePine,
     color: '#FF6200',
     tag: 'PRODES · INPE',
     src: 'https://terrabrasilis.dpi.inpe.br/app/map/deforestation?hl=pt_br',
@@ -22,7 +25,8 @@ const MAPS = [
   {
     id: 'air-quality',
     labelKey: 'maps.airQuality',
-    abbr: 'AQ',
+    abbr: { pt: 'Ar', en: 'AQ' },
+    icon: Wind,
     color: 'rgba(138, 158, 147, 1)',
     tag: 'WAQI',
     src: 'https://waqi.info/#/c/-14.636/-58.315/5.1z?lang=pt',
@@ -30,7 +34,8 @@ const MAPS = [
   {
     id: 'temperature',
     labelKey: 'maps.temperature',
-    abbr: 'Tp',
+    abbr: { pt: 'Te', en: 'Tp' },
+    icon: Thermometer,
     color: '#EF5350',
     tag: 'OpenWeatherMap',
     src: 'https://openweathermap.org/weathermap?basemap=map&cities=true&layer=temperature&lat=-22.8042&lon=-47.0668&zoom=5&lang=pt_br',
@@ -38,7 +43,8 @@ const MAPS = [
   {
     id: 'windy',
     labelKey: 'maps.storms',
-    abbr: 'Wn',
+    abbr: { pt: 'Tm', en: 'St' },
+    icon: CloudLightning,
     color: '#a78bfa',
     tag: 'Windy',
     src: 'https://embed.windy.com/embed2.html?lat=-22.952&lon=-43.212&detailLat=-22.952&detailLon=-43.212&width=650&height=450&zoom=5&level=surface&overlay=clouds&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=true&type=map&location=coordinates&detail=true&metricWind=default&metricTemp=default&radarRange=-1',
@@ -46,7 +52,8 @@ const MAPS = [
   {
     id: 'sea-level',
     labelKey: 'maps.seaLevel',
-    abbr: 'SL',
+    abbr: { pt: 'Ma', en: 'SL' },
+    icon: Waves,
     color: '#2dd4ff',
     tag: 'Climate Central',
     src: 'https://coastal.climatecentral.org/embed/map/10/-43.3654/-22.7935/?theme=water_level&map_type=water_level_above_mhhw&basemap=roadmap&contiguous=true&elevation_model=best_available&water_level=1.0&water_unit=m',
@@ -55,26 +62,31 @@ const MAPS = [
 
 export default function MapasTemáticos() {
   const [active, setActive] = useState(MAPS[0].id);
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const activeMap = MAPS.find((m) => m.id === active);
 
   return (
     <div className="home">
       <div className="selector-bar">
         <div className="selector-scroll">
-          {MAPS.map((m) => (
-            <button
-              key={m.id}
-              className={`map-btn ${active === m.id ? 'map-btn--active' : ''}`}
-              onClick={() => startTransition(() => setActive(m.id))}
-              title={t(m.labelKey)}
-            >
-              <span className="map-dot" style={{ background: m.color }} />
-              <span className="map-btn__label">{t(m.labelKey)}</span>
-              <span className="map-btn__abbr">{m.abbr}</span>
-              {m.tag && <span className="map-btn__tag">{m.tag}</span>}
-            </button>
-          ))}
+          {MAPS.map((m) => {
+            const Icon = m.icon;
+            return (
+              <button
+                key={m.id}
+                className={`map-btn ${active === m.id ? 'map-btn--active' : ''}`}
+                onClick={() => startTransition(() => setActive(m.id))}
+                title={t(m.labelKey)}
+              >
+                <span className="map-icon" style={{ color: m.color }}>
+                  <Icon size={14} strokeWidth={2.2} />
+                </span>
+                <span className="map-btn__label">{t(m.labelKey)}</span>
+                <span className="map-btn__abbr">{m.abbr[lang] || m.abbr.en}</span>
+                {m.tag && <span className="map-btn__tag">{m.tag}</span>}
+              </button>
+            );
+          })}
         </div>
       </div>
 
