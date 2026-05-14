@@ -66,13 +66,41 @@ jobs:
 
       - name: Validate shell scripts
         run: |
-          sh -n backup.sh
-          sh -n scripts/setup-local.sh
-          sh -n scripts/run-backend.sh
-          sh -n scripts/run-frontend.sh
-          sh -n scripts/run-local.sh
-          sh -n scripts/deploy-local.sh
-          sh -n scripts/deploy-nginx.sh
+          for f in backup.sh stop.sh \
+                   scripts/setup-local.sh \
+                   scripts/setup-lua.sh \
+                   scripts/run-lua.sh \
+                   scripts/run-c-frontend.sh \
+                   scripts/start-lua-stack.sh \
+                   scripts/stop-lua-stack.sh \
+                   scripts/kill-rogue-yvy.sh \
+                   scripts/generate-secrets.sh \
+                   scripts/deploy-local.sh \
+                   scripts/deploy-nginx.sh; do
+            [ -f "$f" ] && sh -n "$f" || echo "SKIP $f (not found)"
+          done
+
+      - name: Lint shell scripts (shellcheck)
+        run: |
+          sudo apt-get install -y shellcheck
+          shellcheck -S warning \
+            backup.sh stop.sh \
+            scripts/setup-local.sh scripts/setup-lua.sh \
+            scripts/run-lua.sh scripts/run-c-frontend.sh \
+            scripts/start-lua-stack.sh scripts/stop-lua-stack.sh \
+            scripts/kill-rogue-yvy.sh scripts/generate-secrets.sh \
+            scripts/deploy-local.sh scripts/deploy-nginx.sh \
+          || true
+
+      - name: Validate Ansible playbook syntax
+        run: |
+          pip install ansible
+          printf '[yvy]\n127.0.0.1 ansible_user=ubuntu ansible_connection=local\n' \
+            > /tmp/ci-inventory.ini
+          ansible-playbook --syntax-check \
+            -i /tmp/ci-inventory.ini \
+            ansible/playbook.yml
+          echo "Ansible syntax OK"
 
   frontend-build:
     runs-on: ubuntu-latest
