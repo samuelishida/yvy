@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useI18n } from '../i18n';
 import './Dashboard.css';
 
 const asArray = v => Array.isArray(v) ? v : [];
@@ -16,15 +17,12 @@ function StatCard({ icon, label, value, accent }) {
 }
 
 const ALERT_TYPES = [
-  { key: 'cluster',           label: 'Clusters de Fogo',   color: '#EF5350' },
-  { key: 'night_fire',        label: 'Focos Noturnos',      color: '#a78bfa' },
-  { key: 'indigenous_land',   label: 'Terras Indígenas',    color: '#f59e0b' },
-  { key: 'conservation_unit', label: 'Unid. Conservação',   color: '#4ade80' },
-  { key: 'prodes',            label: 'Zonas Desmatadas',    color: '#00C97A' },
-  { key: 'pm25',              label: 'Qualidade do Ar',     color: 'rgba(138, 158, 147, 1)' },
+  { key: 'indigenous_land',   tKey: 'dashboard.cat_indigenous_land',   color: '#f59e0b' },
+  { key: 'conservation_unit', tKey: 'dashboard.cat_conservation_unit', color: '#4ade80' },
 ];
 
 export default function Dashboard() {
+  const { t } = useI18n();
   const [stats,  setStats]  = useState(null);
   const [biomes, setBiomes] = useState(null);
   const [alerts, setAlerts] = useState(null);
@@ -59,24 +57,23 @@ export default function Dashboard() {
     <div className="dashboard">
       <div className="dash-header">
         <div className="dash-header__left">
-          <h1 className="dash-title">Monitor Ambiental</h1>
-          <p className="dash-sub">Queimadas · Desmatamento · Alertas · Brasil</p>
+          <h1 className="dash-title">{t('dashboard.monitorTitle')}</h1>
+          <p className="dash-sub">{t('dashboard.monitorSub')}</p>
         </div>
       </div>
 
       <div className="stat-grid">
-        <StatCard icon="FC" label="Focos de Calor"     value={stats?.fires?.toLocaleString('pt-BR')}         accent="#EF5350" />
-        <StatCard icon="PD" label="Registros PRODES"   value={stats?.deforestation?.toLocaleString('pt-BR')} accent="#00C97A" />
-        <StatCard icon="AL" label="Alertas Ativos"     value={alerts?.length?.toLocaleString('pt-BR')}       accent="#FF6200" />
-        <StatCard icon="NI" label="Notícias Indexadas" value={stats?.news?.toLocaleString('pt-BR')}          accent="#00C97A" />
+        <StatCard icon="FC" label={t('dashboard.cardFires')}  value={stats?.fires?.toLocaleString('pt-BR')}         accent="#EF5350" />
+        <StatCard icon="PD" label={t('dashboard.cardProdes')} value={stats?.deforestation?.toLocaleString('pt-BR')} accent="#00C97A" />
+        <StatCard icon="AL" label={t('dashboard.cardAlerts')} value={alerts?.length?.toLocaleString('pt-BR')}       accent="#FF6200" />
+        <StatCard icon="NI" label={t('dashboard.cardNews')}   value={stats?.news?.toLocaleString('pt-BR')}          accent="#00C97A" />
       </div>
 
       <div className="dash-body">
-        {/* Biome fire distribution */}
         <div className="chart-card">
           <div className="chart-card__header">
-            <h2>Focos por Bioma</h2>
-            <span className="chart-card__total">24h · Brasil</span>
+            <h2>{t('dashboard.firesByBiome')}</h2>
+            <span className="chart-card__total">{t('dashboard.firesByBiomeMeta')}</span>
           </div>
           {biomes ? (
             <div className="bar-chart">
@@ -98,24 +95,23 @@ export default function Dashboard() {
                 );
               })}
             </div>
-          ) : <div className="dash-loading">Carregando...</div>}
+          ) : <div className="dash-loading">{t('dashboard.loadingShort')}</div>}
         </div>
 
-        {/* Alert cross-reference by category */}
         <div className="chart-card">
           <div className="chart-card__header">
-            <h2>Alertas por Categoria</h2>
-            {alerts && <span className="chart-card__total">{alerts.length} ativos</span>}
+            <h2>{t('dashboard.alertsByCategory')}</h2>
+            {alerts && <span className="chart-card__total">{alerts.length} {t('dashboard.activeLow')}</span>}
           </div>
           {alerts ? (
             <div className="bar-chart">
-              {ALERT_TYPES.map(({ key, label, color }) => {
+              {ALERT_TYPES.map(({ key, tKey, color }) => {
                 const count = alertsByType[key] || 0;
                 const pct   = count ? Math.max(2, (count / alertMaxCount) * 100) : 0;
                 return (
                   <div key={key} className="bar-row">
                     <div className="bar-swatch" style={{ background: color }} />
-                    <div className="bar-label">{label}</div>
+                    <div className="bar-label">{t(tKey)}</div>
                     <div className="bar-track">
                       <div className="bar-fill" style={{ width: `${pct}%`, background: color }} />
                     </div>
@@ -126,7 +122,7 @@ export default function Dashboard() {
                 );
               })}
             </div>
-          ) : <div className="dash-loading">Carregando...</div>}
+          ) : <div className="dash-loading">{t('dashboard.loadingShort')}</div>}
         </div>
       </div>
     </div>

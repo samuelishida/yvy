@@ -503,21 +503,14 @@ end
 function _M.generate_all_alerts(fires, deforestation_data, waqi_token)
     local all_alerts = {}
 
-    -- Fire-based alerts (CPU-bound, no I/O)
     local function extend(list)
         for _, a in ipairs(list) do
             all_alerts[#all_alerts + 1] = a
         end
     end
 
-    extend(cluster_alerts(fires))
-    extend(night_fire_alerts(fires))
     extend(indigenous_land_alerts(fires))
     extend(conservation_unit_alerts(fires))
-
-    -- Async I/O alerts
-    extend(prodes_alerts())
-    extend(pm25_alerts(waqi_token))
 
     -- Sort: crit first, then warn, then info; within each tier by id for stability
     local tier = {crit = 0, warn = 1, info = 2}

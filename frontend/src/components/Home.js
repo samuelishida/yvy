@@ -71,9 +71,8 @@ function fireStyle(confidence) {
   return FIRE_STYLES.low;
 }
 
-function VisibleFiresCounter({ fires, showFires, onVisibleCountChange, onBboxChange }) {
+function VisibleFiresCounter({ fires, showFires, onVisibleCountChange }) {
   const timerRef = useRef(null);
-  const bboxTimerRef = useRef(null);
   const update = (map) => {
     if (!showFires || !fires) return;
     clearTimeout(timerRef.current);
@@ -83,14 +82,7 @@ function VisibleFiresCounter({ fires, showFires, onVisibleCountChange, onBboxCha
     }, 50);
   };
   const map = useMapEvents({
-    moveend: () => {
-      update(map);
-      clearTimeout(bboxTimerRef.current);
-      bboxTimerRef.current = setTimeout(() => {
-        const b = map.getBounds();
-        onBboxChange({ sw_lat: b.getSouthWest().lat.toFixed(2), ne_lat: b.getNorthEast().lat.toFixed(2), sw_lng: b.getSouthWest().lng.toFixed(2), ne_lng: b.getNorthEast().lng.toFixed(2) });
-      }, 300);
-    },
+    moveend: () => update(map),
     zoomend: () => update(map),
   });
   useEffect(() => {
@@ -222,10 +214,10 @@ function FireEventsHandler({ fires, fireAlertMap, alertRows, onFireOver, onFireC
 // FirePopupContent - single shared popup content (not thousands)
 function FirePopupContent({ fire, fireAlert, t }) {
   const landTag = fireAlert && (() => {
-    if (fireAlert.type === 'indigenous_land')   return { cls: 'indigenous',   label: `Terra Indígena: ${fireAlert.meta}` };
-    if (fireAlert.type === 'conservation_unit') return { cls: 'conservation', label: `UC: ${fireAlert.meta}` };
-    if (fireAlert.type === 'night_fire')        return { cls: 'night-fire',   label: 'Foco Noturno' };
-    if (fireAlert.type === 'prodes')            return { cls: 'prodes',       label: `PRODES: ${fireAlert.meta}` };
+    if (fireAlert.type === 'indigenous_land')   return { cls: 'indigenous',   label: `${t('home.tagIndigenous')}: ${fireAlert.meta}` };
+    if (fireAlert.type === 'conservation_unit') return { cls: 'conservation', label: `${t('home.tagConservation')}: ${fireAlert.meta}` };
+    if (fireAlert.type === 'night_fire')        return { cls: 'night-fire',   label: t('home.tagNightFire') };
+    if (fireAlert.type === 'prodes')            return { cls: 'prodes',       label: `${t('home.tagProdes')}: ${fireAlert.meta}` };
     return null;
   })();
   return (
@@ -387,7 +379,7 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
       <button className="fp-summary" onClick={() => setOpen(o => !o)} aria-expanded={open}>
         <div className="fp-hero">
           <span className="fp-count">{alerts.length > 0 ? alerts.length.toLocaleString('pt-BR') : '—'}</span>
-          <span className="fp-unit">alertas</span>
+          <span className="fp-unit">{t('home.panelAlertsUnit')}</span>
         </div>
         <div className="fp-right">
           {critCount > 0 && <span className="fp-badge fp-badge--crit">{critCount}</span>}
@@ -399,13 +391,13 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
         <div className="fp-body">
           <div className="fp-tabs">
             <button className={`fp-tab${tab === 'alerts' ? ' fp-tab--active' : ''}`} onClick={() => setTab('alerts')}>
-              ALERTAS ({alerts.length})
+              {t('home.tabAlerts')} ({alerts.length})
             </button>
             <button className={`fp-tab${tab === 'biomes' ? ' fp-tab--active' : ''}`} onClick={() => { setTab('biomes'); onBiomeHover?.(null); }}>
-              BIOMAS
+              {t('home.tabBiomes')}
             </button>
             <button className={`fp-tab${tab === 'clima' ? ' fp-tab--active' : ''}`} onClick={() => { setTab('clima'); onBiomeHover?.(null); }}>
-              CLIMA
+              {t('home.tabClima')}
             </button>
           </div>
           <div className="fp-content">
@@ -414,7 +406,7 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
                 {(() => {
                   const visible = alerts.filter(a => !isOutOfBrazil(a));
                   return visible.length === 0 ? (
-                    <div className="fp-empty">Sem alertas ativos</div>
+                    <div className="fp-empty">{t('home.emptyAlerts')}</div>
                   ) : visible.slice(0, 12).map((a, i) => (
                   <div
                     key={a.id || i}
@@ -457,7 +449,7 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
                       <GaugeRing value={temperature ? temperature.humidity : 0} max={100} color="#3b82f6" size={52} />
                       <div className="fp-gauge-num">{temperature ? temperature.humidity : '—'}</div>
                     </div>
-                    <div className="fp-gauge-label">Umidade</div>
+                    <div className="fp-gauge-label">{t('home.gaugeHumidity')}</div>
                     <div className="fp-gauge-sub">%</div>
                   </div>
                   <div className="fp-gauge">
@@ -465,7 +457,7 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
                       <GaugeRing value={temperature ? Math.max(temperature.temp, 0) : 0} max={45} color="#fb923c" size={52} />
                       <div className="fp-gauge-num">{temperature ? temperature.temp.toFixed(0) : '—'}</div>
                     </div>
-                    <div className="fp-gauge-label">Temp</div>
+                    <div className="fp-gauge-label">{t('home.gaugeTemp')}</div>
                     <div className="fp-gauge-sub">{temperature ? `SC ${temperature.feels_like.toFixed(0)}°` : '—'}</div>
                   </div>
                   <div className="fp-gauge">
@@ -473,7 +465,7 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
                       <GaugeRing value={temperature?.wind_speed ?? 0} max={80} color="#2dd4ff" size={52} />
                       <div className="fp-gauge-num">{temperature?.wind_speed != null ? Math.round(temperature.wind_speed) : '—'}</div>
                     </div>
-                    <div className="fp-gauge-label">Vento</div>
+                    <div className="fp-gauge-label">{t('home.gaugeWind')}</div>
                     <div className="fp-gauge-sub">{windDir(temperature?.wind_direction)}</div>
                   </div>
                 </div>
@@ -566,7 +558,7 @@ function BiomeHighlightLayer({ activeBiome, biomeGeoJSON }) {
   return null;
 }
 
-const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, t, alerts, activeAlertId, flyToAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, onBboxChange, airQuality, temperature, activeBiome, biomeGeoJSON, onBiomeHover }) {
+const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, t, alerts, activeAlertId, flyToAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, airQuality, temperature, activeBiome, biomeGeoJSON, onBiomeHover }) {
   const [satellite, setSatellite] = useState(true);
   // Unique per-mount key prevents "Map container already initialized" on remount
   const [mapKey] = useState(() => ++_mapMountCounter);
@@ -658,13 +650,14 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           zoomSnap={0.5}
           zoomDelta={0.5}
           scrollWheelZoom
+          preferCanvas
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
         >
           <TileLayer key={satellite ? 'sat' : 'osm'} attribution={tileAttr} url={tileUrl} />
           <MapController activeAlert={flyToAlert} />
           <LayerReadyController showDeforest={showDeforest} />
           <BiomeHighlightLayer activeBiome={activeBiome} biomeGeoJSON={biomeGeoJSON} />
-          <VisibleFiresCounter fires={fireRows} showFires={showFires} onVisibleCountChange={() => {}} onBboxChange={onBboxChange} />
+          <VisibleFiresCounter fires={fireRows} showFires={showFires} onVisibleCountChange={() => {}} />
           <FireHoverLock
             fires={fireRows}
             hoveredFireIdx={hoveredFireIdx}
@@ -879,25 +872,22 @@ export default function Home() {
     return () => clearInterval(id);
   }, []);
 
-  // Fire data — fetch viewport bbox for smaller payloads, fallback to global
-  const [fireBbox, setFireBbox] = useState(null);
-
+  // Fire data — single global fetch, cached client-side (240s) and viewport-clipped by Leaflet/canvas.
+  // Re-fetching on pan was causing the fires array identity to change every pan, remounting all CircleMarkers
+  // and producing visible pop-in. Canvas renderer (preferCanvas on MapContainer) handles viewport clipping cheaply.
   useEffect(() => {
     const validFire = f => f.lat != null && f.lon != null;
     const cached = getCache('fires', 240);
     if (cached) setFires(asArray(cached.fires).filter(validFire));
-    const params = fireBbox
-      ? `/api/fires?sw_lat=${fireBbox.sw_lat}&ne_lat=${fireBbox.ne_lat}&sw_lng=${fireBbox.sw_lng}&ne_lng=${fireBbox.ne_lng}`
-      : '/api/fires';
-    fetch(params)
+    fetch('/api/fires')
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(d => {
         const f = asArray(d.fires).filter(validFire);
         setFires(f);
-        if (!fireBbox) setCache('fires', { fires: f, last_sync: d.last_sync });
+        setCache('fires', { fires: f, last_sync: d.last_sync });
       })
       .catch(() => { if (!cached) setFires([]); });
-  }, [fireBbox]);
+  }, []);
 
   // Weather (cached 15min in localStorage)
   useEffect(() => {
@@ -991,7 +981,6 @@ export default function Home() {
         onClearFireLock={clearFireLock}
         onAlertEnter={handleAlertEnter}
         onAlertLeave={handleAlertLeave}
-        onBboxChange={setFireBbox}
         airQuality={airQuality}
         temperature={temperature}
         activeBiome={activeBiome}
