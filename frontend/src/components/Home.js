@@ -537,25 +537,56 @@ const CONSERVATION_STYLE = { color: '#4ade80', fillColor: '#4ade80', fillOpacity
 
 function BiomeHighlightLayer({ activeBiome, biomeGeoJSON }) {
   const map = useMap();
-  const layerRef = useRef(null);
+  const attachedRef = useRef(null);
+
+  // Pre-build per-biome Leaflet layer + bounds once when geojson arrives.
+  // Avoids re-parsing/re-vectorizing on every hover (the actual hover-lag source).
+  const biomeCache = useMemo(() => {
+    if (!biomeGeoJSON?.features) return null;
+    const byName = new Map();
+    for (const f of biomeGeoJSON.features) {
+      const name = f.properties?.name;
+      if (!name) continue;
+      if (!byName.has(name)) byName.set(name, []);
+      byName.get(name).push(f);
+    }
+    const result = {};
+    for (const [name, features] of byName) {
+      const color = BIOME_HIGHLIGHT_COLORS[name] || '#00C97A';
+      const layer = L.geoJSON({ type: 'FeatureCollection', features }, {
+        style: { color, fillColor: color, fillOpacity: 0.18, weight: 2.5, opacity: 0.9, dashArray: '5 4' },
+        interactive: false,
+      });
+      let bounds = null;
+      try {
+        const b = layer.getBounds();
+        if (b && b.isValid()) bounds = b;
+      } catch (_) {}
+      result[name] = { layer, bounds };
+    }
+    return result;
+  }, [biomeGeoJSON]);
 
   useEffect(() => {
-    if (layerRef.current) { layerRef.current.remove(); layerRef.current = null; }
-    if (!activeBiome || !biomeGeoJSON) return;
-    const color = BIOME_HIGHLIGHT_COLORS[activeBiome] || '#00C97A';
-    const features = biomeGeoJSON.features?.filter(f => f.properties?.name === activeBiome);
-    if (!features || features.length === 0) return;
-    const layer = L.geoJSON({ type: 'FeatureCollection', features }, {
-      style: { color, fillColor: color, fillOpacity: 0.18, weight: 2.5, opacity: 0.9, dashArray: '5 4' },
-      interactive: false,
-    }).addTo(map);
-    layerRef.current = layer;
-    try {
-      const bounds = layer.getBounds();
-      if (bounds.isValid()) map.fitBounds(bounds, { maxZoom: 7, padding: [30, 30], animate: true, duration: 0.8 });
-    } catch (_) {}
-    return () => { if (layerRef.current) { layerRef.current.remove(); layerRef.current = null; } };
-  }, [activeBiome, biomeGeoJSON, map]); // eslint-disable-line
+    if (attachedRef.current) {
+      attachedRef.current.remove();
+      attachedRef.current = null;
+    }
+    if (!activeBiome || !biomeCache) return;
+    const entry = biomeCache[activeBiome];
+    if (!entry) return;
+    entry.layer.addTo(map);
+    attachedRef.current = entry.layer;
+    if (entry.bounds) {
+      map.fitBounds(entry.bounds, { maxZoom: 7, padding: [30, 30], animate: true, duration: 0.6 });
+    }
+    return () => {
+      if (attachedRef.current) {
+        attachedRef.current.remove();
+        attachedRef.current = null;
+      }
+    };
+  }, [activeBiome, biomeCache, map]);
 
   return null;
 }
@@ -803,6 +834,7 @@ export default function Home() {
   const [biomeGeoJSON,   setBiomeGeoJSON]   = useState(null);
   const fireHoverOutTimeoutRef = useRef(null);
   const alertFlyToTimerRef  = useRef(null);
+  const biomeHoverTimerRef  = useRef(null);
   const indiFetchedRef      = useRef(false);
   const consFetchedRef      = useRef(false);
   const biomeFetchedRef     = useRef(false);
@@ -871,7 +903,7 @@ export default function Home() {
   }, []);
 
   const handleBiomeHover = useCallback((name) => {
-    setActiveBiome(name);
+    // Kick off the boundaries fetch on first interaction (no debounce — it's idempotent)
     if (name && !biomeFetchedRef.current) {
       biomeFetchedRef.current = true;
       const ac = new AbortController();
@@ -881,11 +913,20 @@ export default function Home() {
         .then(d => setBiomeGeoJSON(d))
         .catch(err => { if (err.name !== 'AbortError') console.error('Biome boundaries fetch error:', err); });
     }
+    // Debounce highlight commit: rapid mouse-over across biome rows no longer
+    // queues expensive fitBounds animations. On leave (name=null) commit immediately.
+    if (biomeHoverTimerRef.current) clearTimeout(biomeHoverTimerRef.current);
+    if (name == null) {
+      setActiveBiome(null);
+    } else {
+      biomeHoverTimerRef.current = setTimeout(() => setActiveBiome(name), 120);
+    }
   }, []);
 
   useEffect(() => () => {
     if (fireHoverOutTimeoutRef.current) clearTimeout(fireHoverOutTimeoutRef.current);
     if (alertFlyToTimerRef.current) clearTimeout(alertFlyToTimerRef.current);
+    if (biomeHoverTimerRef.current) clearTimeout(biomeHoverTimerRef.current);
     if (biomeFetchAcRef.current) biomeFetchAcRef.current.abort();
   }, []);
 
