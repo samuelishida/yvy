@@ -3,7 +3,7 @@ import { useI18n } from '../i18n';
 import { getCache, setCache } from '../utils/cache';
 import './News.css';
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 
 const normalizeArticles = (payload) => {
   if (Array.isArray(payload)) {
@@ -133,17 +133,16 @@ const News = () => {
 
   useEffect(() => {
     const node = sentinelRef.current;
-    if (!node || !hasMore) return;
-    // rootMargin 0px: only trigger when user actually scrolls sentinel into view.
-    // Previous 200px margin caused page 2/3 to auto-load right after page 1, defeating lazy loading.
+    if (!node || !hasMore || loading) return;
     const observer = new IntersectionObserver((entries) => {
       if (entries[0].isIntersecting && !fetchingRef.current && hasMore) {
+        fetchingRef.current = true;
         setPage((prevPage) => prevPage + 1);
       }
     }, { rootMargin: '0px', threshold: 0.1 });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasMore]);
+  }, [hasMore, loading]);
 
   useEffect(() => {
     fetchingRef.current = false;
