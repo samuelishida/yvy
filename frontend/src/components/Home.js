@@ -405,9 +405,14 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
               <div className="fp-alerts">
                 {(() => {
                   const visible = alerts.filter(a => !isOutOfBrazil(a));
-                  return visible.length === 0 ? (
+                  const sorted = visible.sort((a, b) => {
+                    const priorityA = a.type === 'indigenous_land' ? 0 : a.type === 'conservation_unit' ? 1 : 2;
+                    const priorityB = b.type === 'indigenous_land' ? 0 : b.type === 'conservation_unit' ? 1 : 2;
+                    return priorityA - priorityB;
+                  });
+                  return sorted.length === 0 ? (
                     <div className="fp-empty">{t('home.emptyAlerts')}</div>
-                  ) : visible.slice(0, 12).map((a, i) => (
+                  ) : sorted.slice(0, 12).map((a, i) => (
                   <div
                     key={a.id || i}
                     className={`alert-row${activeAlertId === a.id ? ' alert-row--active' : ''}`}
@@ -673,11 +678,12 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               tileSize={256}
               maxNativeZoom={12}
               minZoom={2}
-              keepBuffer={6}
-              updateWhenZooming={false}
-              updateWhenIdle={false}
-              fadeIn={100}
+              keepBuffer={2}
+              updateWhenZooming={true}
+              updateWhenIdle={true}
+              fadeIn={50}
               attribution="&copy; INPE/TerraBrasilis PRODES"
+              zIndex={100}
             />
           )}
           {showFires && activeAlert?.center && (

@@ -104,6 +104,10 @@ const translations = {
       loadingShort: 'Carregando...',
       cat_indigenous_land: 'Terras Indígenas',
       cat_conservation_unit: 'Unid. Conservação',
+      cat_cluster: 'Cluster Alta Confiança',
+      cat_night_fire: 'Queimada Noturna',
+      cat_prodes: 'Polígono PRODES',
+      cat_pm25: 'Qualidade do Ar',
     },
     maps: {
       globalForests: 'Florestas Globais',
@@ -217,6 +221,10 @@ const translations = {
       loadingShort: 'Loading...',
       cat_indigenous_land: 'Indigenous Lands',
       cat_conservation_unit: 'Conservation Units',
+      cat_cluster: 'High-Confidence Cluster',
+      cat_night_fire: 'Nighttime Fire',
+      cat_prodes: 'PRODES Polygon',
+      cat_pm25: 'Air Quality',
     },
     maps: {
       globalForests: 'Global Forests',

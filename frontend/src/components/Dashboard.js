@@ -17,8 +17,12 @@ function StatCard({ icon, label, value, accent }) {
 }
 
 const ALERT_TYPES = [
-  { key: 'indigenous_land',   tKey: 'dashboard.cat_indigenous_land',   color: '#f59e0b' },
-  { key: 'conservation_unit', tKey: 'dashboard.cat_conservation_unit', color: '#4ade80' },
+  { key: 'indigenous_land',   tKey: 'dashboard.cat_indigenous_land',   color: '#f59e0b', priority: 1 },
+  { key: 'conservation_unit', tKey: 'dashboard.cat_conservation_unit', color: '#4ade80', priority: 2 },
+  { key: 'cluster',           tKey: 'dashboard.cat_cluster',           color: '#3b82f6', priority: 3 },
+  { key: 'night_fire',        tKey: 'dashboard.cat_night_fire',        color: '#ec4899', priority: 4 },
+  { key: 'prodes',            tKey: 'dashboard.cat_prodes',            color: '#8b5cf6', priority: 5 },
+  { key: 'pm25',              tKey: 'dashboard.cat_pm25',              color: '#f97316', priority: 6 },
 ];
 
 export default function Dashboard() {
@@ -105,7 +109,7 @@ export default function Dashboard() {
           </div>
           {alerts ? (
             <div className="bar-chart">
-              {ALERT_TYPES.map(({ key, tKey, color }) => {
+              {ALERT_TYPES.sort((a, b) => a.priority - b.priority).map(({ key, tKey, color }) => {
                 const count = alertsByType[key] || 0;
                 const pct   = count ? Math.max(2, (count / alertMaxCount) * 100) : 0;
                 return (
