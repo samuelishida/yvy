@@ -14,6 +14,8 @@
     sqlite_backup_dir: /var/backups/yvy
     sqlite_backup_path: /var/backups/yvy/yvy.db.predeploy
     yvy_install_test_deps: "0"
+    c_server_bin: "{{ app_dir }}/backend-lua/yvy-server"
+    static_build_dir: "{{ app_dir }}/frontend/build"
 
   tasks:
     - name: Instalar dependencias de runtime baremetal
@@ -262,6 +264,15 @@
           [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
           cd {{ app_dir }}/frontend
           npm run build
+        executable: /bin/bash
+      become_user: "{{ yvy_user }}"
+
+    - name: Compilar servidor C frontend (yvy-server)
+      ansible.builtin.shell:
+        cmd: |
+          cd {{ app_dir }}/backend-lua
+          make clean
+          make
         executable: /bin/bash
       become_user: "{{ yvy_user }}"
 
