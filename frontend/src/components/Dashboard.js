@@ -33,21 +33,12 @@ export default function Dashboard() {
 
   useEffect(() => {
     const ac = new AbortController();
-    Promise.all([
-      fetch('/api/stats', { signal: ac.signal }).then(r => r.json()),
-      fetch('/api/biomes', { signal: ac.signal }).then(r => r.json()),
-      fetch('/api/alerts', { signal: ac.signal }).then(r => r.json()),
-    ])
-      .then(([statsData, biomesData, alertsData]) => {
-        setStats(statsData);
-        setBiomes(asArray(biomesData.biomes));
-        setAlerts(asArray(alertsData.alerts));
-      })
-      .catch(err => {
-        if (err.name !== 'AbortError') {
-          console.error('Dashboard fetch error:', err);
-        }
-      });
+    const logErr = err => { if (err.name !== 'AbortError') console.error('Dashboard fetch error:', err); };
+
+    fetch('/api/stats',  { signal: ac.signal }).then(r => r.json()).then(setStats).catch(logErr);
+    fetch('/api/biomes', { signal: ac.signal }).then(r => r.json()).then(d => setBiomes(asArray(d.biomes))).catch(logErr);
+    fetch('/api/alerts', { signal: ac.signal }).then(r => r.json()).then(d => setAlerts(asArray(d.alerts))).catch(logErr);
+
     return () => ac.abort();
   }, []);
 

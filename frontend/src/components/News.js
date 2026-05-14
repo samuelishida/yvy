@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo, memo } from 'react';
 import { useI18n } from '../i18n';
 import { getCache, setCache } from '../utils/cache';
 import './News.css';
@@ -48,6 +48,45 @@ const formatDate = (isoString, lang) => {
     return '';
   }
 };
+
+const NewsArticle = memo(function NewsArticle({ article, lang, readMoreText }) {
+  const title = lang === 'en' && article.title_en ? article.title_en : article.title;
+  const description = lang === 'en' && article.description_en ? article.description_en : article.description;
+  const sourceName = article.source_name || '';
+  const dateStr = formatDate(article.publishedAt, lang);
+
+  return (
+    <div className="news-article">
+      {article.urlToImage && (
+        <div className="news-image-wrap">
+          <img
+            className="news-image"
+            src={article.urlToImage}
+            alt={title}
+            loading="lazy"
+            decoding="async"
+            width="320"
+            height="180"
+          />
+        </div>
+      )}
+      <div className="news-content">
+        {(sourceName || dateStr) && (
+          <div className="news-meta">
+            {sourceName && <span className="news-source">{sourceName}</span>}
+            {sourceName && dateStr && <span className="news-dot" aria-hidden="true" />}
+            {dateStr && <span className="news-date">{dateStr}</span>}
+          </div>
+        )}
+        <h3>{title}</h3>
+        {description && <p>{description}</p>}
+        <a href={article.url} className="news-btn" target="_blank" rel="noopener noreferrer">
+          {readMoreText}
+        </a>
+      </div>
+    </div>
+  );
+});
 
 const News = () => {
   const { lang, t } = useI18n();
@@ -152,57 +191,14 @@ const News = () => {
     setError(null);
   }, [lang]);
 
+  const readMoreText = useMemo(() => t('news.readMore'), [t]);
+
   return (
     <div className="news-container">
       {error && !articles.length && <p className="news-error">{error}</p>}
-      {articles.map((article) => {
-        const title = lang === 'en' && article.title_en ? article.title_en : article.title;
-        const description = lang === 'en' && article.description_en
-          ? article.description_en
-          : article.description;
-        const sourceName = article.source_name || '';
-        const dateStr = formatDate(article.publishedAt, lang);
-
-        return (
-          <div key={article.url} className="news-article">
-            {article.urlToImage && (
-              <div className="news-image-wrap">
-                <img
-                  className="news-image"
-                  src={article.urlToImage}
-                  alt={title}
-                  loading="lazy"
-                />
-              </div>
-            )}
-            <div className="news-content">
-              {(sourceName || dateStr) && (
-                <div className="news-meta">
-                  {sourceName && (
-                    <span className="news-source">{sourceName}</span>
-                  )}
-                  {sourceName && dateStr && (
-                    <span className="news-dot" aria-hidden="true" />
-                  )}
-                  {dateStr && (
-                    <span className="news-date">{dateStr}</span>
-                  )}
-                </div>
-              )}
-              <h3>{title}</h3>
-              {description && <p>{description}</p>}
-              <a
-                href={article.url}
-                className="news-btn"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {t('news.readMore')}
-              </a>
-            </div>
-          </div>
-        );
-      })}
+      {articles.map((article) => (
+        <NewsArticle key={article.url} article={article} lang={lang} readMoreText={readMoreText} />
+      ))}
       {loading && (
         <p className="news-loading">
           <span className="news-spinner" aria-hidden="true" />
