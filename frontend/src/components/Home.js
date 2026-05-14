@@ -32,6 +32,15 @@ const FIRE_STYLES = {
 };
 
 const asArray = value => Array.isArray(value) ? value : [];
+
+const DEFAULT_BIOMES = [
+  { name: 'Cerrado' },
+  { name: 'Mata Atlântica' },
+  { name: 'Amazônia' },
+  { name: 'Caatinga' },
+  { name: 'Pantanal' },
+  { name: 'Pampa' },
+];
 const asObject = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 
 function haversineKm(lat1, lon1, lat2, lon2) {
@@ -477,7 +486,7 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
 
 const BiomePanel = React.memo(function BiomePanel({ onBiomeHover }) {
   const { t } = useI18n();
-  const [biomes, setBiomes] = useState([]);
+  const [biomes, setBiomes] = useState(null);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -489,7 +498,7 @@ const BiomePanel = React.memo(function BiomePanel({ onBiomeHover }) {
   }, []);
 
   const sortedBiomes = useMemo(
-    () => [...biomes].sort((a, b) => b.count - a.count),
+    () => biomes === null ? DEFAULT_BIOMES : [...biomes].sort((a, b) => b.count - a.count),
     [biomes]
   );
 
@@ -505,16 +514,18 @@ const BiomePanel = React.memo(function BiomePanel({ onBiomeHover }) {
       <div className="panel-body" style={{ paddingTop: 4, paddingBottom: 8 }}>
         {sortedBiomes.map((b, i) => (
           <div
-            key={i}
+            key={b.name}
             className="biome-row"
             onMouseEnter={() => onBiomeHover?.(b.name)}
             onMouseLeave={() => onBiomeHover?.(null)}
           >
             <div className="biome-name">{b.name}</div>
             <div className="biome-bar">
-              <div className="biome-bar-fill" style={{ width: `${b.pct}%`, background: b.color }} />
+              <div className="biome-bar-fill" style={{ width: `${b.pct ?? 0}%`, background: b.color ?? 'var(--ink-2, rgba(255,255,255,0.3))' }} />
             </div>
-            <div className="biome-val" style={{ color: b.color || 'var(--ink-2, rgba(255,255,255,0.65))' }}>{b.count.toLocaleString('pt-BR')}</div>
+            <div className="biome-val" style={{ color: b.color ?? 'var(--ink-2, rgba(255,255,255,0.65))' }}>
+              {b.count != null ? b.count.toLocaleString('pt-BR') : '—'}
+            </div>
           </div>
         ))}
       </div>
