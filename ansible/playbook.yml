@@ -390,13 +390,6 @@
         group: root
         mode: '0644'
 
-    - name: Parar frontend Node.js (liberar RAM)
-      ansible.builtin.systemd:
-        name: yvy-frontend
-        state: stopped
-        enabled: false
-      ignore_errors: true
-
     - name: Testar backend health
       ansible.builtin.uri:
         url: "http://localhost:5000/health"
