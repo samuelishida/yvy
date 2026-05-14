@@ -16,8 +16,7 @@ case "$(uname -s)" in
 esac
 
 # ── Install Lua 5.1 + LuaRocks ────────────────────────────────────────────
-# Skip apt if luarocks already present (e.g. installed by Ansible before calling this script)
-if [ "$OS" = "linux" ] && ! command -v luarocks &>/dev/null; then
+if [ "$OS" = "linux" ]; then
     echo "Installing Lua + LuaRocks..."
     sudo apt-get update -qq
     sudo apt-get install -y -qq \

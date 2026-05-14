@@ -50,24 +50,6 @@ echo "Backend URL: $BACKEND_URL"
 echo "Port:        $PORT"
 echo ""
 
-# Kill any stale react-scripts/node bound to $PORT before starting (prevents stacked dev servers → OOM)
-if command -v lsof >/dev/null 2>&1; then
-    STALE_PID="$(lsof -ti tcp:"$PORT" 2>/dev/null || true)"
-    if [ -n "$STALE_PID" ]; then
-        echo "Killing stale process(es) on port $PORT: $STALE_PID"
-        kill -9 $STALE_PID 2>/dev/null || true
-    fi
-elif command -v ss >/dev/null 2>&1; then
-    STALE_PID="$(ss -tlnp 2>/dev/null | awk -v p=":$PORT" '$4 ~ p { match($0, /pid=([0-9]+)/, a); if (a[1]) print a[1] }' | sort -u)"
-    if [ -n "$STALE_PID" ]; then
-        echo "Killing stale process(es) on port $PORT: $STALE_PID"
-        kill -9 $STALE_PID 2>/dev/null || true
-    fi
-fi
-
-# Cap Node heap to prevent runaway memory if file watcher/HMR loops
-export NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=2048"
-
 # Check if we should run dev server or production build
 if [ "${DEV:-1}" = "1" ]; then
     echo "Running in DEV mode (react-scripts start)..."
@@ -105,7 +87,7 @@ else
             fi
             (
                 cd "$BUILD_HOME"
-                npm install --max-workers=2
+                npm install
             )
         fi
 

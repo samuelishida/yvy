@@ -223,15 +223,7 @@ local function serve_static(skt, req)
     local ext = file_path:match("%.([^.]+)$") or ""
     local mime = mime_types[ext:lower()] or "application/octet-stream"
 
-    -- No-cache for JS/CSS to prevent stale bundle
-    local extra_headers = {}
-    if ext == "js" or ext == "css" then
-        extra_headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        extra_headers["Pragma"] = "no-cache"
-        extra_headers["Expires"] = "0"
-    end
-
-    send_response(skt, 200, content, mime, extra_headers)
+    send_response(skt, 200, content, mime)
     return 200, #content
 end
 
@@ -358,6 +350,7 @@ function _M.start()
     logger.info("Yvy backend (Lua baremetal) starting on " .. HOST .. ":" .. PORT)
 
     local server_skt = socket.tcp()
+    server_skt:setoption("reuseaddr", true)
     assert(server_skt:bind(HOST, PORT))
     server_skt:listen(128)
 
