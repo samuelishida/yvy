@@ -1,0 +1,130 @@
+name: Deploy to OCI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy via OCI CLI + Ansible
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup OCI deploy tooling
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install OCI CLI + Ansible
+        run: |
+          pip install oci-cli ansible
+
+      - name: Write OCI API Key
+        run: |
+          mkdir -p ~/.oci
+          printf '%s\n' "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+
+      - name: Configure OCI CLI
+        run: |
+          cat > ~/.oci/config << EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_FINGERPRINT }}
+          key_file=~/.oci/oci_api_key.pem
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=${{ secrets.OCI_REGION || 'sa-saopaulo-1' }}
+          EOF
+
+      - name: Find existing VM
+        id: find_vm
+        run: |
+          # Try configured compartment first, then fall back to tenancy root
+          for COMPARTMENT in "${{ secrets.OCI_COMPARTMENT_OCID }}" "${{ secrets.OCI_TENANCY_OCID }}"; do
+            [ -z "$COMPARTMENT" ] && continue
+            echo "Trying compartment: ${COMPARTMENT:0:20}..."
+            INSTANCES=$(oci compute instance list -c "$COMPARTMENT" --lifecycle-state RUNNING \
+              --query 'data[?"display-name"==`yvy-server`]' --raw-output 2>/dev/null || echo "[]")
+            INSTANCE_ID=$(echo "$INSTANCES" | python3 -c 'import sys,json; data=json.load(sys.stdin); print(data[0]["id"] if data else "")' 2>/dev/null || echo "")
+            [ -n "$INSTANCE_ID" ] && break
+          done
+
+          if [ -z "$INSTANCE_ID" ]; then
+            echo "No running yvy-server found in any compartment."
+            echo "Available VMs:"
+            oci compute instance list -c "${{ secrets.OCI_TENANCY_OCID }}" --all \
+              --query 'data[*].{Name:"display-name", State:"lifecycle-state"}' --output table 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "Found instance: $INSTANCE_ID"
+
+          # Get public IP — try both compartments
+          for COMPARTMENT in "${{ secrets.OCI_COMPARTMENT_OCID }}" "${{ secrets.OCI_TENANCY_OCID }}"; do
+            [ -z "$COMPARTMENT" ] && continue
+            VNIC_ID=$(oci compute vnic-attachment list -c "$COMPARTMENT" --instance-id "$INSTANCE_ID" \
+              --query 'data[0]."vnic-id"' --raw-output 2>/dev/null || echo "")
+            [ -n "$VNIC_ID" ] && break
+          done
+
+          PUBLIC_IP=$(oci network vnic get --vnic-id "$VNIC_ID" --query 'data."public-ip"' --raw-output 2>/dev/null || echo "")
+
+          if [ -z "$PUBLIC_IP" ]; then
+            echo "Could not get public IP for instance $INSTANCE_ID"
+            exit 1
+          fi
+
+          echo "VM IP: $PUBLIC_IP"
+          echo "public_ip=$PUBLIC_IP" >> "$GITHUB_OUTPUT"
+          echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Write SSH Private Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.OCI_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ steps.find_vm.outputs.public_ip }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Wait for VM to be ready (cloud-init)
+        run: |
+          echo "Waiting for VM to finish cloud-init..."
+          for i in $(seq 1 30); do
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 ubuntu@${{ steps.find_vm.outputs.public_ip }} \
+              "cloud-init status --wait 2>/dev/null; echo READY" 2>/dev/null | grep -q READY && break
+            echo "Attempt $i/30 - not ready yet..."
+            sleep 10
+          done
+
+      - name: Run Ansible Playbook
+        working-directory: ./ansible
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+        run: |
+          cat > inventory.ini <<EOF
+          [yvy]
+          ${{ steps.find_vm.outputs.public_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa
+          EOF
+
+          ansible-playbook -i inventory.ini playbook.yml -v
+
+      - name: Health Check
+        run: |
+          echo "Aguardando aplicação ficar pronta..."
+          for i in $(seq 1 12); do
+            HTTP_CODE=$(curl -sk -o /dev/null -w '%{http_code}' --connect-timeout 5 https://${{ steps.find_vm.outputs.public_ip }}/ 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Yvy deployado com sucesso!"
+              echo "🌐 URL: https://yvy.app.br/"
+              echo "🔧 API:  https://yvy.app.br/api/"
+              exit 0
+            fi
+            echo "Attempt $i/12 - HTTP $HTTP_CODE, waiting..."
+            sleep 10
+          done
+          echo "❌ Health check failed after 120 seconds"
+          exit 1
