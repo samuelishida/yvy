@@ -60,7 +60,7 @@ local function tile_to_bbox(z, x, y)
 end
 
 local function serve_png(ctx, data)
-    ctx:set_header("Cache-Control", "public, max-age=86400")
+    ctx:set_header("Cache-Control", "public, max-age=2592000, immutable")
     ctx:set_header("Access-Control-Allow-Origin", "*")
     ctx:send(200, data, "image/png")
 end
