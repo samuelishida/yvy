@@ -10,7 +10,7 @@ setup:
 # ── Run ────────────────────────────────────────────────────────────────────────
 
 run:
-	bash scripts/run-local.sh
+	bash scripts/start-lua-stack.sh
 
 # ── Lua backend targets ───────────────────────────────────────────────────────
 
