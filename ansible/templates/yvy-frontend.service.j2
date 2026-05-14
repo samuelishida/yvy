@@ -15,6 +15,9 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
+# Health check on startup - systemd will auto-restart if this fails
+ExecStartPost=/bin/sh -c 'for i in 1 2 3 4 5; do curl -sf http://127.0.0.1:5001/health && exit 0; sleep 1; done; exit 1'
+
 # Resource limits (1GB VM)
 MemoryMax=128M
 TasksMax=64
