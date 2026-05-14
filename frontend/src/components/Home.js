@@ -12,8 +12,9 @@ import L from 'leaflet';
 let _mapMountCounter = 0;
 
 const BRAZIL_BIOMES = new Set(['Amazônia', 'Cerrado', 'Mata Atlântica', 'Caatinga', 'Pantanal', 'Pampa']);
+const BRAZIL_BIOMES_ARR = Array.from(BRAZIL_BIOMES);
 const isOutOfBrazil = (a) => a.out_of_brazil === true ||
-  (!BRAZIL_BIOMES.has(a.meta) && !Array.from(BRAZIL_BIOMES).some(b => a.meta?.startsWith(b)));
+  (!BRAZIL_BIOMES.has(a.meta) && !BRAZIL_BIOMES_ARR.some(b => a.meta?.startsWith(b)));
 
 const BIOME_HIGHLIGHT_COLORS = {
   'Amazônia':       '#ef4444',
@@ -260,20 +261,39 @@ const FireMarker = React.memo(function FireMarker({ fire, idx, s, highlighted })
   );
 });
 
-// MapController handles pan-to-alert and smooth wheel zoom
-function LayerReadyController({ showDeforest }) {
-  const map = useMap();
-  const prevRef = useRef(false);
-  useEffect(() => {
-    if (showDeforest && !prevRef.current) {
-      // TileLayer just mounted but Leaflet won't request tiles for the current
-      // viewport unless a move/zoom event fires. Nudge it.
-      map.fire('moveend');
+// ViewportFireFilter - clips fires to visible bounds + margin
+function ViewportFireFilter({ fires, onVisibleFiresChange }) {
+  const map = useMapEvents({
+    moveend: () => updateVisibleFires(),
+    zoomend: () => updateVisibleFires(),
+  });
+
+  const updateVisibleFires = useCallback(() => {
+    if (!fires || fires.length === 0) {
+      onVisibleFiresChange([]);
+      return;
     }
-    prevRef.current = showDeforest;
-  }, [showDeforest, map]);
+    const bounds = map.getBounds();
+    const expand = 0.15;
+    const north = Math.min(bounds.getNorth() * (1 + expand), 85);
+    const south = Math.max(bounds.getSouth() * (1 - expand), -85);
+    const east = Math.min(bounds.getEast() * (1 + expand), 180);
+    const west = Math.max(bounds.getWest() * (1 - expand), -180);
+
+    const visible = fires.filter(f =>
+      f.lat >= south && f.lat <= north && f.lon >= west && f.lon <= east
+    );
+    onVisibleFiresChange(visible);
+  }, [fires, map, onVisibleFiresChange]);
+
+  useEffect(() => {
+    updateVisibleFires();
+  }, [updateVisibleFires]);
+
   return null;
 }
+
+// MapController handles pan-to-alert and smooth wheel zoom
 
 function MapController({ activeAlert }) {
   const map = useMapEvents({});
@@ -374,6 +394,14 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
   const aqiVal = airQuality ? airQuality.aqi : 0;
   const aqiColor = aqiVal <= 50 ? '#4ade80' : aqiVal <= 100 ? '#fbbf24' : '#ef4444';
 
+  const sortedAlerts = useMemo(() => {
+    return alerts.filter(a => !isOutOfBrazil(a)).sort((a, b) => {
+      const priorityA = a.type === 'indigenous_land' ? 0 : a.type === 'conservation_unit' ? 1 : 2;
+      const priorityB = b.type === 'indigenous_land' ? 0 : b.type === 'conservation_unit' ? 1 : 2;
+      return priorityA - priorityB;
+    });
+  }, [alerts]);
+
   return (
     <div className={`float-panel${open ? ' float-panel--open' : ''}`}>
       <button className="fp-summary" onClick={() => setOpen(o => !o)} aria-expanded={open}>
@@ -403,33 +431,27 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
           <div className="fp-content">
             {tab === 'alerts' && (
               <div className="fp-alerts">
-                {(() => {
-                  const visible = alerts.filter(a => !isOutOfBrazil(a));
-                  const sorted = visible.sort((a, b) => {
-                    const priorityA = a.type === 'indigenous_land' ? 0 : a.type === 'conservation_unit' ? 1 : 2;
-                    const priorityB = b.type === 'indigenous_land' ? 0 : b.type === 'conservation_unit' ? 1 : 2;
-                    return priorityA - priorityB;
-                  });
-                  return sorted.length === 0 ? (
-                    <div className="fp-empty">{t('home.emptyAlerts')}</div>
-                  ) : sorted.slice(0, 12).map((a, i) => (
-                  <div
-                    key={a.id || i}
-                    className={`alert-row${activeAlertId === a.id ? ' alert-row--active' : ''}`}
-                    onMouseEnter={() => onAlertEnter(a.id)}
-                    onMouseLeave={onAlertLeave}
-                  >
-                    <div className={`alert-tick ${a.tick}`} />
-                    <div className="alert-body">
-                      <div className="alert-title">
-                        <span>{t('home.' + (ALERT_TYPE_KEYS[a.type] || a.type))}</span>
-                        <span className="ts">{a.ts}</span>
+                {sortedAlerts.length === 0 ? (
+                  <div className="fp-empty">{t('home.emptyAlerts')}</div>
+                ) : (
+                  sortedAlerts.slice(0, 12).map((a, i) => (
+                    <div
+                      key={a.id || i}
+                      className={`alert-row${activeAlertId === a.id ? ' alert-row--active' : ''}`}
+                      onMouseEnter={() => onAlertEnter(a.id)}
+                      onMouseLeave={onAlertLeave}
+                    >
+                      <div className={`alert-tick ${a.tick}`} />
+                      <div className="alert-body">
+                        <div className="alert-title">
+                          <span>{t('home.' + (ALERT_TYPE_KEYS[a.type] || a.type))}</span>
+                          <span className="ts">{a.ts}</span>
+                        </div>
+                        <div className="alert-meta">{a.meta} <span className="sep">/</span> {a.state}</div>
                       </div>
-                      <div className="alert-meta">{a.meta} <span className="sep">/</span> {a.state}</div>
                     </div>
-                  </div>
                   ))
-                })()}
+                )}
               </div>
             )}
             {tab === 'biomes' && (
@@ -488,10 +510,12 @@ const BiomePanel = React.memo(function BiomePanel({ onBiomeHover }) {
   const [biomes, setBiomes] = useState([]);
 
   useEffect(() => {
-    fetch('/api/biomes')
+    const ac = new AbortController();
+    fetch('/api/biomes', { signal: ac.signal })
       .then(r => r.json())
       .then(d => { setBiomes(asArray(d.biomes)); })
-      .catch(() => {});
+      .catch(err => { if (err.name !== 'AbortError') console.error('Biomes fetch error:', err); });
+    return () => ac.abort();
   }, []);
 
   return (
@@ -567,6 +591,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
   const [satellite, setSatellite] = useState(true);
   // Unique per-mount key prevents "Map container already initialized" on remount
   const [mapKey] = useState(() => ++_mapMountCounter);
+  const [visibleFires, setVisibleFires] = useState([]);
   const alertRows = asArray(alerts);
   const fireRows = asArray(fires);
 
@@ -577,6 +602,20 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
     }
     return m;
   }, [fireRows, alertRows]);
+
+  const fireRenderList = useMemo(() => {
+    if (!showFires || visibleFires.length === 0) return [];
+    return visibleFires.map(fire => {
+      const fullIdx = fireRows.indexOf(fire);
+      return { fire, fullIdx };
+    });
+  }, [visibleFires, fireRows, showFires]);
+
+  const visibleToFullIdxMap = useMemo(() => {
+    const m = new Map();
+    fireRenderList.forEach(({ fullIdx }, visIdx) => m.set(visIdx, fullIdx));
+    return m;
+  }, [fireRenderList]);
 
   // Alert lookup for O(1) access instead of O(n) find in render loop
   const alertByIdMap = useMemo(() => {
@@ -660,7 +699,6 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
         >
           <TileLayer key={satellite ? 'sat' : 'osm'} attribution={tileAttr} url={tileUrl} />
           <MapController activeAlert={flyToAlert} />
-          <LayerReadyController showDeforest={showDeforest} />
           <BiomeHighlightLayer activeBiome={activeBiome} biomeGeoJSON={biomeGeoJSON} />
           <VisibleFiresCounter fires={fireRows} showFires={showFires} onVisibleCountChange={() => {}} />
           <FireHoverLock
@@ -670,22 +708,20 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             onHoverEnd={onFireHoverEnd}
             onClearLock={onClearFireLock}
           />
-          {showDeforest && (
-            <TileLayer
-              key="prodes-tiles"
-              url="/api/tiles/prodes?z={z}&x={x}&y={y}"
-              opacity={0.33}
-              tileSize={256}
-              maxNativeZoom={12}
-              minZoom={2}
-              keepBuffer={2}
-              updateWhenZooming={true}
-              updateWhenIdle={true}
-              fadeIn={50}
-              attribution="&copy; INPE/TerraBrasilis PRODES"
-              zIndex={100}
-            />
-          )}
+          <TileLayer
+            key="prodes-tiles"
+            url="/api/tiles/prodes?z={z}&x={x}&y={y}"
+            opacity={showDeforest ? 0.33 : 0}
+            tileSize={256}
+            maxNativeZoom={12}
+            minZoom={2}
+            keepBuffer={4}
+            updateWhenZooming={false}
+            updateWhenIdle={false}
+            fadeIn={150}
+            attribution="&copy; INPE/TerraBrasilis PRODES"
+            zIndex={100}
+          />
           {showFires && activeAlert?.center && (
             <Circle
               center={activeAlert.center}
@@ -715,23 +751,24 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               }}
             />
           )}
+          <ViewportFireFilter fires={fireRows} onVisibleFiresChange={setVisibleFires} />
           {showFires && (
             <>
               <FireEventsHandler
-                fires={fireRows}
+                fires={visibleFires}
                 fireAlertMap={fireAlertMap}
                 alertRows={alertRows}
-                onFireOver={onFireOver}
-                onFireClick={onFireClick}
+                onFireOver={(id, visIdx) => onFireOver(id, visibleToFullIdxMap.get(visIdx))}
+                onFireClick={(id, visIdx, e) => onFireClick(id, visibleToFullIdxMap.get(visIdx), e)}
                 onFireHoverEnd={onFireHoverEnd}
               />
-              {fireRows.map((fire, idx) => (
+              {fireRenderList.map(({ fire, fullIdx }, visIdx) => (
                 <FireMarker
-                  key={`f-${idx}`}
+                  key={`f-${fullIdx}`}
                   fire={fire}
-                  idx={idx}
+                  idx={fullIdx}
                   s={fireStyle(fire.confidence)}
-                  highlighted={highlightedFires?.has(idx)}
+                  highlighted={highlightedFires?.has(fullIdx)}
                 />
               ))}
               {/* Single shared Popup for hovered/locked fire - avoids thousands of Popup components */}
@@ -860,10 +897,12 @@ export default function Home() {
     setActiveBiome(name);
     if (name && !biomeFetchedRef.current) {
       biomeFetchedRef.current = true;
-      fetch('/api/biome-boundaries')
+      const ac = new AbortController();
+      fetch('/api/biome-boundaries', { signal: ac.signal })
         .then(r => r.json())
         .then(d => setBiomeGeoJSON(d))
-        .catch(() => {});
+        .catch(err => { if (err.name !== 'AbortError') console.error('Biome boundaries fetch error:', err); });
+      biomeFetchedRef.abortController = ac;
     }
   }, []);
 
@@ -873,36 +912,50 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    let ac = new AbortController();
     const fetchAlerts = () => {
-      fetch('/api/alerts')
+      ac.abort();
+      ac = new AbortController();
+      fetch('/api/alerts', { signal: ac.signal })
         .then(r => r.json())
         .then(d => setAlerts(asArray(d.alerts)))
-        .catch(() => {});
+        .catch(err => { if (err.name !== 'AbortError') console.error('Alerts fetch error:', err); });
     };
     fetchAlerts();
     const id = setInterval(fetchAlerts, 60000);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      ac.abort();
+    };
   }, []);
 
   // Fire data — single global fetch, cached client-side (240s) and viewport-clipped by Leaflet/canvas.
   // Re-fetching on pan was causing the fires array identity to change every pan, remounting all CircleMarkers
   // and producing visible pop-in. Canvas renderer (preferCanvas on MapContainer) handles viewport clipping cheaply.
   useEffect(() => {
+    const ac = new AbortController();
     const validFire = f => f.lat != null && f.lon != null;
     const cached = getCache('fires', 240);
     if (cached) setFires(asArray(cached.fires).filter(validFire));
-    fetch('/api/fires')
+    fetch('/api/fires', { signal: ac.signal })
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(d => {
         const f = asArray(d.fires).filter(validFire);
         setFires(f);
         setCache('fires', { fires: f, last_sync: d.last_sync });
       })
-      .catch(() => { if (!cached) setFires([]); });
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          console.error('Fires fetch error:', err);
+          if (!cached) setFires([]);
+        }
+      });
+    return () => ac.abort();
   }, []);
 
   // Weather (cached 15min in localStorage)
   useEffect(() => {
+    const ac = new AbortController();
     const fetchWeather = (lat, lon) => {
       const latK = lat.toFixed(1), lonK = lon.toFixed(1);
       const aqiKey = `weather_aqi_${latK}_${lonK}`;
@@ -911,39 +964,42 @@ export default function Home() {
       const cachedAqi = getCache(aqiKey, 15);
       if (cachedAqi) { setAirQuality(cachedAqi); }
       else {
-        fetch(`/api/weather/air-quality?lat=${lat}&lon=${lon}`)
+        fetch(`/api/weather/air-quality?lat=${lat}&lon=${lon}`, { signal: ac.signal })
           .then(r => r.json())
           .then(d => {
             if (d.aqi != null) {
               const aq = { aqi: d.aqi, pm25: d.pm25 ?? '-', humidity: d.humidity ?? '-' };
               setAirQuality(aq); setCache(aqiKey, aq);
             }
-          }).catch(() => {});
+          })
+          .catch(err => { if (err.name !== 'AbortError') console.error('AQI fetch error:', err); });
       }
 
       const cachedTemp = getCache(tempKey, 15);
       if (cachedTemp) { setTemperature(cachedTemp); }
       else {
-        fetch(`/api/weather/temperature?lat=${lat}&lon=${lon}`)
+        fetch(`/api/weather/temperature?lat=${lat}&lon=${lon}`, { signal: ac.signal })
           .then(r => r.json())
           .then(d => {
             if (d.temp != null) {
               const temp = { temp: d.temp, feels_like: d.feels_like, humidity: d.humidity, city: d.city, wind_speed: d.wind_speed, wind_direction: d.wind_direction };
               setTemperature(temp); setCache(tempKey, temp);
             }
-          }).catch(() => {});
+          })
+          .catch(err => { if (err.name !== 'AbortError') console.error('Temperature fetch error:', err); });
       }
     };
+
+    fetchWeather(DEFAULT_LAT, DEFAULT_LON);
 
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         p  => fetchWeather(p.coords.latitude, p.coords.longitude),
-        () => fetchWeather(DEFAULT_LAT, DEFAULT_LON),
-        { timeout: 5000 }
+        () => {},
+        { timeout: 3000 }
       );
-    } else {
-      fetchWeather(DEFAULT_LAT, DEFAULT_LON);
     }
+    return () => ac.abort();
   }, []);
 
 
@@ -951,20 +1007,24 @@ export default function Home() {
   useEffect(() => {
     if (!showIndigenous || indiFetchedRef.current) return;
     indiFetchedRef.current = true;
-    fetch('/api/indigenous-lands')
+    const ac = new AbortController();
+    fetch('/api/indigenous-lands', { signal: ac.signal })
       .then(r => r.json())
       .then(d => setIndigenousGeo(boundsToGeoJSON(d)))
-      .catch(() => {});
+      .catch(err => { if (err.name !== 'AbortError') console.error('Indigenous lands fetch error:', err); });
+    return () => ac.abort();
   }, [showIndigenous]);
 
   // Lazy-load conservation units boundary
   useEffect(() => {
     if (!showConservation || consFetchedRef.current) return;
     consFetchedRef.current = true;
-    fetch('/api/conservation-units')
+    const ac = new AbortController();
+    fetch('/api/conservation-units', { signal: ac.signal })
       .then(r => r.json())
       .then(d => setConservationGeo(boundsToGeoJSON(d)))
-      .catch(() => {});
+      .catch(err => { if (err.name !== 'AbortError') console.error('Conservation units fetch error:', err); });
+    return () => ac.abort();
   }, [showConservation]);
 
   return (
