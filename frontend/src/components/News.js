@@ -1,10 +1,9 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useI18n } from '../i18n';
 import { getCache, setCache } from '../utils/cache';
 import './News.css';
 
-const PAGE_SIZE = 10;
-const MAX_PAGES = 3;
+const PAGE_SIZE = 20;
 
 const normalizeArticles = (payload) => {
   if (Array.isArray(payload)) {
@@ -62,6 +61,9 @@ const News = () => {
   const sentinelRef = useRef(null);
 
   useEffect(() => {
+    const ac = new AbortController();
+    let cancelled = false;
+
     const fetchNews = async () => {
       if (fetchingRef.current) return;
       fetchingRef.current = true;
@@ -69,29 +71,24 @@ const News = () => {
       try {
         setError(null);
 
-        // Try cache first for page 1 (stale-while-revalidate)
         if (page === 1) {
           const cached = getCache(cacheKey, 15);
           if (cached) {
             setArticles(cached);
             cacheUsed = true;
-            // Still fetch in background to refresh silently
           }
         }
 
-        if (!cacheUsed || page > 1) {
-          setLoading(true);
-        }
+        if (!cacheUsed || page > 1) setLoading(true);
 
-        const response = await fetch(`/api/news?page=${page}&lang=${lang}`);
+        const response = await fetch(`/api/news?page=${page}&page_size=${PAGE_SIZE}&lang=${lang}`, { signal: ac.signal });
+        if (cancelled) return;
         const payload = await response.json();
+        if (cancelled) return;
         const data = normalizeArticles(payload);
 
         if (!response.ok) {
-          if (cacheUsed && page === 1) {
-            // Keep cached data, silently ignore error
-            return;
-          }
+          if (cacheUsed && page === 1) return;
           throw new Error(
             typeof payload?.error === 'string' && payload.error.trim()
               ? payload.error
@@ -109,47 +106,52 @@ const News = () => {
           });
         }
 
-        if (data.length < PAGE_SIZE || page >= MAX_PAGES) {
+        if (data.length < PAGE_SIZE) {
           setHasMore(false);
         }
       } catch (err) {
+        if (err.name === 'AbortError' || cancelled) return;
         if (!cacheUsed) {
           setError(err?.message || t('news.errorLoading'));
           if (page === 1) setArticles([]);
           setHasMore(false);
         }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
         fetchingRef.current = false;
       }
     };
 
     fetchNews();
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+      fetchingRef.current = false;
+    };
   }, [page, lang, t, cacheKey]);
 
   useEffect(() => {
     const node = sentinelRef.current;
     if (!node || !hasMore) return;
+    // rootMargin 0px: only trigger when user actually scrolls sentinel into view.
+    // Previous 200px margin caused page 2/3 to auto-load right after page 1, defeating lazy loading.
     const observer = new IntersectionObserver((entries) => {
       if (entries[0].isIntersecting && !fetchingRef.current && hasMore) {
         setPage((prevPage) => prevPage + 1);
       }
-    }, { rootMargin: '200px' });
+    }, { rootMargin: '0px', threshold: 0.1 });
     observer.observe(node);
     return () => observer.disconnect();
   }, [hasMore]);
 
-  const handleLangChange = useCallback(() => {
+  useEffect(() => {
     fetchingRef.current = false;
     setArticles([]);
     setPage(1);
     setHasMore(true);
     setError(null);
-  }, []);
-
-  useEffect(() => {
-    handleLangChange(lang);
-  }, [lang, handleLangChange]);
+  }, [lang]);
 
   return (
     <div className="news-container">

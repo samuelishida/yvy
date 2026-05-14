@@ -404,6 +404,14 @@ end
 
 -- ── News ─────────────────────────────────────────────────────────────────
 
+local function canonical_url(u)
+    if type(u) ~= "string" or u == "" then return u end
+    -- Strip trailing slash (but keep root /). Strip fragment. Lowercase host portion only.
+    u = u:gsub("#[^#]*$", "")
+    if #u > 1 then u = u:gsub("/+$", "") end
+    return u
+end
+
 function _M.bulk_upsert_news(articles)
     if not articles or #articles == 0 then return 0 end
 
@@ -427,6 +435,7 @@ function _M.bulk_upsert_news(articles)
             source_name = a.source
         end
 
+        local canon = canonical_url(a.url)
         local ingested = a.ingested_at or utils.now_iso()
         local published_at = utils.normalize_news_date(a.publishedAt, ingested)
         local data_json = utils.encode_jsonb({
@@ -438,7 +447,7 @@ function _M.bulk_upsert_news(articles)
             urlToImage = a.urlToImage,
             content = a.content,
         })
-        exec_write(db, sql, {a.url, published_at, ingested, data_json})
+        exec_write(db, sql, {canon, published_at, ingested, data_json})
     end
 
     db:exec("COMMIT")

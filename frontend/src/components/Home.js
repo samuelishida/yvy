@@ -52,44 +52,11 @@ function alertForFire(fire, alerts) {
   return best;
 }
 
-function classLabel(clazz, t) {
-  if (!clazz) return t('home.unknown');
-  const key = clazz.toLowerCase().charAt(0);
-  const map = {
-    d: t('home.deforestation'),
-    r: t('home.regeneration'),
-    f: t('home.forest'),
-    h: t('home.hydrography'),
-    n: t('home.nonForest'),
-  };
-  return map[key] || clazz;
-}
-
 function fireStyle(confidence) {
   const key = (confidence || 'low').toLowerCase();
   if (key === 'nominal' || key === 'h') return FIRE_STYLES.nominal;
   if (key === 'high') return FIRE_STYLES.high;
   return FIRE_STYLES.low;
-}
-
-function VisibleFiresCounter({ fires, showFires, onVisibleCountChange }) {
-  const timerRef = useRef(null);
-  const update = (map) => {
-    if (!showFires || !fires) return;
-    clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      const bounds = map.getBounds();
-      onVisibleCountChange(fires.filter(f => bounds.contains([f.lat, f.lon])).length);
-    }, 50);
-  };
-  const map = useMapEvents({
-    moveend: () => update(map),
-    zoomend: () => update(map),
-  });
-  useEffect(() => {
-    update(map);
-  }, [fires, showFires]); // eslint-disable-line
-  return null;
 }
 
 // Spatial grid for O(1) fire hit detection - bucket fires by screen cell
@@ -108,9 +75,7 @@ function buildFireGrid(map, fires, cellSize = 20) {
 function findFireAtPoint(map, fires, point, maxRadius = 8, gridRef) {
   if (!fires || fires.length === 0) return null;
 
-  // Build grid if not provided (cached between calls)
   const cellSize = 20;
-  const key = `${Math.floor(point.x / cellSize)},${Math.floor(point.y / cellSize)}`;
 
   // Check current cell + 8 neighbors
   const candidates = [];
@@ -135,7 +100,7 @@ function findFireAtPoint(map, fires, point, maxRadius = 8, gridRef) {
 }
 
 // Throttled fire hit detection for pointer events with spatial grid caching
-function FireEventsHandler({ fires, fireAlertMap, alertRows, onFireOver, onFireClick, onFireHoverEnd }) {
+function FireEventsHandler({ fires, fireAlertMap, visibleToFullIdxMap, onFireOver, onFireClick, onFireHoverEnd }) {
   const rafRef = useRef(null);
   const lastIdxRef = useRef(null);
   const gridRef = useRef(new Map());
@@ -146,38 +111,35 @@ function FireEventsHandler({ fires, fireAlertMap, alertRows, onFireOver, onFireC
     zoomstart: () => { isZoomingRef.current = true; },
     zoomend: () => {
       isZoomingRef.current = false;
-      // Rebuild grid after zoom (screen positions changed)
       if (fires && fires.length > 0) {
         gridRef.current = buildFireGrid(map, fires);
         prevFiresRef.current = fires;
       }
     },
     moveend: () => {
-      // Rebuild grid when map moves (fires screen positions changed)
       if (fires && fires.length > 0) {
         gridRef.current = buildFireGrid(map, fires);
         prevFiresRef.current = fires;
       }
     },
     mousemove: (e) => {
-      if (isZoomingRef.current) return; // skip hover during zoom animation
+      if (isZoomingRef.current) return;
       if (!fires || fires.length === 0) return;
-      // Rebuild grid if fires array changed
       if (prevFiresRef.current !== fires) {
         gridRef.current = buildFireGrid(map, fires);
         prevFiresRef.current = fires;
       }
-      if (rafRef.current) return; // throttle: skip if already scheduled
+      if (rafRef.current) return;
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = null;
-        const rawIdx = findFireAtPoint(map, fires, e.containerPoint, 8, gridRef);
-        // Only hover fires with associated alert — protect from non-alert point glitches
-        const idx = (rawIdx !== null && fireAlertMap.get(rawIdx) != null) ? rawIdx : null;
+        const visIdx = findFireAtPoint(map, fires, e.containerPoint, 8, gridRef);
+        const fullIdx = visIdx != null ? visibleToFullIdxMap.get(visIdx) : null;
+        const alertId = fullIdx != null ? fireAlertMap.get(fullIdx) : null;
+        const idx = alertId != null ? fullIdx : null;
         if (idx !== lastIdxRef.current) {
           lastIdxRef.current = idx;
           if (idx !== null) {
-            const fireAlertId = fireAlertMap.get(idx);
-            onFireOver(fireAlertId, idx);
+            onFireOver(alertId, idx);
           } else {
             onFireHoverEnd();
           }
@@ -187,11 +149,11 @@ function FireEventsHandler({ fires, fireAlertMap, alertRows, onFireOver, onFireC
     click: (e) => {
       if (isZoomingRef.current) return;
       if (!fires || fires.length === 0) return;
-      const idx = findFireAtPoint(map, fires, e.containerPoint, 8, gridRef);
-      // Only click fires with associated alert
-      if (idx !== null && fireAlertMap.get(idx) != null) {
-        const fireAlertId = fireAlertMap.get(idx);
-        onFireClick(fireAlertId, idx, e);
+      const visIdx = findFireAtPoint(map, fires, e.containerPoint, 8, gridRef);
+      const fullIdx = visIdx != null ? visibleToFullIdxMap.get(visIdx) : null;
+      const alertId = fullIdx != null ? fireAlertMap.get(fullIdx) : null;
+      if (alertId != null) {
+        onFireClick(alertId, fullIdx, e);
       }
     },
   });
@@ -261,34 +223,42 @@ const FireMarker = React.memo(function FireMarker({ fire, idx, s, highlighted })
   );
 });
 
-// ViewportFireFilter - clips fires to visible bounds + margin
+// ViewportFireFilter - clips fires to visible bounds + 15% margin
 function ViewportFireFilter({ fires, onVisibleFiresChange }) {
+  const rafRef = useRef(null);
+  const updateVisibleFires = useCallback((map) => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      if (!fires || fires.length === 0) {
+        onVisibleFiresChange([]);
+        return;
+      }
+      const b = map.getBounds();
+      const latSpan = b.getNorth() - b.getSouth();
+      const lonSpan = b.getEast() - b.getWest();
+      const padLat = latSpan * 0.15;
+      const padLon = lonSpan * 0.15;
+      const north = Math.min(b.getNorth() + padLat, 85);
+      const south = Math.max(b.getSouth() - padLat, -85);
+      const east = Math.min(b.getEast() + padLon, 180);
+      const west = Math.max(b.getWest() - padLon, -180);
+      const visible = fires.filter(f =>
+        f.lat >= south && f.lat <= north && f.lon >= west && f.lon <= east
+      );
+      onVisibleFiresChange(visible);
+    });
+  }, [fires, onVisibleFiresChange]);
+
   const map = useMapEvents({
-    moveend: () => updateVisibleFires(),
-    zoomend: () => updateVisibleFires(),
+    moveend: () => updateVisibleFires(map),
+    zoomend: () => updateVisibleFires(map),
   });
 
-  const updateVisibleFires = useCallback(() => {
-    if (!fires || fires.length === 0) {
-      onVisibleFiresChange([]);
-      return;
-    }
-    const bounds = map.getBounds();
-    const expand = 0.15;
-    const north = Math.min(bounds.getNorth() * (1 + expand), 85);
-    const south = Math.max(bounds.getSouth() * (1 - expand), -85);
-    const east = Math.min(bounds.getEast() * (1 + expand), 180);
-    const west = Math.max(bounds.getWest() * (1 - expand), -180);
-
-    const visible = fires.filter(f =>
-      f.lat >= south && f.lat <= north && f.lon >= west && f.lon <= east
-    );
-    onVisibleFiresChange(visible);
-  }, [fires, map, onVisibleFiresChange]);
-
   useEffect(() => {
-    updateVisibleFires();
-  }, [updateVisibleFires]);
+    updateVisibleFires(map);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [updateVisibleFires, map]);
 
   return null;
 }
@@ -518,6 +488,11 @@ const BiomePanel = React.memo(function BiomePanel({ onBiomeHover }) {
     return () => ac.abort();
   }, []);
 
+  const sortedBiomes = useMemo(
+    () => [...biomes].sort((a, b) => b.count - a.count),
+    [biomes]
+  );
+
   return (
     <div className="panel">
       <div className="panel-header">
@@ -528,9 +503,7 @@ const BiomePanel = React.memo(function BiomePanel({ onBiomeHover }) {
         <span className="panel-meta">24H · BR</span>
       </div>
       <div className="panel-body" style={{ paddingTop: 4, paddingBottom: 8 }}>
-        {biomes
-          .sort((a, b) => b.count - a.count)
-          .map((b, i) => (
+        {sortedBiomes.map((b, i) => (
           <div
             key={i}
             className="biome-row"
@@ -603,13 +576,17 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
     return m;
   }, [fireRows, alertRows]);
 
+  // Build fire -> fullIdx lookup once per fireRows change (O(N) build, O(1) lookup)
+  const fireToFullIdxMap = useMemo(() => {
+    const m = new Map();
+    fireRows.forEach((f, i) => m.set(f, i));
+    return m;
+  }, [fireRows]);
+
   const fireRenderList = useMemo(() => {
     if (!showFires || visibleFires.length === 0) return [];
-    return visibleFires.map(fire => {
-      const fullIdx = fireRows.indexOf(fire);
-      return { fire, fullIdx };
-    });
-  }, [visibleFires, fireRows, showFires]);
+    return visibleFires.map(fire => ({ fire, fullIdx: fireToFullIdxMap.get(fire) }));
+  }, [visibleFires, fireToFullIdxMap, showFires]);
 
   const visibleToFullIdxMap = useMemo(() => {
     const m = new Map();
@@ -700,7 +677,6 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           <TileLayer key={satellite ? 'sat' : 'osm'} attribution={tileAttr} url={tileUrl} />
           <MapController activeAlert={flyToAlert} />
           <BiomeHighlightLayer activeBiome={activeBiome} biomeGeoJSON={biomeGeoJSON} />
-          <VisibleFiresCounter fires={fireRows} showFires={showFires} onVisibleCountChange={() => {}} />
           <FireHoverLock
             fires={fireRows}
             hoveredFireIdx={hoveredFireIdx}
@@ -757,9 +733,9 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               <FireEventsHandler
                 fires={visibleFires}
                 fireAlertMap={fireAlertMap}
-                alertRows={alertRows}
-                onFireOver={(id, visIdx) => onFireOver(id, visibleToFullIdxMap.get(visIdx))}
-                onFireClick={(id, visIdx, e) => onFireClick(id, visibleToFullIdxMap.get(visIdx), e)}
+                visibleToFullIdxMap={visibleToFullIdxMap}
+                onFireOver={onFireOver}
+                onFireClick={onFireClick}
                 onFireHoverEnd={onFireHoverEnd}
               />
               {fireRenderList.map(({ fire, fullIdx }, visIdx) => (
@@ -830,6 +806,7 @@ export default function Home() {
   const indiFetchedRef      = useRef(false);
   const consFetchedRef      = useRef(false);
   const biomeFetchedRef     = useRef(false);
+  const biomeFetchAcRef     = useRef(null);
 
   const activeAlertId = lockedFireAlertId || alertHoverId || fireAlertId;
 
@@ -898,17 +875,18 @@ export default function Home() {
     if (name && !biomeFetchedRef.current) {
       biomeFetchedRef.current = true;
       const ac = new AbortController();
+      biomeFetchAcRef.current = ac;
       fetch('/api/biome-boundaries', { signal: ac.signal })
         .then(r => r.json())
         .then(d => setBiomeGeoJSON(d))
         .catch(err => { if (err.name !== 'AbortError') console.error('Biome boundaries fetch error:', err); });
-      biomeFetchedRef.abortController = ac;
     }
   }, []);
 
   useEffect(() => () => {
     if (fireHoverOutTimeoutRef.current) clearTimeout(fireHoverOutTimeoutRef.current);
     if (alertFlyToTimerRef.current) clearTimeout(alertFlyToTimerRef.current);
+    if (biomeFetchAcRef.current) biomeFetchAcRef.current.abort();
   }, []);
 
   useEffect(() => {

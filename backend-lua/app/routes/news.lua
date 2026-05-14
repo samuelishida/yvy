@@ -262,8 +262,9 @@ function _M.get_news(ctx)
     ctx:send(200, body)
 end
 
-function _M.fetch_and_save_news()
-    if db.has_recent_news(RECENT_NEWS_MINUTES) then
+function _M.fetch_and_save_news(opts)
+    opts = opts or {}
+    if not opts.force and db.has_recent_news(RECENT_NEWS_MINUTES) then
         logger.info("Recent news already available. Skipping fetch.")
         return db.get_news_page(1, 20, "pt")
     end
@@ -296,6 +297,9 @@ function _M.fetch_and_save_news()
             end
         end
     end
+
+    -- Enrich missing images via og:image fetch (bounded internally)
+    pcall(scrapers.enrich_missing_images, deduped)
 
     local urls = {}
     for _, article in ipairs(deduped) do
@@ -349,8 +353,9 @@ function _M.refresh_news(ctx)
     end
     if not rl.enforce(ctx) then return end
 
-    _M.fetch_and_save_news()
-    ctx:json(200, {status = "refreshed"})
+    local force = ctx.req.args and (ctx.req.args.force == "1" or ctx.req.args.force == "true")
+    _M.fetch_and_save_news({force = force})
+    ctx:json(200, {status = "refreshed", forced = force or false})
 end
 
 function _M.repair_news(ctx)

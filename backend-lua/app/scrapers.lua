@@ -281,6 +281,94 @@ local function maybe_fetch_with_browser(source, res, err)
     }, nil
 end
 
+-- ── Per-article image enrichment (og:image / twitter:image) ─────────────
+
+local function decode_html_entities(s)
+    if type(s) ~= "string" then return s end
+    return (s:gsub("&amp;", "&"):gsub("&lt;", "<"):gsub("&gt;", ">"):gsub("&quot;", '"'):gsub("&#x27;", "'"):gsub("&#39;", "'"))
+end
+
+local function looks_bad_image_url(u)
+    if type(u) ~= "string" or u == "" then return true end
+    local lower = u:lower()
+    if lower:sub(1, 5) == "data:" then return true end
+    if lower:match("/none$") or lower:match("/null$") or lower:match("/undefined$") then return true end
+    return false
+end
+
+local function extract_og_image(html_text)
+    if type(html_text) ~= "string" or html_text == "" then return nil end
+    local head_end = html_text:find("</head>", 1, true)
+    local search_in = head_end and html_text:sub(1, head_end) or html_text:sub(1, 64 * 1024)
+
+    local patterns = {
+        '<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+        '<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']',
+        '<meta[^>]+property=["\']og:image:url["\'][^>]+content=["\']([^"\']+)["\']',
+        '<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']',
+        '<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']twitter:image["\']',
+        '<meta[^>]+name=["\']twitter:image:src["\'][^>]+content=["\']([^"\']+)["\']',
+        '<meta[^>]+itemprop=["\']image["\'][^>]+content=["\']([^"\']+)["\']',
+    }
+    for _, p in ipairs(patterns) do
+        local m = search_in:match(p)
+        if m and m ~= "" then
+            m = decode_html_entities(m)
+            if not looks_bad_image_url(m) then
+                if m:sub(1, 2) == "//" then m = "https:" .. m end
+                return m
+            end
+        end
+    end
+    return nil
+end
+
+local function fetch_article_image(url)
+    if type(url) ~= "string" or url == "" then return nil end
+    local res, _ = http_client.get(url, {
+        headers = {
+            ["User-Agent"] = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            ["Accept-Language"] = "pt-BR,pt;q=0.9,en;q=0.8",
+        },
+        timeout = 10,
+        retries = 1,
+    })
+    if res and res.status == 200 and res.body then
+        local img = extract_og_image(res.body)
+        if img then return img end
+    end
+    if res and looks_blocked(res.status, res.body) then
+        local browser_res = browser_fallback.fetch(url, "page")
+        if browser_res and (browser_res.html or browser_res.body) then
+            return extract_og_image(browser_res.html or browser_res.body)
+        end
+    end
+    return nil
+end
+
+-- Enrich articles missing urlToImage by fetching article HTML and reading og:image.
+-- Bounded by ENRICH_LIMIT to avoid making ingest take forever on cold runs.
+local ENRICH_LIMIT = 40
+function _M.enrich_missing_images(articles)
+    local enriched = 0
+    for _, a in ipairs(articles) do
+        if enriched >= ENRICH_LIMIT then break end
+        if not a.urlToImage or a.urlToImage == "" or looks_bad_image_url(a.urlToImage) then
+            local img = fetch_article_image(a.url)
+            if img then
+                a.urlToImage = img
+                enriched = enriched + 1
+                logger.info("Enriched image for " .. (a.source_name or "?") .. ": " .. tostring(a.url))
+            end
+        end
+    end
+    if enriched > 0 then
+        logger.info("Enriched " .. enriched .. " article images via og:image")
+    end
+    return enriched
+end
+
 function _M.fetch_all()
     local all_articles = {}
 

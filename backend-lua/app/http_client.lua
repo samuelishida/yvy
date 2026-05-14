@@ -16,6 +16,10 @@ local DEFAULT_TIMEOUT = 30
 local MAX_RETRIES = 3
 local RETRY_DELAY_MS = 100
 
+local IS_WINDOWS = package.config:sub(1, 1) == "\\"
+local NULL_DEV = IS_WINDOWS and "nul" or "/dev/null"
+local PATH_SEP = IS_WINDOWS and "\\" or "/"
+
 local function shell_quote(value)
     return '"' .. tostring(value):gsub('"', '\\"') .. '"'
 end
@@ -57,7 +61,7 @@ local function curl_request(method, url, timeout, headers, body)
     headers = headers or {}
     body = body or ""
 
-    local temp_dir = os.getenv("TEMP") or os.getenv("TMP") or "."
+    local temp_dir = os.getenv("TEMP") or os.getenv("TMP") or (IS_WINDOWS and "." or "/tmp")
     local stamp = tostring(os.time()) .. "_" .. tostring(math.random(100000, 999999))
     local req_body_path = nil
 
@@ -75,7 +79,7 @@ local function curl_request(method, url, timeout, headers, body)
     end
 
     if method == "POST" and body ~= "" then
-        req_body_path = normalize_path(temp_dir .. "\\yvy_curl_req_" .. stamp .. ".txt")
+        req_body_path = normalize_path(temp_dir .. PATH_SEP .. "yvy_curl_req_" .. stamp .. ".txt")
         local reqf, err = io.open(req_body_path, "wb")
         if not reqf then
             return nil, "failed to create temp curl body: " .. tostring(err)
@@ -89,7 +93,7 @@ local function curl_request(method, url, timeout, headers, body)
     cmd_parts[#cmd_parts + 1] = shell_quote(url)
     cmd_parts[#cmd_parts + 1] = "-w"
     cmd_parts[#cmd_parts + 1] = shell_quote("__YVY_CURL_STATUS__:%{http_code}")
-    cmd_parts[#cmd_parts + 1] = "2>nul"
+    cmd_parts[#cmd_parts + 1] = "2>" .. NULL_DEV
 
     local proc = io.popen(table.concat(cmd_parts, " "), "r")
     if not proc then
@@ -223,7 +227,7 @@ function _M.download(url, dest_path, timeout)
     if url:sub(1, 8) == "https://" then
         local safe_url = shell_quote(url)
         local safe_dest = shell_quote(dest_path)
-        local cmd = string.format("curl -sS -L --max-time %d -o %s %s 2>nul", timeout, safe_dest, safe_url)
+        local cmd = string.format("curl -sS -L --max-time %d -o %s %s 2>%s", timeout, safe_dest, safe_url, NULL_DEV)
         local ok = os.execute(cmd)
         if ok ~= 0 and ok ~= true then
             os.remove(dest_path)

@@ -20,7 +20,23 @@ wait_for_port() {
         if ! kill -0 "$pid" 2>/dev/null; then
             return 1
         fi
-        if ss -tlnp "sport = :$port" 2>/dev/null | grep -q ":$port"; then
+        if ss -tln "sport = :$port" 2>/dev/null | grep -q ":$port"; then
+            return 0
+        fi
+        if lsof -i :"$port" >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 0.5
+    done
+    return 1
+}
+
+wait_port_free() {
+    local port="$1" timeout="${2:-10}"
+    local deadline=$(( $(date +%s) + timeout ))
+    while (( $(date +%s) < deadline )); do
+        if ! lsof -i :"$port" >/dev/null 2>&1 \
+           && ! ss -tln "sport = :$port" 2>/dev/null | grep -q ":$port"; then
             return 0
         fi
         sleep 0.5
@@ -36,6 +52,17 @@ log_tail() {
 mkdir -p "$RUNTIME_DIR"
 
 "$SCRIPT_DIR/stop-lua-stack.sh"
+
+# Ensure ports actually released before starting (stop script may report success
+# but kernel takes a moment to release sockets, or another process may hold them).
+for port in 5000 5001; do
+    if ! wait_port_free "$port" 10; then
+        echo "ERROR: Port $port still in use after stop. Holder:"
+        lsof -i :"$port" 2>/dev/null || ss -tlnp "sport = :$port" 2>/dev/null || true
+        echo "Try: sudo fuser -k -KILL -n tcp $port"
+        exit 1
+    fi
+done
 
 if (( ! SKIP_FRONTEND_BUILD )); then
     echo "Building frontend..."

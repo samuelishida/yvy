@@ -3,6 +3,11 @@ mongo_data/
 .env
 .openclaude
 
+# Local runtime artifacts
+.runtime/
+backend-lua/nul
+backend-lua/yvy-server
+
 # Infraestrutura / Secrets
 infra/terraform.tfvars
 infra/terraform.tfstate

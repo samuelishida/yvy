@@ -71,6 +71,16 @@ export default function Dashboard() {
     [biomes]
   );
 
+  const sortedBiomes = useMemo(
+    () => (!biomes ? [] : [...biomes].sort((a, b) => b.count - a.count)),
+    [biomes]
+  );
+
+  const sortedAlertTypes = useMemo(
+    () => [...ALERT_TYPES].sort((a, b) => a.priority - b.priority),
+    []
+  );
+
   return (
     <div className="dashboard">
       <div className="dash-header">
@@ -95,7 +105,7 @@ export default function Dashboard() {
           </div>
           {biomes ? (
             <div className="bar-chart">
-              {biomes.sort((a, b) => b.count - a.count).map((b, i) => {
+              {sortedBiomes.map((b, i) => {
                 const pct  = Math.max(2, (b.count / biomeMaxCount) * 100);
                 const share = ((b.count / biomeTotal) * 100).toFixed(1);
                 return (
@@ -123,7 +133,7 @@ export default function Dashboard() {
           </div>
           {alerts ? (
             <div className="bar-chart">
-              {ALERT_TYPES.sort((a, b) => a.priority - b.priority).map(({ key, tKey, color }) => {
+              {sortedAlertTypes.map(({ key, tKey, color }) => {
                 const count = alertsByType[key] || 0;
                 const pct   = count ? Math.max(2, (count / alertMaxCount) * 100) : 0;
                 return (
