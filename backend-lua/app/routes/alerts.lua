@@ -513,6 +513,14 @@ function _M.generate_all_alerts(fires, deforestation_data, waqi_token)
 
     extend(indigenous_land_alerts(fires))
     extend(conservation_unit_alerts(fires))
+    extend(cluster_alerts(fires))
+    extend(night_fire_alerts(fires))
+
+    local ok, prodes = pcall(prodes_alerts)
+    if ok and prodes then extend(prodes) end
+
+    local pm25_ok, pm25 = pcall(pm25_alerts, waqi_token)
+    if pm25_ok and pm25 then extend(pm25) end
 
     -- Sort: crit first, then warn, then info; within each tier by id for stability
     local tier = {crit = 0, warn = 1, info = 2}

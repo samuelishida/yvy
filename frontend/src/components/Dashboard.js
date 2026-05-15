@@ -58,8 +58,9 @@ export default function Dashboard() {
   );
 
   const sortedAlertTypes = useMemo(
-    () => [...ALERT_TYPES].sort((a, b) => a.priority - b.priority),
-    []
+    () => ALERT_TYPES.filter(at => (alertsByType[at.key] || 0) > 0)
+                     .sort((a, b) => a.priority - b.priority),
+    [alertsByType]
   );
 
   return (

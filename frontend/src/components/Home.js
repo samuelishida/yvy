@@ -433,10 +433,13 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
   const aqiColor = aqiVal <= 50 ? '#4ade80' : aqiVal <= 100 ? '#fbbf24' : '#ef4444';
 
   const sortedAlerts = useMemo(() => {
+    const typePriority = { indigenous_land: 0, conservation_unit: 1, cluster: 2, night_fire: 3, prodes: 4, pm25: 5 };
     return alerts.filter(a => !isOutOfBrazil(a)).sort((a, b) => {
-      const priorityA = a.type === 'indigenous_land' ? 0 : a.type === 'conservation_unit' ? 1 : 2;
-      const priorityB = b.type === 'indigenous_land' ? 0 : b.type === 'conservation_unit' ? 1 : 2;
-      return priorityA - priorityB;
+      const pa = typePriority[a.type] ?? 9;
+      const pb = typePriority[b.type] ?? 9;
+      if (pa !== pb) return pa - pb;
+      const tier = { crit: 0, warn: 1, info: 2 };
+      return (tier[a.tick] ?? 9) - (tier[b.tick] ?? 9);
     });
   }, [alerts]);
 

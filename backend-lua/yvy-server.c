@@ -114,7 +114,7 @@ static volatile sig_atomic_t g_active_children = 0;
 /* ── Rate limiter (parent-side, per-IP token bucket) ────────────────────── */
 
 #define RATE_BUCKETS  4096
-#define RATE_LIMIT    60      /* requests per window */
+#define RATE_LIMIT    120     /* requests per window */
 #define RATE_WINDOW   60      /* seconds */
 
 typedef struct {
@@ -145,18 +145,18 @@ static int rate_check(uint32_t ip, time_t now, int *retry_out) {
         /* Empty slot, hash collision (different IP), or expired window: reset */
         b->ip = ip;
         b->window_start = now;
-        b->count = 1;
+        __atomic_store_n(&b->count, 1, __ATOMIC_RELAXED);
         return 1;
     }
 
-    if (b->count >= RATE_LIMIT) {
+    if (__atomic_load_n(&b->count, __ATOMIC_RELAXED) >= RATE_LIMIT) {
         int retry = (int)(RATE_WINDOW - (now - b->window_start));
         if (retry < 1) retry = 1;
         *retry_out = retry;
         return 0;
     }
 
-    b->count++;
+    __atomic_add_fetch(&b->count, 1, __ATOMIC_RELAXED);
     return 1;
 }
 
