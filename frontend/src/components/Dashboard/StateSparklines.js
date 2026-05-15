@@ -28,8 +28,6 @@ export default function StateSparklines() {
   if (loading) return <div className="dash-section"><p>{t("loading")}…</p></div>;
   if (data.length === 0) return null;
 
-  const maxTotal = Math.max(...data.map((r) => r.total), 1);
-
   return (
     <div className="dash-section">
       <div className="sparkline-grid">
