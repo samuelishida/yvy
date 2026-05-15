@@ -52,9 +52,9 @@
 #include <sys/stat.h>
 #include <stdint.h>
 #include <errno.h>
+#include <sys/mman.h>
 #include <stdarg.h>
 #include <time.h>
-#include <poll.h>
 #include <sys/wait.h>
 
 #ifndef MSG_NOSIGNAL
@@ -121,7 +121,7 @@ typedef struct {
     int      count;
 } rate_bucket;
 
-static rate_bucket g_rate[RATE_BUCKETS];
+static rate_bucket *g_rate = NULL;  /* mmap shared memory — shared across forked children */
 
 /* Murmur-style 32-bit hash mix. Good distribution for IPv4 addresses. */
 static uint32_t hash_ip(uint32_t ip) {
@@ -156,24 +156,6 @@ static int rate_check(uint32_t ip, time_t now, int *retry_out) {
 
     b->count++;
     return 1;
-}
-
-/* Poll briefly for request bytes, then MSG_PEEK; return 1 if path begins
- * with /api. On timeout/error/incomplete data: returns 0 so caller skips
- * the rate check (slow clients bypass; fork handles them normally). */
-static int peek_path_is_api(int fd) {
-    struct pollfd pfd = { .fd = fd, .events = POLLIN, .revents = 0 };
-    int pr = poll(&pfd, 1, 100);  /* 100ms — bounds parent latency */
-    if (pr <= 0 || !(pfd.revents & POLLIN)) return 0;
-
-    char buf[512];
-    ssize_t n = recv(fd, buf, sizeof(buf) - 1, MSG_PEEK | MSG_DONTWAIT);
-    if (n <= 0) return 0;
-    const char *sp1 = memchr(buf, ' ', (size_t)n);
-    if (!sp1) return 0;
-    const char *path = sp1 + 1;
-    if ((size_t)(path - buf) + 4 > (size_t)n) return 0;
-    return strncmp(path, "/api", 4) == 0;
 }
 
 static void send_429(int fd, int retry_after) {
@@ -689,7 +671,7 @@ static size_t parse_content_length(const char *headers_buf, size_t headers_size)
     return 0;
 }
 
-static void handle_client(int client) {
+static void handle_client(int client, uint32_t client_ip) {
     set_socket_timeout(client, CLIENT_TIMEOUT);
 
     dynbuf reqbuf;
@@ -779,6 +761,17 @@ static void handle_client(int client) {
         return;
     }
 
+    /* Rate-limit /api paths in child process (shared mmap counters) */
+    if (strncmp(path, "/api", 4) == 0) {
+        int retry = 0;
+        if (!rate_check(client_ip, time(NULL), &retry)) {
+            send_429(client, retry);
+            dynbuf_free(&reqbuf);
+            CLOSESOCK(client);
+            return;
+        }
+    }
+
     /* Body span lives inside reqbuf; safe until dynbuf_free below */
     const char *body = reqbuf.data + headers_size;
     size_t body_len = reqbuf.len - headers_size;
@@ -855,6 +848,16 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    /* Allocate rate-limit table in shared memory so forked children
+     * can update per-IP counters independently of the parent. */
+    g_rate = mmap(NULL, sizeof(rate_bucket) * RATE_BUCKETS,
+                  PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (g_rate == MAP_FAILED) {
+        perror("mmap g_rate");
+        return 1;
+    }
+    memset(g_rate, 0, sizeof(rate_bucket) * RATE_BUCKETS);
+
     /* Setup signal handlers */
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
@@ -917,16 +920,6 @@ int main(int argc, char *argv[]) {
 
         /* Reaping happens in the SIGCHLD handler — no work needed here */
 
-        /* Rate-limit /api paths before forking. Static paths bypass. */
-        if (peek_path_is_api(client)) {
-            int retry = 0;
-            if (!rate_check(client_addr.sin_addr.s_addr, time(NULL), &retry)) {
-                send_429(client, retry);
-                close(client);
-                continue;
-            }
-        }
-
         /* Block SIGCHLD around check-and-fork to prevent race:
          * Without this, a SIGCHLD between the >= check and the ++ would
          * decrement a slot we haven't reserved yet, allowing cap overflow. */
@@ -975,7 +968,7 @@ int main(int argc, char *argv[]) {
             /* Close inherited listen socket so the child doesn't keep it
              * alive past parent shutdown. */
             if (g_server_fd >= 0) close(g_server_fd);
-            handle_client(client);
+            handle_client(client, client_addr.sin_addr.s_addr);
             _exit(0);
         } else {
             /* Parent — unblock SIGCHLD now that the slot is reserved */
