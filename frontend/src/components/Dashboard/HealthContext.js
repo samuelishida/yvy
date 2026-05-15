@@ -21,9 +21,10 @@ function aqiTier(aqi, t) {
 }
 
 function windDir(deg) {
-  if (!Number.isFinite(Number(deg))) return null;
+  const v = Number(deg);
+  if (!Number.isFinite(v)) return null;
   const dirs = ['N','NE','L','SE','S','SO','O','NO'];
-  const idx = Math.round(((Number(deg) % 360) / 45)) % 8;
+  const idx = Math.floor(((v % 360 + 360 + 22.5) / 45)) % 8;
   return dirs[idx];
 }
 

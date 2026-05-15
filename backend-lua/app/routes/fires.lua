@@ -20,6 +20,9 @@ local FIRMS_DAY_RANGE = tonumber(os.getenv("FIRMS_DAY_RANGE") or "3")
 local FIRMS_BBOX = "-74,-34,-34,5.5"
 local MAX_RESULTS = tonumber(os.getenv("MAX_RESULTS_PER_REQUEST") or "10000")
 
+-- Brazil bounding box (sw_lat, ne_lat, sw_lng, ne_lng) — clamp default queries here
+local BR_SW_LAT, BR_NE_LAT, BR_SW_LNG, BR_NE_LNG = -34.0, 5.5, -74.0, -34.0
+
 local GLOBAL_BBOXES = {
     "-180,-90,-90,90",
     "-90,-90,0,90",
@@ -58,7 +61,7 @@ function _M.get_fires(ctx)
             ctx:error(400, "Invalid bbox."); return
         end
     else
-        sw_lat, ne_lat, sw_lng, ne_lng = -90, 90, -180, 180
+        sw_lat, ne_lat, sw_lng, ne_lng = BR_SW_LAT, BR_NE_LAT, BR_SW_LNG, BR_NE_LNG
     end
 
     local data = db.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, MAX_RESULTS)
@@ -106,7 +109,7 @@ function _M.fetch_firms_data(global_sync)
                         satellite = row.satellite or row["satellite"] or "",
                         bright_ti4 = tonumber(row.bright_ti4 or row["bright_ti4"] or 0) or 0,
                         source = "NASA_FIRMS_VIIRS_SNPP",
-                        state = state_lookup.classify_point(lat, lon),
+                        state = state_lookup.classify_point(lon, lat),
                         ingested_at = utils.now_iso(),
                     }
                 end
@@ -161,7 +164,10 @@ function _M.get_fires_by_state(ctx)
     if limit < 1 then limit = 1 end
     if limit > 27 then limit = 27 end
     local days = tonumber(args.days)
-    if days and (days < 1 or days > 365) then days = nil end
+    if days ~= nil and (days < 1 or days > 365) then
+        ctx:json(400, {error = "days must be between 1 and 365"})
+        return
+    end
 
     local cache_key = "fires:bystate:" .. limit .. ":" .. (days or "all")
     local cached = redis.get(cache_key)
@@ -201,7 +207,7 @@ function _M.get_protected_share(ctx)
             if type(alerts_list) == "table" then
                 for _, a in ipairs(alerts_list) do
                     if type(a) == "table" then
-                        local n = tonumber((tostring(a.state or "")):match("(%d+)")) or 0
+                        local n = tonumber(a.fire_count) or 0
                         if a.type == "indigenous_land" then
                             indigenous_count = indigenous_count + n
                         elseif a.type == "conservation_unit" then
@@ -254,6 +260,16 @@ function _M.admin_firms_sync(ctx)
         message = "FIRMS sync completed. " .. count .. " records processed.",
         records = count, last_sync = last_sync,
     })
+end
+
+function _M.get_fires_state_sparklines(ctx)
+    if not auth.enforce(ctx) then return end
+    if not rl.enforce(ctx) then return end
+
+    local days = tonumber(ctx.req.args.days) or 7
+    local sparklines = db.get_fires_state_sparklines(days)
+    ctx:set_header("Cache-Control", "public, max-age=300")
+    ctx:json(200, { days = days, sparklines = sparklines })
 end
 
 return _M

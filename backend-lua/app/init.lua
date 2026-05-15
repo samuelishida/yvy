@@ -130,14 +130,13 @@ local function dashboard_prewarm_loop()
 end
 
 local function state_backfill_loop()
-    local state_lookup = require("app.lookups.state_lookup")
     copas.sleep(8)
     while true do
         local processed = 0
-        pcall(function()
+        local ok, err = pcall(function()
             local batch = db.iter_fires_for_backfill(500)
             for _, row in ipairs(batch) do
-                local uf = state_lookup.classify_point(row.lat, row.lon)
+                local uf = states.classify_point(row.lon, row.lat)
                 if uf then
                     db.update_fire_state(row.id, uf)
                     processed = processed + 1
@@ -147,6 +146,9 @@ local function state_backfill_loop()
                 end
             end
         end)
+        if not ok then
+            logger.error("state backfill error: " .. tostring(err))
+        end
         if processed > 0 then
             logger.info("state backfill: " .. processed .. " fires attributed")
             copas.sleep(2)

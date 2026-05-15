@@ -71,15 +71,14 @@ local function compute_bbox(polys)
 end
 
 function _M.load_states()
-    local data_file = env.get("STATES_DATA_PATH")
     local paths = {
-        data_file,
         "backend-lua/data/states_brazil.geojson",
         "data/states_brazil.geojson",
         "/opt/yvy/backend-lua/data/states_brazil.geojson",
         "../backend-lua/data/states_brazil.geojson",
     }
-
+    local override = env.get("STATES_DATA_PATH")
+    if override and override ~= "" then table.insert(paths, 1, override) end
     local resolved = env.first_existing(paths)
     if not resolved then
         logger.warn("states_brazil.geojson not found — state lookup disabled")
@@ -120,7 +119,7 @@ function _M.load_states()
     logger.info("Loaded ", #entries, " state polygon sets")
 end
 
-function _M.classify_point(lat, lon)
+function _M.classify_point(lon, lat)
     if not lat or not lon or #entries == 0 then return nil end
     for _, entry in ipairs(entries) do
         local b = entry.bbox

@@ -8,20 +8,19 @@ import { cachedFetch } from '../../utils/apiCache';
 const TICK_STYLE = { fill: 'rgba(138, 158, 147, 1)', fontSize: 11, fontFamily: 'var(--font-mono)' };
 const AXIS_LINE = { stroke: 'rgba(42, 53, 48, 0.8)' };
 
-function formatDate(iso, days) {
+function formatDate(iso) {
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  if (days <= 14) return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }
 
-function TooltipContent({ active, payload, days }) {
+function TooltipContent({ active, payload }) {
   if (!active || !payload || !payload.length) return null;
   const { date, count } = payload[0].payload;
   return (
     <div className="dash-tooltip">
-      <div className="dash-tooltip__title">{formatDate(date, days)}</div>
+      <div className="dash-tooltip__title">{formatDate(date)}</div>
       <div className="dash-tooltip__val">{count.toLocaleString('pt-BR')}</div>
     </div>
   );
@@ -65,7 +64,7 @@ export default function FireTrend({ days = 30, state = null }) {
               <CartesianGrid stroke="rgba(42, 53, 48, 0.4)" strokeDasharray="2 4" vertical={false} />
               <XAxis
                 dataKey="date"
-                tickFormatter={d => formatDate(d, days)}
+                tickFormatter={d => formatDate(d)}
                 tick={TICK_STYLE}
                 axisLine={AXIS_LINE}
                 tickLine={false}
@@ -78,7 +77,7 @@ export default function FireTrend({ days = 30, state = null }) {
                 width={42}
                 allowDecimals={false}
               />
-              <Tooltip cursor={{ stroke: 'rgba(255,98,0,0.3)' }} content={<TooltipContent days={days} />} />
+              <Tooltip cursor={{ stroke: 'rgba(255,98,0,0.3)' }} content={<TooltipContent />} />
               <Line
                 type="monotone"
                 dataKey="count"

@@ -1,8 +1,8 @@
 -- deforestation_stats.lua — /api/deforestation/historical
 -- Serves INPE PRODES annual Amazônia Legal totals from a static JSON.
 
-require("app.env")
 local env    = require("app.env")
+local auth   = require("app.middleware.auth")
 local rl     = require("app.middleware.rate_limit")
 local redis  = require("app.redis")
 local logger = require("app.logger")
@@ -34,12 +34,13 @@ local function load_body()
     end
 
     local paths = {
-        env.get("PRODES_HISTORICAL_PATH"),
         "backend-lua/data/prodes_historical.json",
         "data/prodes_historical.json",
         "/opt/yvy/backend-lua/data/prodes_historical.json",
         "../backend-lua/data/prodes_historical.json",
     }
+    local override = env.get("PRODES_HISTORICAL_PATH")
+    if override and override ~= "" then table.insert(paths, 1, override) end
     local resolved = env.first_existing(paths)
     if not resolved then
         logger.warn("prodes_historical.json not found")
@@ -58,6 +59,7 @@ local function load_body()
 end
 
 function _M.get_historical(ctx)
+    if not auth.enforce(ctx) then return end
     if not rl.enforce(ctx) then return end
 
     local body, etag = load_body()

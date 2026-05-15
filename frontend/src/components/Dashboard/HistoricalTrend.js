@@ -17,12 +17,9 @@ function colorForDelta(delta) {
 
 function buildData(yearly) {
   const sorted = [...yearly].sort((a, b) => a.year - b.year);
-  let movingSum = 0;
   return sorted.map((row, i) => {
     const prev = i > 0 ? sorted[i - 1].amazon_km2 : null;
     const delta = prev ? (row.amazon_km2 - prev) / prev : null;
-    movingSum += row.amazon_km2;
-    const windowSize = Math.min(i + 1, 5);
     const movingAvg = i >= 4
       ? sorted.slice(i - 4, i + 1).reduce((s, r) => s + r.amazon_km2, 0) / 5
       : null;
@@ -31,10 +28,27 @@ function buildData(yearly) {
       km2: row.amazon_km2,
       delta,
       movingAvg,
-      _movingSum: movingSum,
-      windowSize,
     };
   });
+}
+
+function safeHttpUrl(raw) {
+  try {
+    const u = new URL(raw || '');
+    return (u.protocol === 'https:' || u.protocol === 'http:') ? u.href : '#';
+  } catch {
+    return '#';
+  }
+}
+
+const SAO_PAULO_KM2 = 1521;
+const FIELD_KM2 = 0.00714;
+
+function equivalence(km2) {
+  if (!Number.isFinite(km2) || km2 <= 0) return null;
+  const sp = Math.round(km2 / SAO_PAULO_KM2);
+  const fields = (km2 / FIELD_KM2 / 1_000_000).toFixed(1);
+  return { sp, fields };
 }
 
 function HistTooltip({ active, payload, t }) {
@@ -72,6 +86,13 @@ export default function HistoricalTrend() {
     return buildData(payload.yearly);
   }, [payload]);
 
+  const latest = useMemo(() => {
+    if (!data.length) return null;
+    const row = data[data.length - 1];
+    const eq = equivalence(row.km2);
+    return eq ? { year: row.year, km2: row.km2, ...eq } : null;
+  }, [data]);
+
   return (
     <div className="chart-card chart-card--wide">
       <div className="chart-card__header">
@@ -86,6 +107,16 @@ export default function HistoricalTrend() {
         <div className="dash-loading">{t('dashboard.noData')}</div>
       ) : (
         <>
+          {latest && (
+            <div className="hist-equiv">
+              <div className="hist-equiv__big">
+                {latest.km2.toLocaleString('pt-BR')} km² <span className="hist-equiv__year">{latest.year}</span>
+              </div>
+              <div className="hist-equiv__caption">
+                {t('dashboard.equivCaption', { sp: latest.sp, fields: latest.fields })}
+              </div>
+            </div>
+          )}
           <div className="chart-canvas">
             <ResponsiveContainer width="100%" height={260}>
               <ComposedChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
@@ -110,7 +141,7 @@ export default function HistoricalTrend() {
             </ResponsiveContainer>
           </div>
           <div className="chart-card__attrib">
-            <a href={payload.source_url || '#'} target="_blank" rel="noopener noreferrer">
+            <a href={safeHttpUrl(payload.source_url)} target="_blank" rel="noopener noreferrer">
               {payload.source || t('dashboard.attribution')}
             </a>
           </div>

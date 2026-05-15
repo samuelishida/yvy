@@ -394,7 +394,7 @@ function _M.get_fires_by_state(limit, days)
             SELECT json_extract(data, '$.state') AS state, COUNT(*) AS count
             FROM fire_data
             WHERE json_extract(data, '$.state') IS NOT NULL AND json_extract(data, '$.state') != ''
-              AND acq_date >= date('now', ?)
+              AND acq_date IS NOT NULL AND acq_date >= date('now', ?)
             GROUP BY state
             ORDER BY count DESC
             LIMIT ?
@@ -443,11 +443,40 @@ function _M.count_fires_by_state_present()
     }
 end
 
+function _M.get_fires_state_sparklines(days)
+    days = tonumber(days) or 7
+    local db = pool_acquire()
+    local cutoff = "-" .. tostring(days) .. " days"
+    local sql = [[
+        SELECT json_extract(data, '$.state') AS state, acq_date, COUNT(*) AS count
+        FROM fire_data
+        WHERE json_extract(data, '$.state') IS NOT NULL AND json_extract(data, '$.state') != ''
+          AND acq_date IS NOT NULL AND acq_date >= date('now', ?)
+        GROUP BY state, acq_date
+        ORDER BY state, acq_date
+    ]]
+    local rows = fetch_all(db, sql, {cutoff})
+    pool_release(db)
+
+    local result = {}
+    for _, r in ipairs(rows) do
+        local st = r.state or r["state"] or ""
+        if st ~= "" then
+            if not result[st] then result[st] = {} end
+            table.insert(result[st], {
+                date = r.date or r["date"],
+                count = tonumber(r.count or r["count"] or 0) or 0,
+            })
+        end
+    end
+    return result
+end
+
 function _M.iter_fires_for_backfill(batch_size)
     batch_size = batch_size or 1000
     local db = pool_acquire()
     local sql = [[
-        SELECT id, lat, lon, json(data) AS data_json
+        SELECT id, lat, lon
         FROM fire_data
         WHERE json_extract(data, '$.state') IS NULL
         LIMIT ?
@@ -460,7 +489,6 @@ function _M.iter_fires_for_backfill(batch_size)
             id = tonumber(r.id or r["id"]),
             lat = tonumber(r.lat or r["lat"]),
             lon = tonumber(r.lon or r["lon"]),
-            data_json = r.data_json or r["data_json"],
         }
     end
     return result
@@ -468,15 +496,28 @@ end
 
 function _M.update_fire_state(id, state)
     local db = pool_acquire()
-    db:exec("BEGIN")
-    local row = fetch_one(db, "SELECT json(data) AS data_json FROM fire_data WHERE id = ?", {id})
-    if row then
-        local current = utils.decode_jsonb(row.data_json or row["data_json"])
-        current.state = state
-        local data_json = utils.encode_jsonb(current)
-        exec_write(db, "UPDATE fire_data SET data = jsonb(?) WHERE id = ?", {data_json, id})
+    local ok, err = pcall(function()
+        db:exec("BEGIN")
+        local row = fetch_one(db, "SELECT json(data) AS data_json FROM fire_data WHERE id = ?", {id})
+        if row then
+            local raw = row.data_json or row["data_json"]
+            local current = utils.decode_jsonb(raw)
+            -- Bail on corrupt JSON: empty decode of non-empty source means we'd overwrite all fields.
+            if type(current) ~= "table" or (next(current) == nil and raw and raw ~= "" and raw ~= "{}") then
+                db:exec("ROLLBACK")
+                return
+            end
+            current.state = state
+            local data_json = utils.encode_jsonb(current)
+            exec_write(db, "UPDATE fire_data SET data = jsonb(?) WHERE id = ?", {data_json, id})
+        end
+        db:exec("COMMIT")
+    end)
+    if not ok then
+        pcall(function() db:exec("ROLLBACK") end)
+        pool_release(db)
+        error(err)
     end
-    db:exec("COMMIT")
     pool_release(db)
 end
 
