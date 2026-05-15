@@ -97,9 +97,9 @@ const translations = {
       cardProdes: 'Registros PRODES',
       cardAlerts: 'Alertas Ativos',
       cardNews: 'Notícias Indexadas',
-      firesByBiome: 'Focos por Bioma',
-      firesByBiomeMeta: '24h · Brasil',
-      alertsByCategory: 'Alertas por Categoria',
+      firesByBiome: 'Focos de Incêndio por Bioma',
+      firesByBiomeMeta: 'Últimas 24h · Brasil',
+      alertsByCategory: 'Alertas de Incêndio por Categoria',
       activeLow: 'ativos',
       loadingShort: 'Carregando...',
       cat_indigenous_land: 'Terras Indígenas',
@@ -108,6 +108,43 @@ const translations = {
       cat_night_fire: 'Queimada Noturna',
       cat_prodes: 'Polígono PRODES',
       cat_pm25: 'Qualidade do Ar',
+      fireTrend: 'Focos por Dia',
+      fireTrendSub: 'Série temporal — últimos {days} dias',
+      top10States: 'Estados com Mais Focos',
+      top10StatesSub: 'Top 10 · todos os períodos',
+      protectedShare: 'Focos em Áreas Protegidas',
+      inTI: 'Terras Indígenas',
+      inUC: 'Unid. Conservação',
+      unprotected: 'Outras áreas',
+      historicalProdes: 'Desmatamento Anual — Amazônia Legal',
+      historicalSub: 'Fonte: INPE PRODES · km² por ano',
+      yoyDelta: 'Δ vs ano anterior',
+      airQualityCards: 'Qualidade do Ar — Capitais',
+      filterByBiome: 'Filtrar por Bioma',
+      filterRange: 'Período',
+      clearFilters: 'Limpar filtros',
+      range7d: '7 dias',
+      range30d: '30 dias',
+      range90d: '90 dias',
+      capManaus: 'Manaus',
+      capBelem: 'Belém',
+      capBrasilia: 'Brasília',
+      capCuiaba: 'Cuiabá',
+      capSaopaulo: 'São Paulo',
+      aqiGood: 'Bom',
+      aqiModerate: 'Moderado',
+      aqiUnhealthy: 'Insalubre',
+      aqiVeryUnhealthy: 'Muito Insalubre',
+      aqiHazardous: 'Perigoso',
+      smokeHint: 'Vento pode levar fumaça para {direction}',
+      noData: 'Sem dados',
+      attribution: 'Atribuição: INPE PRODES',
+      wowVsPrev: 'vs semana anterior',
+      wowFlat: '= semana anterior',
+      wowUnavailable: 'sem dados da semana anterior',
+      equivLabel: 'Equivalência',
+      equivCaption: '≈ {sp} cidades de São Paulo · ≈ {fields} milhões de campos de futebol',
+      filtersBiomeShown: 'Bioma destacado: {biome}',
     },
     maps: {
       globalForests: 'Florestas Globais',
@@ -214,9 +251,9 @@ const translations = {
       cardProdes: 'PRODES Records',
       cardAlerts: 'Active Alerts',
       cardNews: 'Indexed News',
-      firesByBiome: 'Fires by Biome',
-      firesByBiomeMeta: '24h · Brazil',
-      alertsByCategory: 'Alerts by Category',
+      firesByBiome: 'Wildfire Hotspots by Biome',
+      firesByBiomeMeta: 'Last 24h · Brazil',
+      alertsByCategory: 'Wildfire Alerts by Category',
       activeLow: 'active',
       loadingShort: 'Loading...',
       cat_indigenous_land: 'Indigenous Lands',
@@ -225,6 +262,43 @@ const translations = {
       cat_night_fire: 'Nighttime Fire',
       cat_prodes: 'PRODES Polygon',
       cat_pm25: 'Air Quality',
+      fireTrend: 'Fires per Day',
+      fireTrendSub: 'Time series — last {days} days',
+      top10States: 'States with Most Fires',
+      top10StatesSub: 'Top 10 · all-time',
+      protectedShare: 'Fires in Protected Areas',
+      inTI: 'Indigenous Lands',
+      inUC: 'Conservation Units',
+      unprotected: 'Other areas',
+      historicalProdes: 'Annual Deforestation — Legal Amazon',
+      historicalSub: 'Source: INPE PRODES · km² per year',
+      yoyDelta: 'YoY Δ',
+      airQualityCards: 'Air Quality — Capitals',
+      filterByBiome: 'Filter by Biome',
+      filterRange: 'Range',
+      clearFilters: 'Clear filters',
+      range7d: '7 days',
+      range30d: '30 days',
+      range90d: '90 days',
+      capManaus: 'Manaus',
+      capBelem: 'Belém',
+      capBrasilia: 'Brasília',
+      capCuiaba: 'Cuiabá',
+      capSaopaulo: 'São Paulo',
+      aqiGood: 'Good',
+      aqiModerate: 'Moderate',
+      aqiUnhealthy: 'Unhealthy',
+      aqiVeryUnhealthy: 'Very Unhealthy',
+      aqiHazardous: 'Hazardous',
+      smokeHint: 'Wind may carry smoke toward {direction}',
+      noData: 'No data',
+      attribution: 'Attribution: INPE PRODES',
+      wowVsPrev: 'vs last week',
+      wowFlat: '= last week',
+      wowUnavailable: 'no prior-week data',
+      equivLabel: 'Scale',
+      equivCaption: '≈ {sp} São Paulo cities · ≈ {fields} million football fields',
+      filtersBiomeShown: 'Highlighted biome: {biome}',
     },
     maps: {
       globalForests: 'Global Forests',
@@ -256,7 +330,7 @@ export function I18nProvider({ children }) {
   }, []);
 
   const t = useCallback(
-    (path) => {
+    (path, vars) => {
       const keys = path.split('.');
       let val = translations[lang];
       for (const key of keys) {
@@ -267,7 +341,11 @@ export function I18nProvider({ children }) {
         for (const key of keys) {
           fallback = fallback?.[key];
         }
-        return fallback || path;
+        val = fallback;
+      }
+      if (val === undefined || val === null) return path;
+      if (vars && typeof val === 'string') {
+        return val.replace(/\{(\w+)\}/g, (_, k) => (vars[k] !== undefined ? vars[k] : `{${k}}`));
       }
       return val;
     },

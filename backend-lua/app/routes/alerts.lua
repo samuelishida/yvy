@@ -107,7 +107,7 @@ local function get_region_for_coords(lat, lon)
 end
 
 local function meta_for_fire(lat, lon)
-    local biome = biome_lookup.classify_point(lat, lon)
+    local biome = biome_lookup.classify_point(lon, lat)
     if biome then
         return biome
     end
@@ -342,6 +342,7 @@ local function indigenous_land_alerts(fires)
             tick = "crit",
             meta = meta,
             state = (state_abbr ~= "" and state_abbr or region) .. " · " .. #lats .. " focos",
+            fire_count = #lats,
             center = {clat, clon},
             radius_km = radius_km,
             generated_at = now,
@@ -402,6 +403,7 @@ local function conservation_unit_alerts(fires)
             tick = "crit",
             meta = meta,
             state = (state_abbr ~= "" and state_abbr or region) .. " · " .. #lats .. " focos",
+            fire_count = #lats,
             center = {clat, clon},
             radius_km = radius_km,
             generated_at = now,

@@ -354,7 +354,13 @@ function _M.start()
     logger.info("Serving static files from: " .. STATIC_DIR)
     logger.info("Proxying /api/* to: " .. BACKEND_URL)
 
-    local server_skt = socket.tcp()
+    -- socket.tcp4() gives an immediate fd so SO_REUSEADDR applies pre-bind
+    local server_skt = assert(socket.tcp4())
+    local ok, err = server_skt:setoption("reuseaddr", true)
+    if not ok then
+        logger.error("setoption reuseaddr failed: " .. tostring(err))
+    end
+    pcall(function() server_skt:setoption("reuseport", true) end)
     assert(server_skt:bind("*", PORT))
     server_skt:listen(128)
 

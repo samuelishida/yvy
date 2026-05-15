@@ -92,7 +92,7 @@ function _M.load_biomes()
     logger.info("Loaded ", #biome_rings, " biome rings from file for ", #biome_colors, " biomes (saved to DB)")
 end
 
-function _M.classify_point(lat, lon)
+function _M.classify_point(lon, lat)
     for _, entry in ipairs(biome_rings) do
         if geo.point_in_ring(lon, lat, entry.ring) then
             return entry.name
@@ -131,7 +131,7 @@ function _M.classify_fires(fires)
         local lat = tonumber(fire.lat)
         local lon = tonumber(fire.lon)
         if lat and lon then
-            local biome = _M.classify_point(lat, lon)
+            local biome = _M.classify_point(lon, lat)
             if biome and counts[biome] then
                 counts[biome] = counts[biome] + 1
                 total = total + 1

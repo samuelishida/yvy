@@ -343,6 +343,17 @@ function MapController({ activeAlert }) {
       map.options.scrollWheelZoom = 'center';
       map.addHandler('smoothWheelZoom', L.SmoothWheelZoom);
     }
+
+    // Focus from URL params: /?lat=...&lng=...&zoom=...
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const lat = parseFloat(params.get('lat'));
+      const lng = parseFloat(params.get('lng'));
+      const zoom = parseInt(params.get('zoom'), 10);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        map.setView([lat, lng], Number.isFinite(zoom) ? zoom : 8, { animate: true, duration: 0.8 });
+      }
+    } catch (_) {}
   }, []); // eslint-disable-line
 
   useEffect(() => {

@@ -1,21 +1,12 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useI18n } from '../i18n';
 import { cachedFetch } from '../utils/apiCache';
+import HistoricalTrend from './Dashboard/HistoricalTrend';
+import GeoBreakdown from './Dashboard/GeoBreakdown';
+import TIAtRisk from './Dashboard/TIAtRisk';
 import './Dashboard.css';
 
 const asArray = v => Array.isArray(v) ? v : [];
-
-function StatCard({ icon, label, value, accent }) {
-  return (
-    <div className="stat-card" style={{ '--accent': accent || '#00C97A' }}>
-      <div className="stat-card__icon">{icon}</div>
-      <div className="stat-card__body">
-        <div className="stat-card__value">{value ?? '—'}</div>
-        <div className="stat-card__label">{label}</div>
-      </div>
-    </div>
-  );
-}
 
 const ALERT_TYPES = [
   { key: 'indigenous_land',   tKey: 'dashboard.cat_indigenous_land',   color: '#f59e0b', priority: 1 },
@@ -28,7 +19,6 @@ const ALERT_TYPES = [
 
 export default function Dashboard() {
   const { t } = useI18n();
-  const [stats,  setStats]  = useState(null);
   const [biomes, setBiomes] = useState(null);
   const [alerts, setAlerts] = useState(null);
 
@@ -36,7 +26,6 @@ export default function Dashboard() {
     const ac = new AbortController();
     const logErr = err => { if (err.name !== 'AbortError') console.error('Dashboard fetch error:', err); };
 
-    cachedFetch('/api/stats',  { ttl: 60_000,  signal: ac.signal }).then(setStats).catch(logErr);
     cachedFetch('/api/biomes', { ttl: 60_000,  signal: ac.signal }).then(d => setBiomes(asArray(d.biomes))).catch(logErr);
     cachedFetch('/api/alerts', { ttl: 180_000, signal: ac.signal }).then(d => setAlerts(asArray(d.alerts))).catch(logErr);
 
@@ -75,75 +64,69 @@ export default function Dashboard() {
 
   return (
     <div className="dashboard">
-      <div className="dash-header">
-        <div className="dash-header__left">
-          <h1 className="dash-title">{t('dashboard.monitorTitle')}</h1>
-          <p className="dash-sub">{t('dashboard.monitorSub')}</p>
-        </div>
-      </div>
-
-      <div className="stat-grid">
-        <StatCard icon="FC" label={t('dashboard.cardFires')}  value={stats?.fires?.toLocaleString('pt-BR')}         accent="#EF5350" />
-        <StatCard icon="PD" label={t('dashboard.cardProdes')} value={stats?.deforestation?.toLocaleString('pt-BR')} accent="#00C97A" />
-        <StatCard icon="AL" label={t('dashboard.cardAlerts')} value={alerts?.length?.toLocaleString('pt-BR')}       accent="#FF6200" />
-        <StatCard icon="NI" label={t('dashboard.cardNews')}   value={stats?.news?.toLocaleString('pt-BR')}          accent="#00C97A" />
-      </div>
-
       <div className="dash-body">
-        <div className="chart-card">
-          <div className="chart-card__header">
-            <h2>{t('dashboard.firesByBiome')}</h2>
-            <span className="chart-card__total">{t('dashboard.firesByBiomeMeta')}</span>
-          </div>
-          {biomes ? (
-            <div className="bar-chart">
-              {sortedBiomes.map((b, i) => {
-                const pct  = Math.max(2, (b.count / biomeMaxCount) * 100);
-                const share = ((b.count / biomeTotal) * 100).toFixed(1);
-                return (
-                  <div key={i} className="bar-row">
-                    <div className="bar-swatch" style={{ background: b.color }} />
-                    <div className="bar-label">{b.name}</div>
-                    <div className="bar-track">
-                      <div className="bar-fill" style={{ width: `${pct}%`, background: b.color }} />
-                    </div>
-                    <div className="bar-nums">
-                      <span className="bar-count">{b.count.toLocaleString('pt-BR')}</span>
-                      <span className="bar-pct">{share}%</span>
-                    </div>
-                  </div>
-                );
-              })}
+        <HistoricalTrend />
+
+        <div className="chart-card chart-card--combo">
+          <div className="combo-card__section">
+            <div className="chart-card__header">
+              <h2>{t('dashboard.firesByBiome')}</h2>
+              <span className="chart-card__total">{t('dashboard.firesByBiomeMeta')}</span>
             </div>
-          ) : <div className="dash-loading">{t('dashboard.loadingShort')}</div>}
+            {biomes ? (
+              <div className="bar-chart">
+                {sortedBiomes.map((b, i) => {
+                  const pct  = Math.max(2, (b.count / biomeMaxCount) * 100);
+                  const share = ((b.count / biomeTotal) * 100).toFixed(1);
+                  return (
+                    <div key={i} className="bar-row">
+                      <div className="bar-swatch" style={{ background: b.color }} />
+                      <div className="bar-label">{b.name}</div>
+                      <div className="bar-track">
+                        <div className="bar-fill" style={{ width: `${pct}%`, background: b.color }} />
+                      </div>
+                      <div className="bar-nums">
+                        <span className="bar-count">{b.count.toLocaleString('pt-BR')}</span>
+                        <span className="bar-pct">{share}%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : <div className="dash-loading">{t('dashboard.loadingShort')}</div>}
+          </div>
+          <div className="combo-card__divider" />
+          <div className="combo-card__section">
+            <div className="chart-card__header">
+              <h2>{t('dashboard.alertsByCategory')}</h2>
+              {alerts && <span className="chart-card__total">{alerts.length} {t('dashboard.activeLow')}</span>}
+            </div>
+            {alerts ? (
+              <div className="bar-chart">
+                {sortedAlertTypes.map(({ key, tKey, color }) => {
+                  const count = alertsByType[key] || 0;
+                  const pct   = count ? Math.max(2, (count / alertMaxCount) * 100) : 0;
+                  return (
+                    <div key={key} className="bar-row">
+                      <div className="bar-swatch" style={{ background: color }} />
+                      <div className="bar-label">{t(tKey)}</div>
+                      <div className="bar-track">
+                        <div className="bar-fill" style={{ width: `${pct}%`, background: color }} />
+                      </div>
+                      <div className="bar-nums">
+                        <span className="bar-count" style={{ color: count ? color : undefined }}>{count}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : <div className="dash-loading">{t('dashboard.loadingShort')}</div>}
+          </div>
         </div>
 
-        <div className="chart-card">
-          <div className="chart-card__header">
-            <h2>{t('dashboard.alertsByCategory')}</h2>
-            {alerts && <span className="chart-card__total">{alerts.length} {t('dashboard.activeLow')}</span>}
-          </div>
-          {alerts ? (
-            <div className="bar-chart">
-              {sortedAlertTypes.map(({ key, tKey, color }) => {
-                const count = alertsByType[key] || 0;
-                const pct   = count ? Math.max(2, (count / alertMaxCount) * 100) : 0;
-                return (
-                  <div key={key} className="bar-row">
-                    <div className="bar-swatch" style={{ background: color }} />
-                    <div className="bar-label">{t(tKey)}</div>
-                    <div className="bar-track">
-                      <div className="bar-fill" style={{ width: `${pct}%`, background: color }} />
-                    </div>
-                    <div className="bar-nums">
-                      <span className="bar-count" style={{ color: count ? color : undefined }}>{count}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : <div className="dash-loading">{t('dashboard.loadingShort')}</div>}
-        </div>
+        <TIAtRisk />
+
+        <GeoBreakdown />
       </div>
     </div>
   );

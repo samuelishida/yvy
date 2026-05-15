@@ -20,9 +20,10 @@ local logger = require("app.logger")
 
 -- ── Register routes ──────────────────────────────────────────────────────
 
-local fires         = require("app.routes.fires")
-local deforestation = require("app.routes.deforestation")
-local biomes        = require("app.routes.biomes")
+local fires               = require("app.routes.fires")
+local deforestation       = require("app.routes.deforestation")
+local deforestation_stats = require("app.routes.deforestation_stats")
+local biomes              = require("app.routes.biomes")
 local weather       = require("app.routes.weather")
 local news          = require("app.routes.news")
 local alerts        = require("app.routes.alerts")
@@ -152,11 +153,18 @@ end)
 
 -- Fires
 server.route("GET", "/api/fires", fires.get_fires)
+server.route("GET", "/api/fires/timeseries", fires.get_fires_timeseries)
+server.route("GET", "/api/fires/by-state", fires.get_fires_by_state)
+server.route("GET", "/api/fires/state-sparklines", fires.get_fires_state_sparklines)
+server.route("GET", "/api/fires/protected-share", fires.get_protected_share)
 server.route("POST", "/api/fires/sync", fires.sync_fires)
 server.route("POST", "/api/admin/firms/sync", fires.admin_firms_sync)
 
 -- Deforestation data
 server.route("GET", "/api/data", deforestation.get_data)
+
+-- PRODES historical (annual INPE totals)
+server.route("GET", "/api/deforestation/historical", deforestation_stats.get_historical)
 
 -- PRODES tiles (WMS proxy/cache)
 server.route("GET", "/api/tiles/prodes", tiles.get_tile)
@@ -200,6 +208,71 @@ server.route("GET", "/api/alerts", function(ctx)
     local result = alerts_mod.generate_all_alerts(fires_data, nil, os.getenv("WAQI_TOKEN"))
     local body = cjson.encode(result)
     redis.set("alerts:all", body, 1800)
+    ctx:set_header("Cache-Control", "public, max-age=300")
+    ctx:send(200, body)
+end)
+
+-- TI at-risk (top indigenous lands with recent fires)
+server.route("GET", "/api/fires/ti-at-risk", function(ctx)
+    if not auth.enforce(ctx) then return end
+    if not rl.enforce(ctx) then return end
+
+    local days = tonumber(ctx.req.args.days) or 7
+    local limit = tonumber(ctx.req.args.limit) or 10
+    local cache_key = "fires:ti_at_risk:" .. days .. ":" .. limit
+
+    local cached = redis.get(cache_key)
+    if cached then
+        ctx:set_header("Cache-Control", "public, max-age=300")
+        ctx:send(200, cached)
+        return
+    end
+
+    -- Fresh compute: classify fires against TI polygons
+    local fires_data = db.find_fires(-34.0, 5.5, -74.0, -34.0, 50000)
+    local cutoff = os.time() - days * 86400
+    local ti_lookup = require("app.lookups.indigenous_lands_lookup")
+    local by_ti = {}
+    for _, fire in ipairs(fires_data) do
+        local acq = fire.acq_date
+        local ts = acq and os.time({year = tonumber(acq:sub(1,4)), month = tonumber(acq:sub(6,7)), day = tonumber(acq:sub(9,10))}) or 0
+        if ts >= cutoff then
+            local info = ti_lookup.classify_point(fire.lon, fire.lat)
+            if info then
+                local name = info.name
+                local rec = by_ti[name]
+                if not rec then
+                    rec = {name = name, state_abbr = info.state_abbr or "", fire_count = 0, sum_lat = 0, sum_lon = 0}
+                    by_ti[name] = rec
+                end
+                rec.fire_count = rec.fire_count + 1
+                rec.sum_lat = rec.sum_lat + (tonumber(fire.lat) or 0)
+                rec.sum_lon = rec.sum_lon + (tonumber(fire.lon) or 0)
+            end
+        end
+    end
+
+    local sorted = {}
+    for _, rec in pairs(by_ti) do
+        sorted[#sorted + 1] = rec
+    end
+    table.sort(sorted, function(a, b) return a.fire_count > b.fire_count end)
+
+    local result = {}
+    for i = 1, math.min(limit, #sorted) do
+        local r = sorted[i]
+        local n = r.fire_count > 0 and r.fire_count or 1
+        result[#result + 1] = {
+            name = r.name,
+            state_abbr = r.state_abbr,
+            fire_count = r.fire_count,
+            lat = r.sum_lat / n,
+            lon = r.sum_lon / n,
+        }
+    end
+
+    local body = cjson.encode({ days = days, limit = limit, count = #result, lands = result })
+    redis.set(cache_key, body, 600)
     ctx:set_header("Cache-Control", "public, max-age=300")
     ctx:send(200, body)
 end)
