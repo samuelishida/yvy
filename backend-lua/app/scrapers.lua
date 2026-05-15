@@ -348,23 +348,69 @@ local function fetch_article_image(url)
 end
 
 -- Enrich articles missing urlToImage by fetching article HTML and reading og:image.
--- Bounded by ENRICH_LIMIT to avoid making ingest take forever on cold runs.
+-- Two-stage skip:
+--   1. Article RSS already had a usable urlToImage → skip
+--   2. DB already has a stored urlToImage for this URL → reuse + skip network
+-- Only URLs missing in BOTH places get a live HTML fetch.
 local ENRICH_LIMIT = 40
 function _M.enrich_missing_images(articles)
-    local enriched = 0
+    -- Build candidates: articles that look like they need enrichment
+    local candidates = {}
+    local candidate_urls = {}
     for _, a in ipairs(articles) do
-        if enriched >= ENRICH_LIMIT then break end
         if not a.urlToImage or a.urlToImage == "" or looks_bad_image_url(a.urlToImage) then
-            local img = fetch_article_image(a.url)
-            if img then
-                a.urlToImage = img
-                enriched = enriched + 1
-                logger.info("Enriched image for " .. (a.source_name or "?") .. ": " .. tostring(a.url))
+            if type(a.url) == "string" and a.url ~= "" then
+                candidates[#candidates + 1] = a
+                candidate_urls[#candidate_urls + 1] = a.url
             end
         end
     end
-    if enriched > 0 then
-        logger.info("Enriched " .. enriched .. " article images via og:image")
+
+    if #candidates == 0 then return 0 end
+
+    -- Lookup existing images in DB so we never re-fetch what we already stored.
+    -- Required lazily so this module stays usable in non-DB contexts (tests).
+    local existing = {}
+    local ok, db = pcall(require, "app.db")
+    if ok and db and db.get_news_fields_by_urls then
+        local ok2, rows = pcall(db.get_news_fields_by_urls, candidate_urls, {"urlToImage"})
+        if ok2 and type(rows) == "table" then
+            for url, fields in pairs(rows) do
+                local img = fields and fields.urlToImage
+                if img and img ~= "" and not looks_bad_image_url(img) then
+                    existing[url] = img
+                end
+            end
+        end
+    end
+
+    local enriched = 0
+    local reused = 0
+    local fetched = 0
+    for _, a in ipairs(candidates) do
+        local cached = existing[a.url]
+        if cached then
+            a.urlToImage = cached
+            reused = reused + 1
+        else
+            if fetched >= ENRICH_LIMIT then
+                -- Stop network fetches once limit hit; any remaining stay imageless
+            else
+                local img = fetch_article_image(a.url)
+                fetched = fetched + 1
+                if img then
+                    a.urlToImage = img
+                    enriched = enriched + 1
+                    logger.info("Enriched image for " .. (a.source_name or "?") .. ": " .. tostring(a.url))
+                end
+            end
+        end
+    end
+
+    if reused > 0 or enriched > 0 then
+        logger.info(string.format(
+            "Image enrichment: reused %d from DB, fetched %d new (net hits: %d)",
+            reused, enriched, fetched))
     end
     return enriched
 end

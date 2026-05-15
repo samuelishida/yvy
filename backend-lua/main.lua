@@ -242,10 +242,12 @@ server.route("GET", "/api/fires/ti-at-risk", function(ctx)
                 local name = info.name
                 local rec = by_ti[name]
                 if not rec then
-                    rec = {name = name, state_abbr = info.state_abbr or "", fire_count = 0}
+                    rec = {name = name, state_abbr = info.state_abbr or "", fire_count = 0, sum_lat = 0, sum_lon = 0}
                     by_ti[name] = rec
                 end
                 rec.fire_count = rec.fire_count + 1
+                rec.sum_lat = rec.sum_lat + (tonumber(fire.lat) or 0)
+                rec.sum_lon = rec.sum_lon + (tonumber(fire.lon) or 0)
             end
         end
     end
@@ -258,7 +260,15 @@ server.route("GET", "/api/fires/ti-at-risk", function(ctx)
 
     local result = {}
     for i = 1, math.min(limit, #sorted) do
-        result[#result + 1] = sorted[i]
+        local r = sorted[i]
+        local n = r.fire_count > 0 and r.fire_count or 1
+        result[#result + 1] = {
+            name = r.name,
+            state_abbr = r.state_abbr,
+            fire_count = r.fire_count,
+            lat = r.sum_lat / n,
+            lon = r.sum_lon / n,
+        }
     end
 
     local body = cjson.encode({ days = days, limit = limit, count = #result, lands = result })

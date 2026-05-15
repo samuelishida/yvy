@@ -26,7 +26,7 @@ function TooltipContent({ active, payload }) {
   );
 }
 
-export default function FireTrend({ days = 30, state = null }) {
+export default function FireTrend({ days = 30, state = null, bare = false }) {
   const { t } = useI18n();
   const [series, setSeries] = useState(null);
   const [error, setError] = useState(false);
@@ -45,8 +45,8 @@ export default function FireTrend({ days = 30, state = null }) {
     return series.map(p => ({ date: p.date, count: Number(p.count) || 0 }));
   }, [series]);
 
-  return (
-    <div className="chart-card chart-card--trend">
+  const inner = (
+    <>
       <div className="chart-card__header">
         <h2>{t('dashboard.fireTrend')}</h2>
         <span className="chart-card__total">{t('dashboard.fireTrendSub', { days })}</span>
@@ -90,6 +90,9 @@ export default function FireTrend({ days = 30, state = null }) {
           </ResponsiveContainer>
         </div>
       )}
-    </div>
+    </>
   );
+
+  if (bare) return <div className="combo-card__section">{inner}</div>;
+  return <div className="chart-card chart-card--trend">{inner}</div>;
 }

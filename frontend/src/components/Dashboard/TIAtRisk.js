@@ -4,10 +4,15 @@ import { Link } from "react-router-dom";
 
 const API_BASE = process.env.REACT_APP_API_URL || "/api";
 
-function makeMapUrl(name) {
-  if (!name) return "/mapas-tematicos";
-  const q = encodeURIComponent(name.trim());
-  return `/mapas-tematicos?q=${q}`;
+function makeMapUrl(land) {
+  const lat = Number(land?.lat);
+  const lon = Number(land?.lon);
+  if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    return `/?lat=${lat.toFixed(4)}&lng=${lon.toFixed(4)}&zoom=8`;
+  }
+  const name = land?.name;
+  if (!name) return "/";
+  return `/?q=${encodeURIComponent(name.trim())}`;
 }
 
 export default function TIAtRisk() {
@@ -40,7 +45,7 @@ export default function TIAtRisk() {
               <div className="ti-rank">{idx + 1}</div>
               <div className="ti-info">
                 <div className="ti-name">
-                  <Link to={makeMapUrl(l.name)} className="ti-link">{l.name}</Link>
+                  <Link to={makeMapUrl(l)} className="ti-link">{l.name}</Link>
                 </div>
                 <div className="ti-meta">
                   {l.state_abbr || ""} · {l.fire_count} {t("fires")}

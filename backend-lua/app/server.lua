@@ -349,8 +349,15 @@ end
 function _M.start()
     logger.info("Yvy backend (Lua baremetal) starting on " .. HOST .. ":" .. PORT)
 
-    local server_skt = socket.tcp()
-    server_skt:setoption("reuseaddr", true)
+    -- socket.tcp4() creates the fd immediately so SO_REUSEADDR sticks
+    -- before bind(); socket.tcp() defers fd creation, leaving setoption a no-op
+    -- and causing EADDRINUSE if TIME-WAIT entries exist on the port.
+    local server_skt = assert(socket.tcp4())
+    local ok, err = server_skt:setoption("reuseaddr", true)
+    if not ok then
+        logger.error("setoption reuseaddr failed: " .. tostring(err))
+    end
+    pcall(function() server_skt:setoption("reuseport", true) end)
     assert(server_skt:bind(HOST, PORT))
     server_skt:listen(128)
 

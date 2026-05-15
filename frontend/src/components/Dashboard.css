@@ -292,6 +292,45 @@
   letter-spacing: 0.04em;
 }
 
+.chart-card--combo {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.chart-card--combo .combo-card__section {
+  display: flex;
+  flex-direction: column;
+  min-height: 260px;
+}
+
+.chart-card--combo .combo-card__section .chart-canvas,
+.chart-card--combo .combo-card__section .bar-chart {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.chart-card--combo .combo-card__divider {
+  height: 1px;
+  background: rgba(42, 53, 48, 0.8);
+  margin: 0;
+}
+
+/* Make grid items stretch to the tallest in the row */
+.dash-body > .chart-card,
+.dash-body > .dash-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-body > .chart-card > .bar-chart,
+.dash-body > .chart-card > .chart-canvas {
+  flex: 1 1 auto;
+}
+
 /* ── Bar rows ────────────────────────────────────────── */
 .bar-chart {
   display: flex;

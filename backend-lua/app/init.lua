@@ -71,35 +71,81 @@ end
 
 -- ── Background tasks (simple sleep-loop coroutines) ──────────────────────
 
+-- Returns seconds elapsed since the ISO-8601 timestamp in `redis_key`, or nil
+-- if the key is missing/unparseable. Used to skip the first iteration of a
+-- sync loop when a recent run already populated the source data.
+local function seconds_since(redis_key)
+    local iso = redis.get(redis_key)
+    if not iso or iso == "" then return nil end
+    local y, mo, d, h, mi, s = iso:match("^(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)")
+    if not y then return nil end
+    local t = os.time({
+        year  = tonumber(y), month = tonumber(mo), day   = tonumber(d),
+        hour  = tonumber(h), min   = tonumber(mi), sec   = tonumber(s),
+    })
+    if not t then return nil end
+    -- ISO timestamps are stored as UTC; adjust for local-tz offset that os.time applies
+    local utc_now = os.time(os.date("!*t"))
+    local local_now = os.time()
+    local tz_offset = local_now - utc_now
+    return os.time() - (t + tz_offset)
+end
+
 local function fires_sync_loop()
     copas.sleep(10)
     while true do
-        logger.info("Background FIRMS sync starting")
-        pcall(fires_mod.fetch_firms_data, false)
-        copas.sleep(FIRMS_SYNC_INTERVAL)
+        local age = seconds_since("fires:last_sync")
+        if age and age < FIRMS_SYNC_INTERVAL then
+            logger.info(string.format(
+                "FIRMS sync skipped — last sync %.0fmin ago (< %.0fmin interval)",
+                age / 60, FIRMS_SYNC_INTERVAL / 60))
+            copas.sleep(FIRMS_SYNC_INTERVAL - age)
+        else
+            logger.info("Background FIRMS sync starting")
+            pcall(fires_mod.fetch_firms_data, false)
+            copas.sleep(FIRMS_SYNC_INTERVAL)
+        end
     end
 end
 
 local function news_sync_loop()
     copas.sleep(15)
     while true do
-        logger.info("Background news sync starting")
-        pcall(news_mod.fetch_and_save_news)
-        copas.sleep(NEWS_SYNC_INTERVAL)
+        local age = seconds_since("news:last_sync")
+        if age and age < NEWS_SYNC_INTERVAL then
+            logger.info(string.format(
+                "News sync skipped — last sync %.0fmin ago (< %.0fmin interval)",
+                age / 60, NEWS_SYNC_INTERVAL / 60))
+            copas.sleep(NEWS_SYNC_INTERVAL - age)
+        else
+            logger.info("Background news sync starting")
+            pcall(news_mod.fetch_and_save_news)
+            redis.set("news:last_sync", os.date("!%Y-%m-%dT%H:%M:%SZ"), NEWS_SYNC_INTERVAL * 2)
+            copas.sleep(NEWS_SYNC_INTERVAL)
+        end
     end
 end
 
 local function alerts_sync_loop()
     copas.sleep(60)
     while true do
-        logger.info("Background alerts refresh starting")
-        pcall(function()
-            local fires = db.find_fires(-34.0, 5.5, -74.0, -34.0, 10000)
-            local result = alerts_mod.generate_all_alerts(fires, nil, os.getenv("WAQI_TOKEN"))
-            redis.set("alerts:all", cjson.encode(result), 1800)
-            logger.info("Alerts cache refreshed: " .. result.count .. " alerts")
-        end)
-        copas.sleep(ALERTS_SYNC_INTERVAL)
+        local age = seconds_since("alerts:last_sync")
+        if age and age < ALERTS_SYNC_INTERVAL then
+            logger.info(string.format(
+                "Alerts refresh skipped — last refresh %.0fmin ago (< %.0fmin interval)",
+                age / 60, ALERTS_SYNC_INTERVAL / 60))
+            copas.sleep(ALERTS_SYNC_INTERVAL - age)
+        else
+            logger.info("Background alerts refresh starting")
+            pcall(function()
+                local fires = db.find_fires(-34.0, 5.5, -74.0, -34.0, 10000)
+                local result = alerts_mod.generate_all_alerts(fires, nil, os.getenv("WAQI_TOKEN"))
+                redis.set("alerts:all", cjson.encode(result), 1800)
+                redis.set("alerts:last_sync", os.date("!%Y-%m-%dT%H:%M:%SZ"), ALERTS_SYNC_INTERVAL * 2)
+                logger.info("Alerts cache refreshed: " .. result.count .. " alerts")
+            end)
+            copas.sleep(ALERTS_SYNC_INTERVAL)
+        end
     end
 end
 
