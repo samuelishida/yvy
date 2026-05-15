@@ -23,6 +23,9 @@ local _M = {}
 local FIRMS_SYNC_INTERVAL = tonumber(os.getenv("FIRMS_SYNC_INTERVAL_HOURS") or "4") * 3600
 local NEWS_SYNC_INTERVAL  = tonumber(os.getenv("NEWS_SYNC_INTERVAL_MINUTES") or "15") * 60
 local ALERTS_SYNC_INTERVAL = 1800  -- 30 minutes
+local STATS_PREWARM_INTERVAL = 60  -- 1 minute
+local BIOMES_PREWARM_INTERVAL = 300  -- 5 minutes
+local NEWS_PREWARM_INTERVAL = 300  -- 5 minutes
 
 -- ── Startup ──────────────────────────────────────────────────────────────
 
@@ -93,10 +96,64 @@ local function alerts_sync_loop()
     end
 end
 
+local function stats_prewarm_loop()
+    copas.sleep(5)
+    while true do
+        pcall(function()
+            local body = cjson.encode(db.get_stats())
+            redis.set("stats:all", body, STATS_PREWARM_INTERVAL + 30)
+        end)
+        copas.sleep(STATS_PREWARM_INTERVAL)
+    end
+end
+
+local function biomes_prewarm_loop()
+    local biome_lookup = require("app.lookups.biome_lookup")
+    local MAX_RESULTS = tonumber(os.getenv("MAX_RESULTS_PER_REQUEST") or "10000")
+    copas.sleep(20)
+    while true do
+        pcall(function()
+            local fires = db.find_fires(-34.0, 5.5, -74.0, -34.0, MAX_RESULTS)
+            local result = biome_lookup.classify_fires(fires)
+            local last_sync = redis.get("fires:last_sync")
+            local body = cjson.encode({biomes = result, total_fires = #fires, last_sync = last_sync})
+            redis.set("biomes:all", body, BIOMES_PREWARM_INTERVAL + 60)
+        end)
+        copas.sleep(BIOMES_PREWARM_INTERVAL)
+    end
+end
+
+local function news_prewarm_loop()
+    copas.sleep(30)
+    while true do
+        pcall(function()
+            -- Pre-warm hot pages: page 1 small (10) and medium (20) for PT and EN
+            local combos = {
+                {"pt", 1, 10}, {"pt", 1, 20},
+                {"en", 1, 10}, {"en", 1, 20},
+            }
+            for _, combo in ipairs(combos) do
+                local lang, page, page_size = combo[1], combo[2], combo[3]
+                local key = "news:" .. lang .. ":" .. page .. ":" .. page_size
+                if not redis.get(key) then
+                    local articles = db.get_news_page(page, page_size, lang)
+                    if articles and #articles > 0 then
+                        redis.set(key, cjson.encode(articles), 300)
+                    end
+                end
+            end
+        end)
+        copas.sleep(NEWS_PREWARM_INTERVAL)
+    end
+end
+
 function _M.start_background_tasks()
     copas.addthread(fires_sync_loop)
     copas.addthread(news_sync_loop)
     copas.addthread(alerts_sync_loop)
+    copas.addthread(stats_prewarm_loop)
+    copas.addthread(biomes_prewarm_loop)
+    copas.addthread(news_prewarm_loop)
 end
 
 return _M

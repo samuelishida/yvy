@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, CircleMarker, Circle, Popup, GeoJSON, useMapEv
 import { TreePine, Flame, ChevronDown } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { getCache, setCache } from '../utils/cache';
+import { cachedFetch, invalidateApiCache } from '../utils/apiCache';
 import 'leaflet/dist/leaflet.css';
 import '../Home.css';
 import L from 'leaflet';
@@ -490,8 +491,7 @@ const BiomePanel = React.memo(function BiomePanel({ onBiomeHover }) {
 
   useEffect(() => {
     const ac = new AbortController();
-    fetch('/api/biomes', { signal: ac.signal })
-      .then(r => r.json())
+    cachedFetch('/api/biomes', { ttl: 60_000, signal: ac.signal })
       .then(d => { setBiomes(asArray(d.biomes)); })
       .catch(err => { if (err.name !== 'AbortError') console.error('Biomes fetch error:', err); });
     return () => ac.abort();
@@ -943,16 +943,16 @@ export default function Home() {
 
   useEffect(() => {
     let ac = new AbortController();
-    const fetchAlerts = () => {
+    const fetchAlerts = (forceRefresh) => {
       ac.abort();
       ac = new AbortController();
-      fetch('/api/alerts', { signal: ac.signal })
-        .then(r => r.json())
+      if (forceRefresh) invalidateApiCache('/api/alerts');
+      cachedFetch('/api/alerts', { ttl: 180_000, signal: ac.signal })
         .then(d => setAlerts(asArray(d.alerts)))
         .catch(err => { if (err.name !== 'AbortError') console.error('Alerts fetch error:', err); });
     };
-    fetchAlerts();
-    const id = setInterval(fetchAlerts, 60000);
+    fetchAlerts(false);
+    const id = setInterval(() => fetchAlerts(true), 180000);
     return () => {
       clearInterval(id);
       ac.abort();

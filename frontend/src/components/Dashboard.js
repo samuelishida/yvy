@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useI18n } from '../i18n';
+import { cachedFetch } from '../utils/apiCache';
 import './Dashboard.css';
 
 const asArray = v => Array.isArray(v) ? v : [];
@@ -35,9 +36,9 @@ export default function Dashboard() {
     const ac = new AbortController();
     const logErr = err => { if (err.name !== 'AbortError') console.error('Dashboard fetch error:', err); };
 
-    fetch('/api/stats',  { signal: ac.signal }).then(r => r.json()).then(setStats).catch(logErr);
-    fetch('/api/biomes', { signal: ac.signal }).then(r => r.json()).then(d => setBiomes(asArray(d.biomes))).catch(logErr);
-    fetch('/api/alerts', { signal: ac.signal }).then(r => r.json()).then(d => setAlerts(asArray(d.alerts))).catch(logErr);
+    cachedFetch('/api/stats',  { ttl: 60_000,  signal: ac.signal }).then(setStats).catch(logErr);
+    cachedFetch('/api/biomes', { ttl: 60_000,  signal: ac.signal }).then(d => setBiomes(asArray(d.biomes))).catch(logErr);
+    cachedFetch('/api/alerts', { ttl: 180_000, signal: ac.signal }).then(d => setAlerts(asArray(d.alerts))).catch(logErr);
 
     return () => ac.abort();
   }, []);

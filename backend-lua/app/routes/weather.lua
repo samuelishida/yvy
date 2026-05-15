@@ -55,7 +55,11 @@ function _M.get_air_quality(ctx)
     end
 
     local cached = redis.get(cache_key)
-    if cached then ctx:send(200, cached); return end
+    if cached then
+        ctx:set_header("Cache-Control", "public, max-age=600")
+        ctx:send(200, cached)
+        return
+    end
 
     if station == "" and lat and lon then station = "@" .. lat .. "," .. lon
     elseif station == "" then station = "brasilia" end
@@ -91,6 +95,7 @@ function _M.get_air_quality(ctx)
     if result then
         local body = cjson.encode(result)
         redis.set(cache_key, body, 900)
+        ctx:set_header("Cache-Control", "public, max-age=600")
         ctx:send(200, body)
     else
         ctx:json(200, {aqi = cjson.null})
@@ -108,7 +113,11 @@ function _M.get_temperature(ctx)
 
     local cache_key = "weather:temp:" .. string.format("%.1f:%.1f", tonumber(lat), tonumber(lon))
     local cached = redis.get(cache_key)
-    if cached then ctx:send(200, cached); return end
+    if cached then
+        ctx:set_header("Cache-Control", "public, max-age=600")
+        ctx:send(200, cached)
+        return
+    end
 
     local url = "https://api.open-meteo.com/v1/forecast"
         .. "?latitude=" .. lat .. "&longitude=" .. lon
@@ -131,6 +140,7 @@ function _M.get_temperature(ctx)
 
     local body = cjson.encode(result)
     redis.set(cache_key, body, 900)
+    ctx:set_header("Cache-Control", "public, max-age=600")
     ctx:send(200, body)
 end
 

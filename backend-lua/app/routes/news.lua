@@ -9,13 +9,17 @@ local translate = require("app.translate")
 local cjson = require("cjson")
 local logger = require("app.logger")
 local utils = require("app.utils")
+local redis = require("app.redis")
 
 local _M = {}
 
-local news_cache = {}
 local NEWS_CACHE_TTL = 300
 local RECENT_NEWS_MINUTES = 15
 local REPAIR_SCAN_LIMIT = 500
+
+local function news_cache_key(lang, page, page_size)
+    return "news:" .. lang .. ":" .. page .. ":" .. page_size
+end
 
 local function normalize_text(value)
     if type(value) ~= "string" then
@@ -177,11 +181,11 @@ function _M.get_news(ctx)
         lang = "pt"
     end
 
-    local cache_key = "news_" .. lang .. "_" .. page .. "_" .. page_size
-    local cached = news_cache[cache_key]
-    if cached and os.time() - cached.time < NEWS_CACHE_TTL then
+    local cache_key = news_cache_key(lang, page, page_size)
+    local cached = redis.get(cache_key)
+    if cached then
         ctx:set_header("Cache-Control", "public, max-age=300")
-        ctx:send(200, cached.body)
+        ctx:send(200, cached)
         return
     end
 
@@ -257,7 +261,7 @@ function _M.get_news(ctx)
     end
 
     local body = cjson.encode(articles)
-    news_cache[cache_key] = {time = os.time(), body = body}
+    redis.set(cache_key, body, NEWS_CACHE_TTL)
     ctx:set_header("Cache-Control", "public, max-age=300")
     ctx:send(200, body)
 end
@@ -341,7 +345,7 @@ function _M.fetch_and_save_news(opts)
     end
 
     db.bulk_upsert_news(deduped)
-    news_cache = {}
+    redis.delete_pattern("news:*")
     pcall(repair_bad_translations, 50)
     logger.info("News sync complete: " .. #deduped .. " articles")
     return db.get_news_page(1, 20, "pt")
@@ -363,7 +367,7 @@ function _M.repair_news(ctx)
     if not rl.enforce(ctx) then return end
 
     local result = repair_bad_translations(REPAIR_SCAN_LIMIT)
-    news_cache = {}
+    redis.delete_pattern("news:*")
     result.status = "repair_complete"
     ctx:json(200, result)
 end

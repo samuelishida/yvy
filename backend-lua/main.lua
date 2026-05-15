@@ -90,12 +90,17 @@ server.route("GET", "/api/biomes", biomes.get_biomes)
 server.route("GET", "/api/biome-boundaries", function(ctx)
     if not rl.enforce(ctx) then return end
     local cached = redis.get("biome:boundaries")
-    if cached then ctx:send(200, cached); return end
+    if cached then
+        ctx:set_header("Cache-Control", "public, max-age=3600")
+        ctx:send(200, cached)
+        return
+    end
     local bl = require("app.lookups.biome_lookup")
     local ok, geojson = pcall(bl.get_geojson)
     if not ok then ctx:json(500, {error = "biome data unavailable"}); return end
     local body = cjson.encode(geojson)
     redis.set("biome:boundaries", body, 3600)
+    ctx:set_header("Cache-Control", "public, max-age=3600")
     ctx:send(200, body)
 end)
 
@@ -105,7 +110,11 @@ server.route("GET", "/api/alerts", function(ctx)
     if not rl.enforce(ctx) then return end
 
     local cached = redis.get("alerts:all")
-    if cached and not cached:find('"alerts"%s*:%s*{}') then ctx:send(200, cached); return end
+    if cached and not cached:find('"alerts"%s*:%s*{}') then
+        ctx:set_header("Cache-Control", "public, max-age=300")
+        ctx:send(200, cached)
+        return
+    end
     if cached then redis.delete("alerts:all") end
 
     local alerts_mod = require("app.routes.alerts")
@@ -113,6 +122,7 @@ server.route("GET", "/api/alerts", function(ctx)
     local result = alerts_mod.generate_all_alerts(fires_data, nil, os.getenv("WAQI_TOKEN"))
     local body = cjson.encode(result)
     redis.set("alerts:all", body, 1800)
+    ctx:set_header("Cache-Control", "public, max-age=300")
     ctx:send(200, body)
 end)
 
@@ -129,30 +139,57 @@ server.route("GET", "/api/weather/temperature", weather.get_temperature)
 -- Indigenous lands
 server.route("GET", "/api/indigenous-lands", function(ctx)
     if not rl.enforce(ctx) then return end
-    ctx:send(200, read_lookup_json("indigenous_lands", {
+    local cached = redis.get("lookup:indigenous_lands")
+    if cached then
+        ctx:set_header("Cache-Control", "public, max-age=3600")
+        ctx:send(200, cached)
+        return
+    end
+    local body = read_lookup_json("indigenous_lands", {
         script_dir .. "data/indigenous_lands.json",
         script_dir .. "../backend/indigenous_lands.json",
         "data/indigenous_lands.json",
         "../backend/indigenous_lands.json",
-    }))
+    })
+    redis.set("lookup:indigenous_lands", body, 3600)
+    ctx:set_header("Cache-Control", "public, max-age=3600")
+    ctx:send(200, body)
 end)
 
 -- Conservation units
 server.route("GET", "/api/conservation-units", function(ctx)
     if not rl.enforce(ctx) then return end
-    ctx:send(200, read_lookup_json("conservation_units", {
+    local cached = redis.get("lookup:conservation_units")
+    if cached then
+        ctx:set_header("Cache-Control", "public, max-age=3600")
+        ctx:send(200, cached)
+        return
+    end
+    local body = read_lookup_json("conservation_units", {
         script_dir .. "data/conservation_units.json",
         script_dir .. "../backend/conservation_units.json",
         "data/conservation_units.json",
         "../backend/conservation_units.json",
-    }))
+    })
+    redis.set("lookup:conservation_units", body, 3600)
+    ctx:set_header("Cache-Control", "public, max-age=3600")
+    ctx:send(200, body)
 end)
 
 -- Stats
 server.route("GET", "/api/stats", function(ctx)
     if not auth.enforce(ctx) then return end
     if not rl.enforce(ctx) then return end
-    ctx:json(200, db.get_stats())
+    local cached = redis.get("stats:all")
+    if cached then
+        ctx:set_header("Cache-Control", "public, max-age=60")
+        ctx:send(200, cached)
+        return
+    end
+    local body = cjson.encode(db.get_stats())
+    redis.set("stats:all", body, 60)
+    ctx:set_header("Cache-Control", "public, max-age=60")
+    ctx:send(200, body)
 end)
 
 -- ── Startup ──────────────────────────────────────────────────────────────

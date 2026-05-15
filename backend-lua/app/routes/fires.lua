@@ -38,10 +38,11 @@ function _M.get_fires(ctx)
     local sw_lat = args.sw_lat
     local sw_lng = args.sw_lng
 
-    local cache_key = "fires:" .. (ne_lat or "global") .. ":" .. (ne_lng or "") .. ":" .. (sw_lat or "") .. ":" .. (sw_lng or "")
+    local cache_key = "firescache:" .. (ne_lat or "global") .. ":" .. (ne_lng or "") .. ":" .. (sw_lat or "") .. ":" .. (sw_lng or "")
 
     local cached = redis.get(cache_key)
     if cached then
+        ctx:set_header("Cache-Control", "public, max-age=60")
         ctx:send(200, cached)
         return
     end
@@ -64,6 +65,7 @@ function _M.get_fires(ctx)
 
     local response = cjson.encode({fires = data, last_sync = last_sync})
     redis.set(cache_key, response, 60)
+    ctx:set_header("Cache-Control", "public, max-age=60")
     ctx:send(200, response)
 end
 
@@ -113,8 +115,8 @@ function _M.fetch_firms_data(global_sync)
         end
     end
 
+    redis.delete_pattern("firescache:*")
     redis.set("fires:last_sync", utils.now_iso(), 3600)
-    redis.delete("fires:*")
     logger.info("FIRMS sync complete: " .. total_count .. " records")
     return total_count
 end

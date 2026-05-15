@@ -32,10 +32,11 @@ wait_for_port() {
 }
 
 wait_port_free() {
-    local port="$1" timeout="${2:-10}"
+    local port="$1" timeout="${2:-15}"
     local deadline=$(( $(date +%s) + timeout ))
     while (( $(date +%s) < deadline )); do
-        if ! lsof -i :"$port" >/dev/null 2>&1 \
+        if ! fuser -n tcp "$port" >/dev/null 2>&1 \
+           && ! lsof -i :"$port" >/dev/null 2>&1 \
            && ! ss -tln "sport = :$port" 2>/dev/null | grep -q ":$port"; then
             return 0
         fi
@@ -53,16 +54,20 @@ mkdir -p "$RUNTIME_DIR"
 
 "$SCRIPT_DIR/stop-lua-stack.sh"
 
-# Ensure ports actually released before starting (stop script may report success
-# but kernel takes a moment to release sockets, or another process may hold them).
+# Ensure ports actually released before starting
 for port in 5000 5001; do
-    if ! wait_port_free "$port" 10; then
+    if ! wait_port_free "$port" 15; then
         echo "ERROR: Port $port still in use after stop. Holder:"
-        lsof -i :"$port" 2>/dev/null || ss -tlnp "sport = :$port" 2>/dev/null || true
+        fuser -n tcp "$port" 2>/dev/null | sed 's/^/  /' || true
+        lsof -i :"$port" 2>/dev/null | sed 's/^/  /' || true
+        ss -tlnp "sport = :$port" 2>/dev/null | sed 's/^/  /' || true
         echo "Try: sudo fuser -k -KILL -n tcp $port"
         exit 1
     fi
 done
+
+# Grace period for kernel socket cleanup (TIME_WAIT / defunct fds)
+sleep 1
 
 if (( ! SKIP_FRONTEND_BUILD )); then
     echo "Building frontend..."
@@ -88,6 +93,9 @@ echo "$BACKEND_PID" > "$RUNTIME_DIR/backend.pid"
 
 if ! wait_for_port 5000 "$BACKEND_PID" 30; then
     echo "Lua backend did not start on port 5000."
+    echo "Processes on port 5000:"
+    fuser -n tcp 5000 2>/dev/null | sed 's/^/  /' || true
+    lsof -i :5000 2>/dev/null | sed 's/^/  /' || true
     log_tail "$BACKEND_ERR"
     exit 1
 fi
