@@ -145,8 +145,6 @@ const translations = {
       equivLabel: 'Equivalência',
       equivCaption: '≈ {sp} cidades de São Paulo · ≈ {fields} milhões de campos de futebol',
       filtersBiomeShown: 'Bioma destacado: {biome}',
-      tiAtRiskTitle: 'Terras Indígenas em Risco',
-      tiAtRiskSubtitle: 'Com maior incidência de focos de calor na última semana',
     },
     maps: {
       globalForests: 'Florestas Globais',
@@ -301,8 +299,6 @@ const translations = {
       equivLabel: 'Scale',
       equivCaption: '≈ {sp} São Paulo cities · ≈ {fields} million football fields',
       filtersBiomeShown: 'Highlighted biome: {biome}',
-      tiAtRiskTitle: 'Indigenous Lands at Risk',
-      tiAtRiskSubtitle: 'Highest fire incidence in the last week',
     },
     maps: {
       globalForests: 'Global Forests',

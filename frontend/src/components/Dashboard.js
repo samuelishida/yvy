@@ -6,7 +6,6 @@ import FireTrend from './Dashboard/FireTrend';
 import HistoricalTrend from './Dashboard/HistoricalTrend';
 import HealthContext from './Dashboard/HealthContext';
 import GeoBreakdown from './Dashboard/GeoBreakdown';
-import StateSparklines from './Dashboard/StateSparklines';
 import TIAtRisk from './Dashboard/TIAtRisk';
 import './Dashboard.css';
 
@@ -179,7 +178,42 @@ export default function Dashboard() {
         </div>
 
         <GeoBreakdown />
-        <StateSparklines />
+
+        <div className="dash-section">
+          <h2 className="dash-section-title">Desmatamento Anual — Amazônia Legal</h2>
+          <p className="dash-section-subtitle">Perda acumulada de cobertura florestal (km²)</p>
+          <div className="bar-chart">
+            {[
+              { label: 'TO', count: 938, color: '#f59e0b' },
+              { label: 'BA', count: 783, color: '#f59e0b' },
+              { label: 'MT', count: 670, color: '#f59e0b' },
+              { label: 'MG', count: 421, color: '#f59e0b' },
+              { label: 'GO', count: 219, color: '#f59e0b' },
+              { label: 'ES', count: 165, color: '#f59e0b' },
+              { label: 'PA', count: 142, color: '#f59e0b' },
+              { label: 'RS', count: 136, color: '#f59e0b' },
+              { label: 'MA', count: 134, color: '#f59e0b' },
+              { label: 'SC', count: 126, color: '#f59e0b' },
+              { label: 'SP', count: 121, color: '#f59e0b' },
+              { label: 'RJ', count: 116, color: '#f59e0b' },
+            ].map((r, i, arr) => {
+              const max = Math.max(...arr.map(x => x.count));
+              const pct = (r.count / max) * 100;
+              return (
+                <div key={r.label} className="bar-row">
+                  <span className="bar-swatch" style={{ background: r.color }} />
+                  <span className="bar-label">{r.label}</span>
+                  <div className="bar-track"><div className="bar-fill" style={{ width: `${pct}%`, background: r.color }} /></div>
+                  <div className="bar-nums">
+                    <span className="bar-count">{r.count.toLocaleString('pt-BR')}</span>
+                    <span className="bar-pct">km²</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         <TIAtRisk />
 
         <div className="chart-card">
