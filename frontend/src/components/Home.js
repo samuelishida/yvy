@@ -273,24 +273,46 @@ function ViewportFireFilter({ fires, onVisibleFiresChange }) {
   return null;
 }
 
-// Forces a canvas re-paint when `flag` toggles. Works around a known Leaflet
-// canvas-renderer quirk: unmounting many CircleMarkers does not always trigger
-// a redraw, so previously drawn dots ghost on the canvas until the next pan.
+// Reconciles the fire layer with the showFires toggle. Two known issues with
+// react-leaflet + preferCanvas:
+//   1. Unmounting many CircleMarkers does not always trigger a canvas redraw,
+//      leaving ghost dots until the next pan/zoom.
+//   2. Under React 18 strict-mode / concurrent renders, react-leaflet
+//      occasionally drops the unmount path for a marker, leaving the Leaflet
+//      layer attached even though the React component is gone.
+//
+// Strategy: defer one animation frame so React's commit finishes, then —
+// when showFires is false — sweep every CircleMarker still on the map and
+// detach it. Finally force every canvas renderer to clear+redraw.
 function CanvasRedrawOnToggle({ flag }) {
   const map = useMap();
   useEffect(() => {
     if (!map) return;
-    const renderer = map._renderer || map.options.renderer;
-    if (!renderer) return;
-    // _update is the public-ish API Leaflet uses internally for redraw.
-    if (typeof renderer._update === 'function') {
-      try { renderer._update(); } catch (_) { /* noop */ }
-    }
-    // Fallback: clear the canvas context directly.
-    if (renderer._ctx && renderer._bounds) {
-      const size = renderer._bounds.getSize();
-      try { renderer._ctx.clearRect(0, 0, size.x, size.y); } catch (_) { /* noop */ }
-    }
+    const id = requestAnimationFrame(() => {
+      if (!flag) {
+        const stragglers = [];
+        map.eachLayer(layer => {
+          if (layer instanceof L.CircleMarker) stragglers.push(layer);
+        });
+        stragglers.forEach(l => { try { map.removeLayer(l); } catch (_) {} });
+      }
+      const renderers = new Set();
+      if (map._renderer) renderers.add(map._renderer);
+      map.eachLayer(layer => {
+        const r = layer._renderer || layer.options?.renderer;
+        if (r) renderers.add(r);
+      });
+      renderers.forEach(r => {
+        if (r._ctx && r._bounds) {
+          const size = r._bounds.getSize();
+          try { r._ctx.clearRect(0, 0, size.x, size.y); } catch (_) {}
+        }
+        if (typeof r._update === 'function') {
+          try { r._update(); } catch (_) {}
+        }
+      });
+    });
+    return () => cancelAnimationFrame(id);
   }, [flag, map]);
   return null;
 }
