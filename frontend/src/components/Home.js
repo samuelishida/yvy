@@ -42,6 +42,23 @@ const DEFAULT_BIOMES = [
   { name: 'Pantanal' },
   { name: 'Pampa' },
 ];
+// Accept either the legacy raw bounds map ({ name: {rings, ...} }) or a
+// pre-built GeoJSON FeatureCollection. Returns a FeatureCollection or null.
+function toFeatureCollection(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  if (raw.type === 'FeatureCollection' && Array.isArray(raw.features)) return raw;
+  const entries = Object.entries(raw).filter(([, d]) => Array.isArray(d?.rings));
+  if (!entries.length) return null;
+  return {
+    type: 'FeatureCollection',
+    features: entries.map(([name, d]) => ({
+      type: 'Feature',
+      properties: { name, state_abbr: d.state_abbr, municipality: d.municipality, category: d.category, full_name: d.full_name },
+      geometry: { type: 'MultiPolygon', coordinates: d.rings.map(r => [r]) },
+    })),
+  };
+}
+
 function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371, rad = Math.PI / 180;
   const p1 = lat1 * rad, p2 = lat2 * rad;
@@ -1055,33 +1072,41 @@ export default function Home() {
   }, []);
 
 
-  // Lazy-load indigenous lands GeoJSON (backend returns ready FeatureCollection; 24h client cache)
+  // Lazy-load indigenous lands GeoJSON. Backend returns FeatureCollection (newer)
+  // or legacy raw bounds map; toFeatureCollection normalizes both. v3 cache key
+  // invalidates any stale localStorage written during the mid-deploy window.
   useEffect(() => {
     if (!showIndigenous || indiFetchedRef.current) return;
     indiFetchedRef.current = true;
-    const cached = getCache('geo_indigenous_lands_v2', 1440);
-    if (cached) { setIndigenousGeo(cached); return; }
+    const cached = getCache('geo_indigenous_lands_v3', 1440);
+    const cachedFc = cached && toFeatureCollection(cached);
+    if (cachedFc) { setIndigenousGeo(cachedFc); return; }
     const ac = new AbortController();
     cachedFetch('/api/indigenous-lands', { ttl: 3600_000, signal: ac.signal })
       .then(d => {
-        setIndigenousGeo(d);
-        setCache('geo_indigenous_lands_v2', d);
+        const fc = toFeatureCollection(d);
+        if (!fc) return;
+        setIndigenousGeo(fc);
+        setCache('geo_indigenous_lands_v3', fc);
       })
       .catch(err => { if (err.name !== 'AbortError') console.error('Indigenous lands fetch error:', err); });
     return () => ac.abort();
   }, [showIndigenous]);
 
-  // Lazy-load conservation units GeoJSON (backend returns ready FeatureCollection; 24h client cache)
+  // Lazy-load conservation units GeoJSON (same normalization + cache strategy).
   useEffect(() => {
     if (!showConservation || consFetchedRef.current) return;
     consFetchedRef.current = true;
-    const cached = getCache('geo_conservation_units_v2', 1440);
-    if (cached) { setConservationGeo(cached); return; }
+    const cached = getCache('geo_conservation_units_v3', 1440);
+    const cachedFc = cached && toFeatureCollection(cached);
+    if (cachedFc) { setConservationGeo(cachedFc); return; }
     const ac = new AbortController();
     cachedFetch('/api/conservation-units', { ttl: 3600_000, signal: ac.signal })
       .then(d => {
-        setConservationGeo(d);
-        setCache('geo_conservation_units_v2', d);
+        const fc = toFeatureCollection(d);
+        if (!fc) return;
+        setConservationGeo(fc);
+        setCache('geo_conservation_units_v3', fc);
       })
       .catch(err => { if (err.name !== 'AbortError') console.error('Conservation units fetch error:', err); });
     return () => ac.abort();
