@@ -16,11 +16,22 @@ export function cachedFetch(url, { ttl = 60_000, signal } = {}) {
     }
   }
 
-  const promise = fetch(url, { signal })
-    .then(r => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
-    })
+  /* Retry on 429 with exponential backoff (up to 3 attempts).
+   * Tiles and dashboard API bursts can hit rate limits; retrying
+   * is better than dropping the request silently. */
+  const MAX_RETRIES = 3;
+  const doFetch = (attempt = 0) =>
+    fetch(url, { signal })
+      .then(r => {
+        if (r.status === 429 && attempt < MAX_RETRIES) {
+          const wait = Math.min(500 * Math.pow(2, attempt), 4000);
+          return new Promise(resolve => setTimeout(resolve, wait)).then(() => doFetch(attempt + 1));
+        }
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      });
+
+  const promise = doFetch()
     .then(data => {
       cache.set(url, { data, ts: Date.now(), promise: null });
       return data;

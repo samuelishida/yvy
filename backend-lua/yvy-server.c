@@ -83,7 +83,7 @@ static const char *STATIC_DIR  = "../frontend/build";
 static const char *BACKEND_HOST = "127.0.0.1";
 static const char *API_KEY     = "";
 static int PORT                = PORT_DEFAULT;
-static int MAX_CHILDREN        = 10;
+static int MAX_CHILDREN        = 64;
 
 /* ── Portable memmem (not available on Windows) ─────────────────────────── */
 
@@ -743,8 +743,10 @@ static void handle_client(int client, uint32_t client_ip) {
         return;
     }
 
-    /* Rate-limit /api paths in child process (shared mmap counters) */
-    if (strncmp(path, "/api", 4) == 0) {
+    /* Rate-limit /api paths in child process (shared mmap counters).
+     * Tile requests are exempt: maps generate bursty visual traffic on
+     * pan/zoom that is not an abuse vector, and dropping tiles degrades UX. */
+    if (strncmp(path, "/api", 4) == 0 && strncmp(path, "/api/tiles/", 11) != 0) {
         int retry = 0;
         if (!rate_check(client_ip, time(NULL), &retry)) {
             send_429(client, retry);
