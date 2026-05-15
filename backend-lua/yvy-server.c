@@ -52,6 +52,7 @@
 #include <sys/stat.h>
 #include <stdint.h>
 #include <errno.h>
+#include <sys/wait.h>
 
 /* ── Configuration ──────────────────────────────────────────────────────── */
 
@@ -72,6 +73,7 @@ static const char *STATIC_DIR  = "../frontend/build";
 static const char *BACKEND_HOST = "127.0.0.1";
 static const char *API_KEY     = "";
 static int PORT                = PORT_DEFAULT;
+static int MAX_CHILDREN        = 10;
 
 /* ── Portable memmem (not available on Windows) ─────────────────────────── */
 
@@ -96,6 +98,8 @@ static const void *memmem(const void *haystack, size_t haystack_len,
 
 static volatile sig_atomic_t g_running = 1;
 static int g_server_fd = -1;
+static volatile sig_atomic_t g_sigchld_received = 0;
+static int g_active_children = 0;
 
 /* ── MIME types ─────────────────────────────────────────────────────────── */
 
@@ -523,6 +527,13 @@ static void handle_client(int client) {
     CLOSESOCK(client);
 }
 
+/* ── Signal handler for SIGCHLD (zombie reaping) ────────────────────────────────── */
+
+static void handle_sigchld(int sig) {
+    (void)sig;
+    g_sigchld_received = 1;
+}
+
 /* ── Signal handler for graceful shutdown ────────────────────────────────── */
 
 static void handle_signal(int sig) {
@@ -557,12 +568,19 @@ int main(int argc, char *argv[]) {
             STATIC_DIR = argv[++i];
         } else if (strcmp(argv[i], "--api-key") == 0 && i + 1 < argc) {
             API_KEY = argv[++i];
+        } else if (strcmp(argv[i], "--max-children") == 0 && i + 1 < argc) {
+            MAX_CHILDREN = atoi(argv[++i]);
+            if (MAX_CHILDREN <= 0) {
+                fprintf(stderr, "Error: --max-children must be a positive integer\n");
+                return 1;
+            }
         }
     }
 
     /* Setup signal handlers */
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
+    signal(SIGCHLD, handle_sigchld);
 #ifndef _WIN32
     signal(SIGPIPE, SIG_IGN);  /* Ignore broken pipe */
 #endif
@@ -603,9 +621,10 @@ int main(int argc, char *argv[]) {
     printf("Port: %d\n", PORT);
     printf("Backend: %s:%d\n", BACKEND_HOST, BACKEND_PORT);
     printf("Static: %s\n", STATIC_DIR);
+    printf("Max children: %d\n", MAX_CHILDREN);
     printf("Server running. Press Ctrl+C to stop.\n");
 
-    /* Main accept loop */
+    /* Main accept loop with fork-per-connection */
     while (g_running) {
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
@@ -618,7 +637,39 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        handle_client(client);
+        /* Double-reap zombie reaping before accepting */
+        while (g_sigchld_received) {
+            int saved_errno = errno;
+            waitpid(-1, NULL, WNOHANG);
+            g_sigchld_received = 0;
+            errno = saved_errno;
+        }
+
+        /* Check max children limit */
+        if (g_active_children >= MAX_CHILDREN) {
+            /* Pause accepting until a child exits */
+            close(client);
+            continue;
+        }
+
+        /* Fork child to handle request */
+        pid_t pid = fork();
+        if (pid < 0) {
+            perror("fork");
+            close(client);
+            continue;
+        }
+
+        if (pid == 0) {
+            /* Child: handle request and exit */
+            g_active_children++;
+            handle_client(client);
+            _exit(0);  /* Don't return to parent */
+        } else {
+            /* Parent: track child and continue accepting */
+            g_active_children++;
+            close(client);  /* Parent doesn't use the socket */
+        }
     }
 
     if (g_server_fd >= 0) {
