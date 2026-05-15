@@ -466,7 +466,9 @@ static void proxy_to_backend(int client, const char *method, const char *path,
         const char *value = headers[i][1];
         if (strcasecmp(name, "host") == 0 ||
             strcasecmp(name, "connection") == 0 ||
-            strcasecmp(name, "proxy-connection") == 0) {
+            strcasecmp(name, "proxy-connection") == 0 ||
+            strcasecmp(name, "content-length") == 0 ||
+            strcasecmp(name, "x-api-key") == 0) {
             continue;
         }
         if (dynbuf_appendf(&req_dyn, MAX_REQUEST_SIZE, "%s: %s\r\n", name, value) < 0) {
@@ -650,8 +652,8 @@ static int parse_request(const char *request, size_t request_len,
             size_t val_len = (size_t)((p + line_len) - val_start);
             if (val_len >= MAX_HEADER_VAL) val_len = MAX_HEADER_VAL - 1;
 
-            strncpy(headers[*num_headers][0], header_name, MAX_HEADER_VAL - 1);
-            headers[*num_headers][0][MAX_HEADER_VAL - 1] = '\0';
+            strncpy(headers[*num_headers][0], header_name, MAX_HEADER_NAME - 1);
+            headers[*num_headers][0][MAX_HEADER_NAME - 1] = '\0';
             memcpy(headers[*num_headers][1], val_start, val_len);
             headers[*num_headers][1][val_len] = '\0';
             (*num_headers)++;
@@ -677,7 +679,9 @@ static size_t parse_content_length(const char *headers_buf, size_t headers_size)
             const char *vp = p + 15;
             const char *vend = line_end;
             while (vp < vend && (*vp == ' ' || *vp == '\t')) vp++;
+            errno = 0;
             unsigned long v = strtoul(vp, NULL, 10);
+            if (errno == ERANGE || v > MAX_REQUEST_SIZE) return 0;
             return (size_t)v;
         }
         p = line_end + 1;
