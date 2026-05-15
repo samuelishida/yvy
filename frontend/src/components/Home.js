@@ -1069,26 +1069,36 @@ export default function Home() {
   }, []);
 
 
-  // Lazy-load indigenous lands boundary
+  // Lazy-load indigenous lands boundary (24h localStorage cache of transformed GeoJSON)
   useEffect(() => {
     if (!showIndigenous || indiFetchedRef.current) return;
     indiFetchedRef.current = true;
+    const cached = getCache('geo_indigenous_lands', 1440);
+    if (cached) { setIndigenousGeo(cached); return; }
     const ac = new AbortController();
-    fetch('/api/indigenous-lands', { signal: ac.signal })
-      .then(r => r.json())
-      .then(d => setIndigenousGeo(boundsToGeoJSON(d)))
+    cachedFetch('/api/indigenous-lands', { ttl: 3600_000, signal: ac.signal })
+      .then(d => {
+        const geo = boundsToGeoJSON(d);
+        setIndigenousGeo(geo);
+        setCache('geo_indigenous_lands', geo);
+      })
       .catch(err => { if (err.name !== 'AbortError') console.error('Indigenous lands fetch error:', err); });
     return () => ac.abort();
   }, [showIndigenous]);
 
-  // Lazy-load conservation units boundary
+  // Lazy-load conservation units boundary (24h localStorage cache of transformed GeoJSON)
   useEffect(() => {
     if (!showConservation || consFetchedRef.current) return;
     consFetchedRef.current = true;
+    const cached = getCache('geo_conservation_units', 1440);
+    if (cached) { setConservationGeo(cached); return; }
     const ac = new AbortController();
-    fetch('/api/conservation-units', { signal: ac.signal })
-      .then(r => r.json())
-      .then(d => setConservationGeo(boundsToGeoJSON(d)))
+    cachedFetch('/api/conservation-units', { ttl: 3600_000, signal: ac.signal })
+      .then(d => {
+        const geo = boundsToGeoJSON(d);
+        setConservationGeo(geo);
+        setCache('geo_conservation_units', geo);
+      })
       .catch(err => { if (err.name !== 'AbortError') console.error('Conservation units fetch error:', err); });
     return () => ac.abort();
   }, [showConservation]);

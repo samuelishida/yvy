@@ -3,7 +3,7 @@ import { useI18n } from '../i18n';
 import { getCache, setCache } from '../utils/cache';
 import './News.css';
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 5;
 
 const normalizeArticles = (payload) => {
   if (Array.isArray(payload)) {
