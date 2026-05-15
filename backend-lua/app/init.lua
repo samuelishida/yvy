@@ -6,6 +6,7 @@ local db          = require("app.db")
 local biome       = require("app.lookups.biome_lookup")
 local ti          = require("app.lookups.indigenous_lands_lookup")
 local uc          = require("app.lookups.conservation_units_lookup")
+local states      = require("app.lookups.state_lookup")
 local ingest      = require("app.ingest")
 local fires_mod   = require("app.routes.fires")
 local news_mod    = require("app.routes.news")
@@ -51,6 +52,12 @@ function _M.startup()
     ok, err = pcall(uc.load_conservation_units)
     if not ok then
         logger.warn("Failed to load conservation units data: " .. tostring(err))
+    end
+
+    -- Load Brazilian UF polygons (for state attribution of fires/PRODES)
+    ok, err = pcall(states.load_states)
+    if not ok then
+        logger.warn("Failed to load states data: " .. tostring(err))
     end
 
     -- Run PRODES ingestion (if CSV available)
@@ -107,6 +114,48 @@ local function stats_prewarm_loop()
     end
 end
 
+local function dashboard_prewarm_loop()
+    copas.sleep(25)
+    while true do
+        pcall(function()
+            for _, days in ipairs({7, 30, 90}) do
+                local series = db.get_fires_timeseries(days)
+                redis.set("fires:ts:" .. days, cjson.encode({days = days, state = nil, series = series}), 120)
+            end
+            local by_state = db.get_fires_by_state(10, nil)
+            redis.set("fires:bystate:10:all", cjson.encode({limit = 10, days = nil, states = by_state}), 120)
+        end)
+        copas.sleep(180)
+    end
+end
+
+local function state_backfill_loop()
+    local state_lookup = require("app.lookups.state_lookup")
+    copas.sleep(8)
+    while true do
+        local processed = 0
+        pcall(function()
+            local batch = db.iter_fires_for_backfill(500)
+            for _, row in ipairs(batch) do
+                local uf = state_lookup.classify_point(row.lat, row.lon)
+                if uf then
+                    db.update_fire_state(row.id, uf)
+                    processed = processed + 1
+                else
+                    -- mark with empty string so we don't keep scanning unattributable points
+                    db.update_fire_state(row.id, "")
+                end
+            end
+        end)
+        if processed > 0 then
+            logger.info("state backfill: " .. processed .. " fires attributed")
+            copas.sleep(2)
+        else
+            copas.sleep(600)
+        end
+    end
+end
+
 local function biomes_prewarm_loop()
     local biome_lookup = require("app.lookups.biome_lookup")
     local MAX_RESULTS = tonumber(os.getenv("MAX_RESULTS_PER_REQUEST") or "10000")
@@ -158,6 +207,8 @@ function _M.start_background_tasks()
     copas.addthread(stats_prewarm_loop)
     copas.addthread(biomes_prewarm_loop)
     copas.addthread(news_prewarm_loop)
+    copas.addthread(dashboard_prewarm_loop)
+    copas.addthread(state_backfill_loop)
 end
 
 return _M

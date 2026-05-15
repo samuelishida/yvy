@@ -72,6 +72,7 @@ CREATE INDEX IF NOT EXISTS idx_news_published ON news(publishedAt);
 CREATE INDEX IF NOT EXISTS idx_news_ingested ON news(ingested_at);
 CREATE INDEX IF NOT EXISTS idx_news_page ON news(publishedAt DESC, ingested_at DESC);
 CREATE INDEX IF NOT EXISTS idx_fire_confidence ON fire_data(json_extract(data, '$.confidence'));
+CREATE INDEX IF NOT EXISTS idx_fire_state ON fire_data(json_extract(data, '$.state'));
 CREATE INDEX IF NOT EXISTS idx_def_name ON deforestation_data(json_extract(data, '$.name'));
 CREATE INDEX IF NOT EXISTS idx_news_source ON news(json_extract(data, '$.source_name'));
 
@@ -284,6 +285,7 @@ function _M.bulk_upsert_fires(docs)
             satellite = d.satellite,
             bright_ti4 = d.bright_ti4,
             source = d.source,
+            state = d.state,
         })
         exec_write(db, sql, {
             d.lat, d.lon, d.acq_date, d.ingested_at, data_json
@@ -338,6 +340,144 @@ function _M.prune_old_fires(days)
     db:exec("COMMIT")
     pool_release(db)
     return count
+end
+
+function _M.get_fires_timeseries(days, state)
+    days = tonumber(days) or 30
+    local db = pool_acquire()
+    local cutoff = "-" .. tostring(days) .. " days"
+
+    local sql, params
+    if state and state ~= "" then
+        sql = [[
+            SELECT acq_date AS date, COUNT(*) AS count
+            FROM fire_data
+            WHERE acq_date IS NOT NULL
+              AND acq_date >= date('now', ?)
+              AND json_extract(data, '$.state') = ?
+            GROUP BY acq_date
+            ORDER BY acq_date
+        ]]
+        params = {cutoff, state}
+    else
+        sql = [[
+            SELECT acq_date AS date, COUNT(*) AS count
+            FROM fire_data
+            WHERE acq_date IS NOT NULL AND acq_date >= date('now', ?)
+            GROUP BY acq_date
+            ORDER BY acq_date
+        ]]
+        params = {cutoff}
+    end
+
+    local rows = fetch_all(db, sql, params)
+    pool_release(db)
+
+    local result = {}
+    for _, r in ipairs(rows) do
+        result[#result + 1] = {
+            date = r.date or r["date"],
+            count = tonumber(r.count or r["count"] or 0) or 0,
+        }
+    end
+    return result
+end
+
+function _M.get_fires_by_state(limit, days)
+    limit = tonumber(limit) or 10
+    days = tonumber(days)
+    local db = pool_acquire()
+
+    local sql, params
+    if days and days > 0 then
+        sql = [[
+            SELECT json_extract(data, '$.state') AS state, COUNT(*) AS count
+            FROM fire_data
+            WHERE json_extract(data, '$.state') IS NOT NULL AND json_extract(data, '$.state') != ''
+              AND acq_date >= date('now', ?)
+            GROUP BY state
+            ORDER BY count DESC
+            LIMIT ?
+        ]]
+        params = {"-" .. tostring(days) .. " days", limit}
+    else
+        sql = [[
+            SELECT json_extract(data, '$.state') AS state, COUNT(*) AS count
+            FROM fire_data
+            WHERE json_extract(data, '$.state') IS NOT NULL AND json_extract(data, '$.state') != ''
+            GROUP BY state
+            ORDER BY count DESC
+            LIMIT ?
+        ]]
+        params = {limit}
+    end
+
+    local rows = fetch_all(db, sql, params)
+    pool_release(db)
+
+    local result = {}
+    for _, r in ipairs(rows) do
+        local state_code = r.state or r["state"]
+        if state_code and state_code ~= "" then
+            result[#result + 1] = {
+                state = state_code,
+                count = tonumber(r.count or r["count"] or 0) or 0,
+            }
+        end
+    end
+    return result
+end
+
+function _M.count_fires_by_state_present()
+    local db = pool_acquire()
+    local row = fetch_one(db, [[
+        SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN json_extract(data, '$.state') IS NULL THEN 1 ELSE 0 END) AS unattributed
+        FROM fire_data
+    ]])
+    pool_release(db)
+    return {
+        total = row and tonumber(row.total or row["total"] or 0) or 0,
+        unattributed = row and tonumber(row.unattributed or row["unattributed"] or 0) or 0,
+    }
+end
+
+function _M.iter_fires_for_backfill(batch_size)
+    batch_size = batch_size or 1000
+    local db = pool_acquire()
+    local sql = [[
+        SELECT id, lat, lon, json(data) AS data_json
+        FROM fire_data
+        WHERE json_extract(data, '$.state') IS NULL
+        LIMIT ?
+    ]]
+    local rows = fetch_all(db, sql, {batch_size})
+    pool_release(db)
+    local result = {}
+    for _, r in ipairs(rows) do
+        result[#result + 1] = {
+            id = tonumber(r.id or r["id"]),
+            lat = tonumber(r.lat or r["lat"]),
+            lon = tonumber(r.lon or r["lon"]),
+            data_json = r.data_json or r["data_json"],
+        }
+    end
+    return result
+end
+
+function _M.update_fire_state(id, state)
+    local db = pool_acquire()
+    db:exec("BEGIN")
+    local row = fetch_one(db, "SELECT json(data) AS data_json FROM fire_data WHERE id = ?", {id})
+    if row then
+        local current = utils.decode_jsonb(row.data_json or row["data_json"])
+        current.state = state
+        local data_json = utils.encode_jsonb(current)
+        exec_write(db, "UPDATE fire_data SET data = jsonb(?) WHERE id = ?", {data_json, id})
+    end
+    db:exec("COMMIT")
+    pool_release(db)
 end
 
 -- ── Deforestation data ───────────────────────────────────────────────────

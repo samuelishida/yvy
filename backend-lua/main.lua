@@ -152,11 +152,18 @@ end)
 
 -- Fires
 server.route("GET", "/api/fires", fires.get_fires)
+server.route("GET", "/api/fires/timeseries", fires.get_fires_timeseries)
+server.route("GET", "/api/fires/by-state", fires.get_fires_by_state)
+server.route("GET", "/api/fires/protected-share", fires.get_protected_share)
 server.route("POST", "/api/fires/sync", fires.sync_fires)
 server.route("POST", "/api/admin/firms/sync", fires.admin_firms_sync)
 
 -- Deforestation data
 server.route("GET", "/api/data", deforestation.get_data)
+
+-- PRODES historical (annual INPE totals)
+local deforestation_stats = require("app.routes.deforestation_stats")
+server.route("GET", "/api/deforestation/historical", deforestation_stats.get_historical)
 
 -- PRODES tiles (WMS proxy/cache)
 server.route("GET", "/api/tiles/prodes", tiles.get_tile)
