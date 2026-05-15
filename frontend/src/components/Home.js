@@ -273,6 +273,28 @@ function ViewportFireFilter({ fires, onVisibleFiresChange }) {
   return null;
 }
 
+// Forces a canvas re-paint when `flag` toggles. Works around a known Leaflet
+// canvas-renderer quirk: unmounting many CircleMarkers does not always trigger
+// a redraw, so previously drawn dots ghost on the canvas until the next pan.
+function CanvasRedrawOnToggle({ flag }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!map) return;
+    const renderer = map._renderer || map.options.renderer;
+    if (!renderer) return;
+    // _update is the public-ish API Leaflet uses internally for redraw.
+    if (typeof renderer._update === 'function') {
+      try { renderer._update(); } catch (_) { /* noop */ }
+    }
+    // Fallback: clear the canvas context directly.
+    if (renderer._ctx && renderer._bounds) {
+      const size = renderer._bounds.getSize();
+      try { renderer._ctx.clearRect(0, 0, size.x, size.y); } catch (_) { /* noop */ }
+    }
+  }, [flag, map]);
+  return null;
+}
+
 // MapController handles pan-to-alert and smooth wheel zoom
 
 function MapController({ activeAlert }) {
@@ -770,6 +792,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             />
           )}
           <ViewportFireFilter fires={fireRows} onVisibleFiresChange={setVisibleFires} />
+          <CanvasRedrawOnToggle flag={showFires} />
           {showFires && (
             <>
               <FireEventsHandler
@@ -992,32 +1015,23 @@ export default function Home() {
       const tempKey = `weather_temp_${latK}_${lonK}`;
 
       const cachedAqi = getCache(aqiKey, 15);
-      if (cachedAqi) { setAirQuality(cachedAqi); }
-      else {
-        fetch(`/api/weather/air-quality?lat=${lat}&lon=${lon}`, { signal: ac.signal })
-          .then(r => r.json())
-          .then(d => {
-            if (d.aqi != null) {
-              const aq = { aqi: d.aqi, pm25: d.pm25 ?? '-', humidity: d.humidity ?? '-' };
-              setAirQuality(aq); setCache(aqiKey, aq);
-            }
-          })
-          .catch(err => { if (err.name !== 'AbortError') console.error('AQI fetch error:', err); });
-      }
-
       const cachedTemp = getCache(tempKey, 15);
-      if (cachedTemp) { setTemperature(cachedTemp); }
-      else {
-        fetch(`/api/weather/temperature?lat=${lat}&lon=${lon}`, { signal: ac.signal })
-          .then(r => r.json())
-          .then(d => {
-            if (d.temp != null) {
-              const temp = { temp: d.temp, feels_like: d.feels_like, humidity: d.humidity, city: d.city, wind_speed: d.wind_speed, wind_direction: d.wind_direction };
-              setTemperature(temp); setCache(tempKey, temp);
-            }
-          })
-          .catch(err => { if (err.name !== 'AbortError') console.error('Temperature fetch error:', err); });
-      }
+      if (cachedAqi) setAirQuality(cachedAqi);
+      if (cachedTemp) setTemperature(cachedTemp);
+      if (cachedAqi && cachedTemp) return;
+
+      cachedFetch(`/api/weather?lat=${lat}&lon=${lon}`, { ttl: 60_000, signal: ac.signal })
+        .then(d => {
+          if (d.aqi != null) {
+            const aq = { aqi: d.aqi, pm25: d.pm25 ?? '-', humidity: d.aqi_humidity ?? '-' };
+            setAirQuality(aq); setCache(aqiKey, aq);
+          }
+          if (d.temp != null) {
+            const temp = { temp: d.temp, feels_like: d.feels_like, humidity: d.humidity, city: d.city, wind_speed: d.wind_speed, wind_direction: d.wind_direction };
+            setTemperature(temp); setCache(tempKey, temp);
+          }
+        })
+        .catch(err => { if (err.name !== 'AbortError') console.error('Weather fetch error:', err); });
     };
 
     fetchWeather(DEFAULT_LAT, DEFAULT_LON);

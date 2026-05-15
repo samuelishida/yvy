@@ -133,6 +133,7 @@ server.route("POST", "/api/news/repair", news.repair_news)
 server.route("POST", "/api/admin/news/sync", news.admin_news_sync)
 
 -- Weather
+server.route("GET", "/api/weather",             weather.get_weather)
 server.route("GET", "/api/weather/air-quality", weather.get_air_quality)
 server.route("GET", "/api/weather/temperature", weather.get_temperature)
 

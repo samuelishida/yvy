@@ -153,6 +153,67 @@ local function socket_request(method, url, timeout, headers, body)
     return nil, tostring(result_or_err or code or "request failed")
 end
 
+-- Build a curl command string for a single GET. Used by parallel_get to
+-- launch multiple subprocesses concurrently.
+local function build_curl_get_cmd(url, timeout, headers)
+    local parts = {"curl", "-sS", "-L", "--max-time", tostring(timeout), "-X", "GET"}
+    for k, v in pairs(headers or {}) do
+        parts[#parts + 1] = "-H"
+        parts[#parts + 1] = shell_quote(tostring(k) .. ": " .. tostring(v))
+    end
+    parts[#parts + 1] = shell_quote(url)
+    parts[#parts + 1] = "-w"
+    parts[#parts + 1] = shell_quote("__YVY_CURL_STATUS__:%{http_code}")
+    parts[#parts + 1] = "2>" .. NULL_DEV
+    return table.concat(parts, " ")
+end
+
+local function parse_curl_output(output)
+    local body, code = output:match("^(.*)__YVY_CURL_STATUS__:(%d+)%s*$")
+    local status = tonumber(code)
+    if not status then return nil, "curl did not return HTTP status" end
+    return {status = status, body = body or "", headers = {}}
+end
+
+-- Launch N HTTPS GETs as concurrent curl subprocesses, then collect responses.
+-- Returns an array of {res = response, err = err_str} parallel to the urls input.
+-- Total wall time ≈ max(t_i) instead of sum(t_i) — io.popen returns immediately,
+-- so the kernel runs all curl processes in parallel; only the reads serialize.
+function _M.parallel_get(urls, opts)
+    opts = opts or {}
+    local timeout = opts.timeout or DEFAULT_TIMEOUT
+    local headers = opts.headers or {}
+
+    local entries = {}
+    for i, url in ipairs(urls) do
+        local full_url = build_query(url, opts.query and opts.query[i] or {})
+        if full_url:sub(1, 8) == "https://" then
+            local cmd = build_curl_get_cmd(full_url, timeout, headers)
+            local proc = io.popen(cmd, "r")
+            entries[i] = {proc = proc, fallback = nil}
+        else
+            local res, err = socket_request("GET", full_url, timeout, headers)
+            entries[i] = {proc = nil, fallback = {res = res, err = err}}
+        end
+    end
+
+    local results = {}
+    for i, entry in ipairs(entries) do
+        if entry.fallback then
+            results[i] = entry.fallback
+        elseif entry.proc then
+            local output = entry.proc:read("*a")
+            entry.proc:close()
+            local res, err = parse_curl_output(output)
+            results[i] = {res = res, err = err}
+        else
+            results[i] = {res = nil, err = "popen failed"}
+        end
+    end
+
+    return results
+end
+
 function _M.get(url, opts)
     opts = opts or {}
     local timeout = opts.timeout or DEFAULT_TIMEOUT
