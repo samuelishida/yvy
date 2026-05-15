@@ -52,7 +52,14 @@
 #include <sys/stat.h>
 #include <stdint.h>
 #include <errno.h>
+#include <stdarg.h>
+#include <time.h>
+#include <poll.h>
 #include <sys/wait.h>
+
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
 
 /* ── Configuration ──────────────────────────────────────────────────────── */
 
@@ -64,9 +71,11 @@
 #define MAX_METHOD_LEN  16
 #define MAX_HEADER_NAME 128
 #define MAX_HEADER_VAL  512
-#define CLIENT_TIMEOUT  5       /* seconds for recv/send timeouts */
-#define BACKEND_TIMEOUT 30      /* seconds for backend proxy timeout */
-#define MAX_REQUEST_SIZE 65536  /* max bytes to read from a client */
+#define CLIENT_TIMEOUT  5                /* seconds for recv/send timeouts */
+#define BACKEND_TIMEOUT 30               /* seconds for backend proxy timeout */
+#define MAX_REQUEST_SIZE   (1024 * 1024) /* 1MB cap for client request (headers+body) */
+#define MAX_RESPONSE_SIZE  (2 * 1024 * 1024) /* 2MB cap for buffered backend response */
+#define DYNBUF_INITIAL_CAP 8192
 #define LISTEN_BACKLOG  128
 
 static const char *STATIC_DIR  = "../frontend/build";
@@ -98,8 +107,89 @@ static const void *memmem(const void *haystack, size_t haystack_len,
 
 static volatile sig_atomic_t g_running = 1;
 static int g_server_fd = -1;
-static volatile sig_atomic_t g_sigchld_received = 0;
-static int g_active_children = 0;
+static volatile sig_atomic_t g_active_children = 0;
+
+/* ── Rate limiter (parent-side, per-IP token bucket) ────────────────────── */
+
+#define RATE_BUCKETS  4096
+#define RATE_LIMIT    60      /* requests per window */
+#define RATE_WINDOW   60      /* seconds */
+
+typedef struct {
+    uint32_t ip;            /* IPv4 in network byte order; 0 = empty/free slot */
+    time_t   window_start;
+    int      count;
+} rate_bucket;
+
+static rate_bucket g_rate[RATE_BUCKETS];
+
+/* Murmur-style 32-bit hash mix. Good distribution for IPv4 addresses. */
+static uint32_t hash_ip(uint32_t ip) {
+    uint32_t h = ip;
+    h ^= h >> 16;
+    h *= 0x7feb352dU;
+    h ^= h >> 15;
+    h *= 0x846ca68bU;
+    h ^= h >> 16;
+    return h;
+}
+
+/* Returns 1 if allowed, 0 if denied. Sets *retry_out (seconds) when denied. */
+static int rate_check(uint32_t ip, time_t now, int *retry_out) {
+    uint32_t idx = hash_ip(ip) & (RATE_BUCKETS - 1);
+    rate_bucket *b = &g_rate[idx];
+
+    if (b->ip != ip || (now - b->window_start) >= RATE_WINDOW) {
+        /* Empty slot, hash collision (different IP), or expired window: reset */
+        b->ip = ip;
+        b->window_start = now;
+        b->count = 1;
+        return 1;
+    }
+
+    if (b->count >= RATE_LIMIT) {
+        int retry = (int)(RATE_WINDOW - (now - b->window_start));
+        if (retry < 1) retry = 1;
+        *retry_out = retry;
+        return 0;
+    }
+
+    b->count++;
+    return 1;
+}
+
+/* Poll briefly for request bytes, then MSG_PEEK; return 1 if path begins
+ * with /api. On timeout/error/incomplete data: returns 0 so caller skips
+ * the rate check (slow clients bypass; fork handles them normally). */
+static int peek_path_is_api(int fd) {
+    struct pollfd pfd = { .fd = fd, .events = POLLIN, .revents = 0 };
+    int pr = poll(&pfd, 1, 100);  /* 100ms — bounds parent latency */
+    if (pr <= 0 || !(pfd.revents & POLLIN)) return 0;
+
+    char buf[512];
+    ssize_t n = recv(fd, buf, sizeof(buf) - 1, MSG_PEEK | MSG_DONTWAIT);
+    if (n <= 0) return 0;
+    const char *sp1 = memchr(buf, ' ', (size_t)n);
+    if (!sp1) return 0;
+    const char *path = sp1 + 1;
+    if ((size_t)(path - buf) + 4 > (size_t)n) return 0;
+    return strncmp(path, "/api", 4) == 0;
+}
+
+static void send_429(int fd, int retry_after) {
+    static const char body[] = "{\"error\":\"Too Many Requests\"}";
+    char hdr[512];
+    int hlen = snprintf(hdr, sizeof(hdr),
+        "HTTP/1.1 429 Too Many Requests\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: %zu\r\n"
+        "Connection: close\r\n"
+        "Retry-After: %d\r\n"
+        "\r\n",
+        sizeof(body) - 1, retry_after);
+    if (hlen > 0) send(fd, hdr, (size_t)hlen, MSG_NOSIGNAL);
+    send(fd, body, sizeof(body) - 1, MSG_NOSIGNAL);
+}
 
 /* ── MIME types ─────────────────────────────────────────────────────────── */
 
@@ -122,6 +212,74 @@ static const char *get_mime_type(const char *path) {
     if (strcmp(ext, ".map") == 0)   return "application/json";
     if (strcmp(ext, ".webp") == 0)  return "image/webp";
     return "application/octet-stream";
+}
+
+/* ── Dynamic byte buffer ────────────────────────────────────────────────── */
+
+typedef struct {
+    char  *data;
+    size_t len;
+    size_t cap;
+} dynbuf;
+
+static int dynbuf_init(dynbuf *b, size_t initial_cap) {
+    b->data = malloc(initial_cap);
+    if (!b->data) {
+        b->len = 0;
+        b->cap = 0;
+        return -1;
+    }
+    b->len = 0;
+    b->cap = initial_cap;
+    return 0;
+}
+
+static int dynbuf_reserve(dynbuf *b, size_t needed, size_t max_cap) {
+    if (needed <= b->cap) return 0;
+    if (needed > max_cap) return -1;
+    size_t new_cap = b->cap > 0 ? b->cap : DYNBUF_INITIAL_CAP;
+    while (new_cap < needed) {
+        if (new_cap > max_cap / 2) { new_cap = max_cap; break; }
+        new_cap *= 2;
+    }
+    if (new_cap < needed) new_cap = needed;
+    char *new_data = realloc(b->data, new_cap);
+    if (!new_data) return -1;
+    b->data = new_data;
+    b->cap = new_cap;
+    return 0;
+}
+
+static int dynbuf_append(dynbuf *b, const char *src, size_t n, size_t max_cap) {
+    if (dynbuf_reserve(b, b->len + n + 1, max_cap) < 0) return -1;
+    memcpy(b->data + b->len, src, n);
+    b->len += n;
+    b->data[b->len] = '\0';
+    return 0;
+}
+
+static int dynbuf_appendf(dynbuf *b, size_t max_cap, const char *fmt, ...) {
+    va_list ap, ap2;
+    va_start(ap, fmt);
+    va_copy(ap2, ap);
+    int needed = vsnprintf(NULL, 0, fmt, ap);
+    va_end(ap);
+    if (needed < 0) { va_end(ap2); return -1; }
+    if (dynbuf_reserve(b, b->len + (size_t)needed + 1, max_cap) < 0) {
+        va_end(ap2);
+        return -1;
+    }
+    vsnprintf(b->data + b->len, b->cap - b->len, fmt, ap2);
+    va_end(ap2);
+    b->len += (size_t)needed;
+    return 0;
+}
+
+static void dynbuf_free(dynbuf *b) {
+    free(b->data);
+    b->data = NULL;
+    b->len = 0;
+    b->cap = 0;
 }
 
 /* ── Utility: set socket recv/send timeout ──────────────────────────────── */
@@ -150,7 +308,6 @@ static void send_response(int client, int status, const char *status_text,
         "Connection: close\r\n"
         "X-Content-Type-Options: nosniff\r\n"
         "X-Frame-Options: DENY\r\n"
-        "Access-Control-Allow-Origin: *\r\n"
         "\r\n",
         status, status_text, content_type, body_len);
 
@@ -289,49 +446,65 @@ static void proxy_to_backend(int client, const char *method, const char *path,
         return;
     }
 
-    /* Build backend request */
-    char request[BUFFER_SIZE];
-    int req_len = snprintf(request, sizeof(request),
-        "%s %s HTTP/1.1\r\n"
-        "Host: %s:%d\r\n"
-        "Connection: close\r\n",
-        method, path, BACKEND_HOST, BACKEND_PORT);
+    /* Build backend request in a dynbuf so headers can grow past 64KB */
+    dynbuf req_dyn;
+    if (dynbuf_init(&req_dyn, DYNBUF_INITIAL_CAP) < 0) {
+        CLOSESOCK(backend_fd);
+        const char *err = "{\"error\":\"Out of memory\"}";
+        send_response(client, 500, "Internal Server Error", "application/json", err, strlen(err));
+        return;
+    }
 
-    /* Copy relevant headers and add API key */
-    for (int i = 0; i < num_headers; i++) {
-        const char *name = headers[i][0];
+    int build_ok =
+        dynbuf_appendf(&req_dyn, MAX_REQUEST_SIZE,
+            "%s %s HTTP/1.1\r\nHost: %s:%d\r\nConnection: close\r\n",
+            method, path, BACKEND_HOST, BACKEND_PORT) == 0;
+
+    /* Copy headers, skipping hop-by-hop */
+    for (int i = 0; build_ok && i < num_headers; i++) {
+        const char *name  = headers[i][0];
         const char *value = headers[i][1];
-
-        /* Skip hop-by-hop headers */
         if (strcasecmp(name, "host") == 0 ||
             strcasecmp(name, "connection") == 0 ||
             strcasecmp(name, "proxy-connection") == 0) {
             continue;
         }
-
-        req_len += snprintf(request + req_len, sizeof(request) - (size_t)req_len,
-                           "%s: %s\r\n", name, value);
-        if ((size_t)req_len >= sizeof(request) - 1) break;
+        if (dynbuf_appendf(&req_dyn, MAX_REQUEST_SIZE, "%s: %s\r\n", name, value) < 0) {
+            build_ok = 0;
+        }
     }
 
-    /* Add API key */
-    req_len += snprintf(request + req_len, sizeof(request) - (size_t)req_len,
-                       "X-API-Key: %s\r\n", API_KEY);
+    if (build_ok && dynbuf_appendf(&req_dyn, MAX_REQUEST_SIZE,
+                                   "X-API-Key: %s\r\n", API_KEY) < 0) {
+        build_ok = 0;
+    }
 
-    if (body_len > 0) {
-        req_len += snprintf(request + req_len, sizeof(request) - (size_t)req_len,
-                           "Content-Length: %zu\r\n\r\n", body_len);
-    } else {
-        req_len += snprintf(request + req_len, sizeof(request) - (size_t)req_len, "\r\n");
+    if (build_ok) {
+        if (body_len > 0) {
+            if (dynbuf_appendf(&req_dyn, MAX_REQUEST_SIZE,
+                               "Content-Length: %zu\r\n\r\n", body_len) < 0) build_ok = 0;
+        } else {
+            if (dynbuf_appendf(&req_dyn, MAX_REQUEST_SIZE, "\r\n") < 0) build_ok = 0;
+        }
+    }
+
+    if (!build_ok) {
+        dynbuf_free(&req_dyn);
+        CLOSESOCK(backend_fd);
+        const char *err = "{\"error\":\"Request headers too large\"}";
+        send_response(client, 431, "Request Header Fields Too Large",
+                      "application/json", err, strlen(err));
+        return;
     }
 
     /* Send request to backend */
     {
-        size_t to_send = (size_t)req_len;
         size_t total_sent = 0;
-        while (total_sent < to_send) {
-            ssize_t s = send(backend_fd, request + total_sent, to_send - total_sent, 0);
+        while (total_sent < req_dyn.len) {
+            ssize_t s = send(backend_fd, req_dyn.data + total_sent,
+                             req_dyn.len - total_sent, 0);
             if (s <= 0) {
+                dynbuf_free(&req_dyn);
                 CLOSESOCK(backend_fd);
                 const char *err = "{\"error\":\"Backend write failed\"}";
                 send_response(client, 502, "Bad Gateway", "application/json", err, strlen(err));
@@ -340,6 +513,7 @@ static void proxy_to_backend(int client, const char *method, const char *path,
             total_sent += (size_t)s;
         }
     }
+    dynbuf_free(&req_dyn);
 
     if (body_len > 0) {
         size_t total_sent = 0;
@@ -350,18 +524,59 @@ static void proxy_to_backend(int client, const char *method, const char *path,
         }
     }
 
-    /* Read and forward response in chunks */
-    char response[BUFFER_SIZE];
+    /* Read backend response. Buffer up to MAX_RESPONSE_SIZE for atomic flush
+     * (gives client headers + body in one go, preserving backend's Content-Length).
+     * If cap is exceeded mid-stream, send what we have and stream the rest. */
+    dynbuf resp;
+    int streaming = 0;
+    char chunk[BUFFER_SIZE];
     ssize_t n;
-    while ((n = recv(backend_fd, response, sizeof(response), 0)) > 0) {
-        size_t to_send = (size_t)n;
-        size_t total_sent = 0;
-        while (total_sent < to_send) {
-            ssize_t s = send(client, response + total_sent, to_send - total_sent, 0);
-            if (s <= 0) goto proxy_done;
-            total_sent += (size_t)s;
+
+    if (dynbuf_init(&resp, DYNBUF_INITIAL_CAP) < 0) {
+        streaming = 1;  /* OOM: degrade to streaming */
+    }
+
+    while ((n = recv(backend_fd, chunk, sizeof(chunk), 0)) > 0) {
+        if (streaming) {
+            size_t total = 0;
+            while (total < (size_t)n) {
+                ssize_t s = send(client, chunk + total, (size_t)n - total, 0);
+                if (s <= 0) goto proxy_done;
+                total += (size_t)s;
+            }
+            continue;
+        }
+
+        if (dynbuf_append(&resp, chunk, (size_t)n, MAX_RESPONSE_SIZE) < 0) {
+            /* Cap hit: flush buffered bytes, then stream the rest as-is. */
+            size_t total = 0;
+            while (total < resp.len) {
+                ssize_t s = send(client, resp.data + total, resp.len - total, 0);
+                if (s <= 0) { dynbuf_free(&resp); goto proxy_done; }
+                total += (size_t)s;
+            }
+            dynbuf_free(&resp);
+            streaming = 1;
+            /* Now forward this chunk too */
+            size_t t2 = 0;
+            while (t2 < (size_t)n) {
+                ssize_t s = send(client, chunk + t2, (size_t)n - t2, 0);
+                if (s <= 0) goto proxy_done;
+                t2 += (size_t)s;
+            }
         }
     }
+
+    /* Backend EOF reached. Flush buffered response if any. */
+    if (!streaming && resp.len > 0) {
+        size_t total = 0;
+        while (total < resp.len) {
+            ssize_t s = send(client, resp.data + total, resp.len - total, 0);
+            if (s <= 0) break;
+            total += (size_t)s;
+        }
+    }
+    dynbuf_free(&resp);
 
 proxy_done:
     CLOSESOCK(backend_fd);
@@ -450,49 +665,103 @@ static int parse_request(const char *request, size_t request_len,
 
 /* ── Handle a single client connection ──────────────────────────────────── */
 
+static size_t parse_content_length(const char *headers_buf, size_t headers_size) {
+    /* Scan header block for Content-Length (case-insensitive). Returns 0 if absent. */
+    const char *p = headers_buf;
+    const char *end = headers_buf + headers_size;
+    while (p < end) {
+        const char *line_end = memchr(p, '\n', (size_t)(end - p));
+        if (!line_end) break;
+        size_t line_len = (size_t)(line_end - p);
+        if (line_len >= 16 && strncasecmp(p, "Content-Length:", 15) == 0) {
+            const char *vp = p + 15;
+            const char *vend = line_end;
+            while (vp < vend && (*vp == ' ' || *vp == '\t')) vp++;
+            unsigned long v = strtoul(vp, NULL, 10);
+            return (size_t)v;
+        }
+        p = line_end + 1;
+    }
+    return 0;
+}
+
 static void handle_client(int client) {
     set_socket_timeout(client, CLIENT_TIMEOUT);
 
-    char buffer[BUFFER_SIZE];
-    ssize_t total_read = 0;
+    dynbuf reqbuf;
+    if (dynbuf_init(&reqbuf, DYNBUF_INITIAL_CAP) < 0) {
+        CLOSESOCK(client);
+        return;
+    }
 
-    /* Read request data — may need multiple recv() calls for slow clients */
-    while (total_read < (ssize_t)sizeof(buffer) - 1) {
-        ssize_t n = recv(client, buffer + total_read,
-                         sizeof(buffer) - 1 - (size_t)total_read, 0);
+    char chunk[8192];
+    int headers_complete = 0;
+    size_t headers_size = 0;
+
+    /* Phase 1: read until we see end-of-headers (\r\n\r\n) */
+    while (reqbuf.len < MAX_REQUEST_SIZE) {
+        ssize_t n = recv(client, chunk, sizeof(chunk), 0);
         if (n <= 0) {
+            dynbuf_free(&reqbuf);
             CLOSESOCK(client);
             return;
         }
-        total_read += n;
-
-        /* Check if we have the full headers (look for \r\n\r\n) */
-        if (total_read >= 4 && memmem(buffer, (size_t)total_read, "\r\n\r\n", 4)) {
+        if (dynbuf_append(&reqbuf, chunk, (size_t)n, MAX_REQUEST_SIZE) < 0) {
+            const char *err = "{\"error\":\"Request too large\"}";
+            send_response(client, 413, "Payload Too Large", "application/json", err, strlen(err));
+            dynbuf_free(&reqbuf);
+            CLOSESOCK(client);
+            return;
+        }
+        const char *eoh = memmem(reqbuf.data, reqbuf.len, "\r\n\r\n", 4);
+        if (eoh) {
+            headers_complete = 1;
+            headers_size = (size_t)(eoh - reqbuf.data) + 4;
             break;
         }
     }
 
-    if (total_read <= 0) {
+    if (!headers_complete) {
+        const char *err = "{\"error\":\"Request headers too large\"}";
+        send_response(client, 431, "Request Header Fields Too Large",
+                      "application/json", err, strlen(err));
+        dynbuf_free(&reqbuf);
         CLOSESOCK(client);
         return;
     }
-    buffer[total_read] = '\0';
+
+    /* Phase 2: drain remaining body bytes if Content-Length advertises more
+     * than what arrived in phase 1. Required for large POST bodies. */
+    size_t content_length = parse_content_length(reqbuf.data, headers_size);
+    if (content_length > 0) {
+        size_t body_have = reqbuf.len - headers_size;
+        size_t total_needed = headers_size + content_length;
+        if (total_needed > MAX_REQUEST_SIZE) {
+            const char *err = "{\"error\":\"Request too large\"}";
+            send_response(client, 413, "Payload Too Large", "application/json", err, strlen(err));
+            dynbuf_free(&reqbuf);
+            CLOSESOCK(client);
+            return;
+        }
+        while (body_have < content_length) {
+            ssize_t n = recv(client, chunk, sizeof(chunk), 0);
+            if (n <= 0) break;  /* short body — pass what we have */
+            size_t to_take = (size_t)n;
+            if (body_have + to_take > content_length) to_take = content_length - body_have;
+            if (dynbuf_append(&reqbuf, chunk, to_take, MAX_REQUEST_SIZE) < 0) break;
+            body_have += to_take;
+        }
+    }
 
     char method[MAX_METHOD_LEN] = {0};
     char path[MAX_PATH_LEN] = {0};
     char headers[MAX_HEADERS][2][MAX_HEADER_VAL];
     int num_headers = 0;
 
-    if (parse_request(buffer, (size_t)total_read, method, path, headers, &num_headers) < 0) {
+    if (parse_request(reqbuf.data, reqbuf.len, method, path, headers, &num_headers) < 0) {
         const char *err = "{\"error\":\"Bad request\"}";
         send_response(client, 400, "Bad Request", "application/json", err, strlen(err));
-        CLOSESOCK(client);
-        return;
-    }
-
-    /* Handle OPTIONS (CORS preflight) */
-    if (strcmp(method, "OPTIONS") == 0) {
-        send_response(client, 204, "No Content", "text/plain", "", 0);
+        dynbuf_free(&reqbuf);
         CLOSESOCK(client);
         return;
     }
@@ -501,29 +770,27 @@ static void handle_client(int client) {
     if (strcmp(method, "GET") == 0 && (strcmp(path, "/health") == 0 || strcmp(path, "/health/") == 0)) {
         const char *health = "{\"status\":\"ok\",\"service\":\"yvy-frontend\"}";
         send_response(client, 200, "OK", "application/json", health, strlen(health));
+        dynbuf_free(&reqbuf);
         CLOSESOCK(client);
         return;
     }
 
-    /* Find body start */
-    const char *body = NULL;
-    size_t body_len = 0;
-    const char *body_start = memmem(buffer, (size_t)total_read, "\r\n\r\n", 4);
-    if (body_start) {
-        body_start += 4;
-        body_len = (size_t)(buffer + total_read - body_start);
-        body = body_start;
-    }
+    /* Body span lives inside reqbuf; safe until dynbuf_free below */
+    const char *body = reqbuf.data + headers_size;
+    size_t body_len = reqbuf.len - headers_size;
 
-    /* Route: /api paths go to backend */
+    /* Route: /api paths go to backend (including OPTIONS preflight, so the
+     * Lua backend can answer CORS with origin-specific headers).
+     * OPTIONS on static paths returns 204 with no CORS headers. */
     if (strncmp(path, "/api", 4) == 0) {
-        proxy_to_backend(client, method, path, headers, num_headers,
-                        body ? body : "", body_len);
+        proxy_to_backend(client, method, path, headers, num_headers, body, body_len);
+    } else if (strcmp(method, "OPTIONS") == 0) {
+        send_response(client, 204, "No Content", "text/plain", "", 0);
     } else {
-        /* Static file */
         serve_static(client, path);
     }
 
+    dynbuf_free(&reqbuf);
     CLOSESOCK(client);
 }
 
@@ -531,7 +798,14 @@ static void handle_client(int client) {
 
 static void handle_sigchld(int sig) {
     (void)sig;
-    g_sigchld_received = 1;
+    /* Reap inside the handler so SA_RESTART-protected blocking syscalls
+     * (e.g. accept) don't have to wake up to clean up children.
+     * waitpid() and the volatile sig_atomic_t decrement are async-signal-safe. */
+    int saved_errno = errno;
+    while (waitpid(-1, NULL, WNOHANG) > 0) {
+        if (g_active_children > 0) g_active_children--;
+    }
+    errno = saved_errno;
 }
 
 /* ── Signal handler for graceful shutdown ────────────────────────────────── */
@@ -637,38 +911,47 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        /* Double-reap zombie reaping before accepting */
-        while (g_sigchld_received) {
-            int saved_errno = errno;
-            waitpid(-1, NULL, WNOHANG);
-            g_sigchld_received = 0;
-            errno = saved_errno;
+        /* Reaping happens in the SIGCHLD handler — no work needed here */
+
+        /* Rate-limit /api paths before forking. Static paths bypass. */
+        if (peek_path_is_api(client)) {
+            int retry = 0;
+            if (!rate_check(client_addr.sin_addr.s_addr, time(NULL), &retry)) {
+                send_429(client, retry);
+                close(client);
+                continue;
+            }
         }
 
         /* Check max children limit */
         if (g_active_children >= MAX_CHILDREN) {
-            /* Pause accepting until a child exits */
+            /* At cap — drop this connection rather than queue indefinitely.
+             * Client gets ECONNRESET; will retry. */
             close(client);
             continue;
         }
 
-        /* Fork child to handle request */
+        /* Reserve the slot before fork so a SIGCHLD that fires immediately
+         * after fork (fast child exit) doesn't decrement past our increment. */
+        g_active_children++;
+
         pid_t pid = fork();
         if (pid < 0) {
             perror("fork");
+            if (g_active_children > 0) g_active_children--;
             close(client);
             continue;
         }
 
         if (pid == 0) {
-            /* Child: handle request and exit */
-            g_active_children++;
+            /* Child: own copy of counter is irrelevant. Close inherited listen
+             * socket so the child doesn't keep it alive past parent shutdown. */
+            if (g_server_fd >= 0) close(g_server_fd);
             handle_client(client);
-            _exit(0);  /* Don't return to parent */
+            _exit(0);
         } else {
-            /* Parent: track child and continue accepting */
-            g_active_children++;
-            close(client);  /* Parent doesn't use the socket */
+            /* Parent */
+            close(client);  /* Parent doesn't use the connection socket */
         }
     }
 
