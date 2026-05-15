@@ -927,34 +927,59 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        /* Block SIGCHLD around check-and-fork to prevent race:
+         * Without this, a SIGCHLD between the >= check and the ++ would
+         * decrement a slot we haven't reserved yet, allowing cap overflow. */
+        sigset_t block_chld, old_sig;
+        sigemptyset(&block_chld);
+        sigaddset(&block_chld, SIGCHLD);
+
+        sigprocmask(SIG_BLOCK, &block_chld, &old_sig);
+
         /* Check max children limit */
         if (g_active_children >= MAX_CHILDREN) {
-            /* At cap — drop this connection rather than queue indefinitely.
-             * Client gets ECONNRESET; will retry. */
+            sigprocmask(SIG_SETMASK, &old_sig, NULL);
+            /* Send 503 Service Unavailable with Retry-After */
+            const char *body503 = "{\"error\":\"Server busy\"}";
+            char hdr503[512];
+            int hlen = snprintf(hdr503, sizeof(hdr503),
+                "HTTP/1.1 503 Service Unavailable\r\n"
+                "Content-Type: application/json\r\n"
+                "Content-Length: %zu\r\n"
+                "Connection: close\r\n"
+                "Retry-After: 5\r\n"
+                "\r\n", strlen(body503));
+            if (hlen > 0) send(client, hdr503, (size_t)hlen, 0);
+            send(client, body503, strlen(body503), 0);
             close(client);
             continue;
         }
 
         /* Reserve the slot before fork so a SIGCHLD that fires immediately
-         * after fork (fast child exit) doesn't decrement past our increment. */
+         * after fork (fast child exit) doesn't decrement past our increment.
+         * SIGCHLD is already blocked here (see above). */
         g_active_children++;
 
         pid_t pid = fork();
         if (pid < 0) {
             perror("fork");
             if (g_active_children > 0) g_active_children--;
+            sigprocmask(SIG_SETMASK, &old_sig, NULL);
             close(client);
             continue;
         }
 
         if (pid == 0) {
-            /* Child: own copy of counter is irrelevant. Close inherited listen
-             * socket so the child doesn't keep it alive past parent shutdown. */
+            /* Child: reset signal mask so child handles signals normally */
+            sigprocmask(SIG_SETMASK, &old_sig, NULL);
+            /* Close inherited listen socket so the child doesn't keep it
+             * alive past parent shutdown. */
             if (g_server_fd >= 0) close(g_server_fd);
             handle_client(client);
             _exit(0);
         } else {
-            /* Parent */
+            /* Parent — unblock SIGCHLD now that the slot is reserved */
+            sigprocmask(SIG_SETMASK, &old_sig, NULL);
             close(client);  /* Parent doesn't use the connection socket */
         }
     }
