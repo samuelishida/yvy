@@ -129,8 +129,12 @@ local function news_prewarm_loop()
         pcall(function()
             -- Pre-warm hot pages: page 1 small (10) and medium (20) for PT and EN
             local combos = {
-                {"pt", 1, 5}, {"pt", 1, 10}, {"pt", 1, 20},
-                {"en", 1, 5}, {"en", 1, 10}, {"en", 1, 20},
+                -- page_size 5: prewarm first 4 pages (covers ~20 articles of lazy scroll)
+                {"pt", 1, 5}, {"pt", 2, 5}, {"pt", 3, 5}, {"pt", 4, 5},
+                {"en", 1, 5}, {"en", 2, 5}, {"en", 3, 5}, {"en", 4, 5},
+                -- legacy page sizes
+                {"pt", 1, 10}, {"pt", 1, 20},
+                {"en", 1, 10}, {"en", 1, 20},
             }
             for _, combo in ipairs(combos) do
                 local lang, page, page_size = combo[1], combo[2], combo[3]

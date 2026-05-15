@@ -174,11 +174,11 @@ const News = () => {
     const node = sentinelRef.current;
     if (!node || !hasMore || loading) return;
     const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && !fetchingRef.current && hasMore) {
-        fetchingRef.current = true;
+      if (entries[0].isIntersecting && hasMore) {
+        observer.disconnect();
         setPage((prevPage) => prevPage + 1);
       }
-    }, { rootMargin: '0px', threshold: 0.1 });
+    }, { rootMargin: '200px', threshold: 0 });
     observer.observe(node);
     return () => observer.disconnect();
   }, [hasMore, loading]);

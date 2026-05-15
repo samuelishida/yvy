@@ -58,6 +58,84 @@ local function read_lookup_json(key, candidates)
     return read_json_file(candidates)
 end
 
+-- ── GeoJSON helpers (pre-transform + ETag + 3-decimal coord precision) ──
+
+local function round3(n)
+    if type(n) ~= "number" then return n end
+    return math.floor(n * 1000 + 0.5) / 1000
+end
+
+-- DJB2 rolling hash; Lua-5.1-safe (mod each step under 2^53 precision)
+local function djb2_hex(s)
+    local h = 5381
+    for i = 1, #s do
+        h = (h * 33 + string.byte(s, i)) % 4294967296
+    end
+    return string.format("%08x", h)
+end
+
+-- Convert raw {name = {rings, ...}} map → GeoJSON FeatureCollection
+local function bounds_to_geojson(raw)
+    local features = {}
+    for name, d in pairs(raw) do
+        if type(d) == "table" and type(d.rings) == "table" then
+            local coords = {}
+            for _, ring in ipairs(d.rings) do
+                local outer = {}
+                for _, pt in ipairs(ring) do
+                    outer[#outer + 1] = { round3(pt[1]), round3(pt[2]) }
+                end
+                coords[#coords + 1] = { outer }
+            end
+            features[#features + 1] = {
+                type = "Feature",
+                properties = {
+                    name = name,
+                    state_abbr = d.state_abbr,
+                    municipality = d.municipality,
+                    category = d.category,
+                    full_name = d.full_name,
+                },
+                geometry = { type = "MultiPolygon", coordinates = coords },
+            }
+        end
+    end
+    return { type = "FeatureCollection", features = features }
+end
+
+local function build_lookup_geojson(redis_key, lookup_key, candidates)
+    local body = redis.get(redis_key .. ":body")
+    local etag = redis.get(redis_key .. ":etag")
+    if body and etag then return body, etag end
+
+    local raw_json = read_lookup_json(lookup_key, candidates)
+    local ok, raw = pcall(cjson.decode, raw_json)
+    if not ok or type(raw) ~= "table" then
+        etag = '"' .. djb2_hex(raw_json) .. '"'
+        return raw_json, etag
+    end
+    raw._updated_at = nil
+    local fc = bounds_to_geojson(raw)
+    body = cjson.encode(fc)
+    etag = '"' .. djb2_hex(body) .. '"'
+    redis.set(redis_key .. ":body", body, 86400)
+    redis.set(redis_key .. ":etag", etag, 86400)
+    return body, etag
+end
+
+local function serve_geo_lookup(ctx, redis_key, lookup_key, candidates)
+    if not rl.enforce(ctx) then return end
+    local body, etag = build_lookup_geojson(redis_key, lookup_key, candidates)
+    ctx:set_header("Cache-Control", "public, max-age=3600")
+    ctx:set_header("ETag", etag)
+    local inm = ctx.req.headers and ctx.req.headers["if-none-match"]
+    if inm and inm == etag then
+        ctx:send(304, "")
+        return
+    end
+    ctx:send(200, body)
+end
+
 -- Health checks
 server.route("GET", "/health", function(ctx)
     ctx:json(200, {status = "healthy", timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")})
@@ -137,44 +215,24 @@ server.route("GET", "/api/weather",             weather.get_weather)
 server.route("GET", "/api/weather/air-quality", weather.get_air_quality)
 server.route("GET", "/api/weather/temperature", weather.get_temperature)
 
--- Indigenous lands
+-- Indigenous lands (pre-transformed GeoJSON, ETag-cached)
 server.route("GET", "/api/indigenous-lands", function(ctx)
-    if not rl.enforce(ctx) then return end
-    local cached = redis.get("lookup:indigenous_lands")
-    if cached then
-        ctx:set_header("Cache-Control", "public, max-age=3600")
-        ctx:send(200, cached)
-        return
-    end
-    local body = read_lookup_json("indigenous_lands", {
+    serve_geo_lookup(ctx, "lookup:indigenous_lands_geo", "indigenous_lands", {
         script_dir .. "data/indigenous_lands.json",
         script_dir .. "../backend/indigenous_lands.json",
         "data/indigenous_lands.json",
         "../backend/indigenous_lands.json",
     })
-    redis.set("lookup:indigenous_lands", body, 3600)
-    ctx:set_header("Cache-Control", "public, max-age=3600")
-    ctx:send(200, body)
 end)
 
--- Conservation units
+-- Conservation units (pre-transformed GeoJSON, ETag-cached)
 server.route("GET", "/api/conservation-units", function(ctx)
-    if not rl.enforce(ctx) then return end
-    local cached = redis.get("lookup:conservation_units")
-    if cached then
-        ctx:set_header("Cache-Control", "public, max-age=3600")
-        ctx:send(200, cached)
-        return
-    end
-    local body = read_lookup_json("conservation_units", {
+    serve_geo_lookup(ctx, "lookup:conservation_units_geo", "conservation_units", {
         script_dir .. "data/conservation_units.json",
         script_dir .. "../backend/conservation_units.json",
         "data/conservation_units.json",
         "../backend/conservation_units.json",
     })
-    redis.set("lookup:conservation_units", body, 3600)
-    ctx:set_header("Cache-Control", "public, max-age=3600")
-    ctx:send(200, body)
 end)
 
 -- Stats

@@ -192,8 +192,10 @@ function _M.get_news(ctx)
     local articles = db.get_news_page(page, page_size, "pt")
     local bad_title_urls = {}
     local bad_desc_urls = {}
-    local missing_en_rows = 0
 
+    -- Read path only: never translate or repair synchronously (blocks request).
+    -- Background news_sync_loop + admin /api/news/repair handle translation.
+    -- Missing EN strings fall back to PT on the client side.
     for _, article in ipairs(articles) do
         clear_bad_en(article)
         if article.title_en_bad then
@@ -206,9 +208,6 @@ function _M.get_news(ctx)
         end
 
         if lang == "en" then
-            if not article.title_en or article.title_en == "" then
-                missing_en_rows = missing_en_rows + 1
-            end
             if article.title_en and article.title_en ~= "" then
                 article.title = article.title_en
             end
@@ -218,46 +217,8 @@ function _M.get_news(ctx)
         end
     end
 
-    if lang == "en" and missing_en_rows > 0 then
-        local texts_to_translate = {}
-        local translate_map = {}
-
-        for i, article in ipairs(articles) do
-            local pt_title = normalize_text(article.title)
-            local pt_desc = normalize_text(article.description)
-            if (not article.title_en or article.title_en == "") and pt_title ~= "" then
-                texts_to_translate[#texts_to_translate + 1] = pt_title
-                translate_map[#translate_map + 1] = {index = i, field = "title"}
-            end
-            if (not article.description_en or article.description_en == "") and pt_desc ~= "" then
-                texts_to_translate[#texts_to_translate + 1] = pt_desc
-                translate_map[#translate_map + 1] = {index = i, field = "description"}
-            end
-        end
-
-        if #texts_to_translate > 0 then
-            local translations = batch_translate(texts_to_translate, "pt", "en")
-            for idx, map in ipairs(translate_map) do
-                local val = translations[idx]
-                if val and val ~= "" and not translate.is_mymemory_warning(val) then
-                    articles[map.index][map.field .. "_en"] = val
-                    if map.field == "title" then
-                        articles[map.index].title = val
-                    else
-                        articles[map.index].description = val
-                    end
-                end
-            end
-            save_en_to_db(articles)
-        end
-    end
-
     if #bad_title_urls > 0 or #bad_desc_urls > 0 then
-        wipe_bad_en_from_db(bad_title_urls, bad_desc_urls)
-    end
-
-    if missing_en_rows > 0 then
-        pcall(repair_bad_translations, math.min(REPAIR_SCAN_LIMIT, missing_en_rows + 10))
+        pcall(wipe_bad_en_from_db, bad_title_urls, bad_desc_urls)
     end
 
     local body = cjson.encode(articles)
