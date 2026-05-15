@@ -64,7 +64,8 @@
 /* ── Configuration ──────────────────────────────────────────────────────── */
 
 #define PORT_DEFAULT    5001
-#define BACKEND_PORT    5000
+#define BACKEND_PORT_DEFAULT 5000
+#define BACKEND_PORT    g_backend_port
 #define BUFFER_SIZE     65536
 #define MAX_HEADERS     50
 #define MAX_PATH_LEN    512
@@ -107,6 +108,7 @@ static const void *memmem(const void *haystack, size_t haystack_len,
 
 static volatile sig_atomic_t g_running = 1;
 static int g_server_fd = -1;
+static int g_backend_port = BACKEND_PORT_DEFAULT;
 static volatile sig_atomic_t g_active_children = 0;
 
 /* ── Rate limiter (parent-side, per-IP token bucket) ────────────────────── */
@@ -278,6 +280,18 @@ static void set_socket_timeout(int fd, int seconds) {
 #endif
 }
 
+/* ── Send all bytes; returns total sent, or -1 on error/partial ──────────── */
+
+static ssize_t send_all(int fd, const char *buf, size_t len) {
+    size_t total = 0;
+    while (total < len) {
+        ssize_t s = send(fd, buf + total, len - total, 0);
+        if (s <= 0) return -1;
+        total += (size_t)s;
+    }
+    return (ssize_t)total;
+}
+
 /* ── Send HTTP response ─────────────────────────────────────────────────── */
 
 static void send_response(int client, int status, const char *status_text,
@@ -293,15 +307,9 @@ static void send_response(int client, int status, const char *status_text,
         "\r\n",
         status, status_text, content_type, body_len);
 
-    send(client, header, (size_t)header_len, 0);
+    send_all(client, header, (size_t)header_len);
     if (body && body_len > 0) {
-        /* Send body in chunks to handle partial sends */
-        size_t sent = 0;
-        while (sent < body_len) {
-            ssize_t n = send(client, body + sent, body_len - sent, 0);
-            if (n <= 0) break;
-            sent += (size_t)n;
-        }
+        send_all(client, body, body_len);
     }
 }
 
@@ -379,6 +387,7 @@ static void serve_static(int client, const char *path) {
     /* sendfile may not send everything in one call on large files */
     while (sent > 0 && (size_t)offset < file_size) {
         sent = sendfile(client, file_fd, &offset, file_size - (size_t)offset);
+        if (sent < 0 && errno == EINTR) { sent = 1; continue; }
     }
 #else
     /* Fallback: read + send in chunks */
@@ -386,13 +395,7 @@ static void serve_static(int client, const char *path) {
         char buf[32768];
         ssize_t n;
         while ((n = read(file_fd, buf, sizeof(buf))) > 0) {
-            size_t to_send = (size_t)n;
-            size_t total_sent = 0;
-            while (total_sent < to_send) {
-                ssize_t s = send(client, buf + total_sent, to_send - total_sent, 0);
-                if (s <= 0) break;
-                total_sent += (size_t)s;
-            }
+            if (send_all(client, buf, (size_t)n) < 0) break;
         }
     }
 #endif
@@ -500,11 +503,10 @@ static void proxy_to_backend(int client, const char *method, const char *path,
     dynbuf_free(&req_dyn);
 
     if (body_len > 0) {
-        size_t total_sent = 0;
-        while (total_sent < body_len) {
-            ssize_t s = send(backend_fd, body + total_sent, body_len - total_sent, 0);
-            if (s <= 0) break;
-            total_sent += (size_t)s;
+        if (send_all(backend_fd, body, body_len) < 0) {
+            const char *err = "{\"error\":\"Backend write failed\"}";
+            send_response(client, 502, "Bad Gateway", "application/json", err, strlen(err));
+            return;
         }
     }
 
@@ -522,43 +524,23 @@ static void proxy_to_backend(int client, const char *method, const char *path,
 
     while ((n = recv(backend_fd, chunk, sizeof(chunk), 0)) > 0) {
         if (streaming) {
-            size_t total = 0;
-            while (total < (size_t)n) {
-                ssize_t s = send(client, chunk + total, (size_t)n - total, 0);
-                if (s <= 0) goto proxy_done;
-                total += (size_t)s;
-            }
+            if (send_all(client, chunk, (size_t)n) < 0) goto proxy_done;
             continue;
         }
 
         if (dynbuf_append(&resp, chunk, (size_t)n, MAX_RESPONSE_SIZE) < 0) {
             /* Cap hit: flush buffered bytes, then stream the rest as-is. */
-            size_t total = 0;
-            while (total < resp.len) {
-                ssize_t s = send(client, resp.data + total, resp.len - total, 0);
-                if (s <= 0) { dynbuf_free(&resp); goto proxy_done; }
-                total += (size_t)s;
-            }
+            if (send_all(client, resp.data, resp.len) < 0) { dynbuf_free(&resp); goto proxy_done; }
             dynbuf_free(&resp);
             streaming = 1;
             /* Now forward this chunk too */
-            size_t t2 = 0;
-            while (t2 < (size_t)n) {
-                ssize_t s = send(client, chunk + t2, (size_t)n - t2, 0);
-                if (s <= 0) goto proxy_done;
-                t2 += (size_t)s;
-            }
+            if (send_all(client, chunk, (size_t)n) < 0) goto proxy_done;
         }
     }
 
     /* Backend EOF reached. Flush buffered response if any. */
     if (!streaming && resp.len > 0) {
-        size_t total = 0;
-        while (total < resp.len) {
-            ssize_t s = send(client, resp.data + total, resp.len - total, 0);
-            if (s <= 0) break;
-            total += (size_t)s;
-        }
+        send_all(client, resp.data, resp.len);
     }
     dynbuf_free(&resp);
 
@@ -843,6 +825,12 @@ int main(int argc, char *argv[]) {
             MAX_CHILDREN = atoi(argv[++i]);
             if (MAX_CHILDREN <= 0) {
                 fprintf(stderr, "Error: --max-children must be a positive integer\n");
+                return 1;
+            }
+        } else if (strcmp(argv[i], "--backend-port") == 0 && i + 1 < argc) {
+            g_backend_port = atoi(argv[++i]);
+            if (g_backend_port <= 0 || g_backend_port > 65535) {
+                fprintf(stderr, "Error: --backend-port must be 1-65535\n");
                 return 1;
             }
         }
