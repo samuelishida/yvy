@@ -29,6 +29,12 @@ local function secure_compare(a, b)
 end
 
 function _M.enforce(ctx)
+    -- Trust requests from localhost (nginx proxy; API key injected server-side)
+    local remote = ctx.req.remote_addr or ""
+    if remote == "127.0.0.1" or remote == "::1" then
+        return true
+    end
+
     if not AUTH_REQUIRED then
         return true
     end
