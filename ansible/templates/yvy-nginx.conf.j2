@@ -1,15 +1,17 @@
-# Yvy nginx — TLS terminator + reverse proxy → C frontend server :5001
+# Yvy nginx — TLS terminator + reverse proxy
 #
 # Architecture:
-#   Browser :443 → nginx (TLS) → C server :5001 → (static OR /api → Lua :5000)
+#   Browser :443 → nginx (TLS)
+#       ├─ /api/*     → Lua backend :5000 (direct, avoids C server 502 race)
+#       ├─ /health    → Lua backend :5000
+#       └─ everything → C server :5001 (static files only)
 #
-# /health bypasses C server and hits backend directly so external monitors
-# don't depend on the C server's static-file routing (it would 404 /health).
+# Note: www.{{ domain }} has no DNS record — not included in server_name.
 
 # HTTP → HTTPS redirect + ACME challenges
 server {
     listen 80;
-    server_name {{ domain }} www.{{ domain }};
+    server_name {{ domain }};
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -23,7 +25,7 @@ server {
 # HTTPS server
 server {
     listen 443 ssl;
-    server_name {{ domain }} www.{{ domain }} _;
+    server_name {{ domain }} _;
 
     # SSL certificates (managed by certbot)
     ssl_certificate /etc/letsencrypt/live/{{ domain }}/fullchain.pem;
@@ -53,7 +55,20 @@ server {
         access_log off;
     }
 
-    # Everything else → C server (serves static + proxies /api/*)
+    # API requests → Lua backend directly (bypass C server to avoid 502 race)
+    location /api/ {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_buffering on;
+    }
+
+    # Everything else → C server (static files only)
     location / {
         proxy_pass http://127.0.0.1:5001;
         proxy_http_version 1.1;

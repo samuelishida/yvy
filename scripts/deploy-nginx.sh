@@ -2,6 +2,8 @@
 # Yvy Frontend Nginx Deployment Script with SSL
 # Replaces local frontend service with Nginx for lower RAM usage.
 # Includes Let's Encrypt SSL setup (two-phase: HTTP-first, then HTTPS)
+#
+# Note: www.yvy.app.br has NO DNS record — cert is for yvy.app.br only.
 
 set -e
 
@@ -27,7 +29,7 @@ echo "Configuring nginx (HTTP-only for certbot)..."
 sudo tee /etc/nginx/sites-available/yvy > /dev/null << 'NGINX_HTTP'
 server {
     listen 80;
-    server_name yvy.app.br www.yvy.app.br _;
+    server_name yvy.app.br _;
     root /opt/yvy/frontend/build;
     index index.html;
 
@@ -48,7 +50,7 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
-    # Proxy API requests to backend
+    # API requests → Lua backend directly (bypass C server to avoid 502 race)
     location /api/ {
         proxy_pass http://127.0.0.1:5000;
         proxy_http_version 1.1;
@@ -74,7 +76,7 @@ echo "Testing nginx config..."
 sudo nginx -t
 sudo systemctl reload nginx
 
-# 6. Request SSL certificate
+# 6. Request SSL certificate (yvy.app.br only; www has no DNS record)
 echo "Requesting SSL certificate from Let's Encrypt..."
 CERT_OBTAINED=false
 if sudo certbot certonly --webroot \
@@ -83,8 +85,7 @@ if sudo certbot certonly --webroot \
     --agree-tos \
     --no-eff-email \
     --non-interactive \
-    -d "$DOMAIN" \
-    -d "www.$DOMAIN"; then
+    -d "$DOMAIN"; then
     CERT_OBTAINED=true
 else
     echo "⚠️  SSL certificate request failed."
@@ -98,7 +99,7 @@ if [ "$CERT_OBTAINED" = true ]; then
     sudo tee /etc/nginx/sites-available/yvy > /dev/null << NGINX_HTTPS
 server {
     listen 80;
-    server_name $DOMAIN www.$DOMAIN;
+    server_name $DOMAIN;
 
     # ACME challenge for Let's Encrypt
     location /.well-known/acme-challenge/ {
@@ -113,7 +114,7 @@ server {
 
 server {
     listen 443 ssl http2;
-    server_name $DOMAIN www.$DOMAIN;
+    server_name $DOMAIN;
     root $APP_DIR/frontend/build;
     index index.html;
 
@@ -141,7 +142,7 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
-    # Proxy API requests to backend
+    # API requests → Lua backend directly (bypass C server to avoid 502 race)
     location /api/ {
         proxy_pass http://127.0.0.1:5000;
         proxy_http_version 1.1;
@@ -165,10 +166,11 @@ else
     echo "Keeping HTTP-only config. App is accessible but not secured."
 fi
 
-# 8. Setup automatic SSL renewal
+# 8. Setup automatic SSL renewal (twice-daily via systemd timer; cron as fallback)
 echo "Setting up automatic SSL renewal..."
 sudo tee /etc/cron.d/certbot-renew > /dev/null << 'CRON_EOF'
-0 3 1 * * root certbot renew --quiet --deploy-hook "systemctl reload nginx"
+# Twice-monthly renewal check (certbot systemd timer handles daily checks)
+0 3 1,15 * * root certbot renew --quiet --webroot -w /var/www/certbot --deploy-hook "systemctl reload nginx"
 CRON_EOF
 
 # 9. Stop Node frontend (free RAM)

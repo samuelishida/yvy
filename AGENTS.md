@@ -231,6 +231,22 @@ Production services: `yvy-backend` (systemd), `yvy-frontend` (systemd).
 - **Backend uses Lua 5.1** with lsqlite3, cjson, luasocket modules.
 - **CORS_ORIGINS** must include the VM's public IP for browser access to work.
 
+## Git Push Authentication
+
+GitHub token at `/media/smk/Shared/Code/gh_token.txt`. Use it when `git push` fails with 401:
+
+```bash
+TOKEN=$(cat /media/smk/Shared/Code/gh_token.txt)
+git remote set-url origin "https://${TOKEN}@github.com/samuelishida/yvy.git"
+git push origin main
+```
+
+Or set it once in credential store:
+```bash
+git config --global credential.helper store
+echo "https://$(cat /media/smk/Shared/Code/gh_token.txt)@github.com" >> ~/.git-credentials
+```
+
 ## Gotchas
 
 - **JSONB BLOB format**: SQLite's `jsonb()` stores data in a binary format that is NOT valid UTF-8. Always use `json(data)` in SQL queries to convert back to text, or `json_extract(data, '$.field')` for individual fields. Never try to `json.decode()` the raw BLOB in Lua.
