@@ -7,6 +7,8 @@ import { cachedFetch, invalidateApiCache } from '../utils/apiCache';
 import 'leaflet/dist/leaflet.css';
 import '../Home.css';
 import L from 'leaflet';
+// Vendored smooth wheel zoom (dead CDN replaced — see vendor file header).
+import '../vendor/Leaflet.SmoothWheelZoom';
 
 // Each MapContainer mount gets a unique key so React creates a fresh DOM node
 // and Leaflet never sees a container with a stale _leaflet_id.

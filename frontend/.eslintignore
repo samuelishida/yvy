@@ -1,0 +1,5 @@
+# Vendored third-party library — do not lint. See:
+#   frontend/src/vendor/Leaflet.SmoothWheelZoom.js (pinned commit header)
+# Re-vendor (and re-pin) rather than editing the source. Its UMD AMD branch
+# (define) trips react-app's no-undef; it is intentionally not part of our code.
+src/vendor/Leaflet.SmoothWheelZoom.js
