@@ -102,6 +102,21 @@ lua5.1 -e 'package.path="./?.lua;./?/init.lua;"..package.path; require("app.env"
 | GET | `/api/weather/temperature` | Yes | Temperature (Open-Meteo) |
 | GET | `/api/stats` | Yes | Record counts from DB |
 
+### Full-Brazil fire payload (gzip)
+
+The home map intentionally loads the **full-Brazil** `/api/fires` dataset — up to
+`MAX_RESULTS = 10000` records (~1.28 MB raw JSON) with no viewport bbox. This is a
+deliberate product decision (all of Brazil on load). It stays acceptable because:
+
+- **Redis** caches the `/api/fires` bbox response (60s TTL) so cache hits are ~10 ms.
+- **nginx gzip** compresses the JSON (`application/json` is in `gzip_types` in
+  `ansible/templates/yvy-nginx.conf.j2`), reducing the ~1.28 MB raw payload to ~176 KB
+  over the wire.
+
+`scripts/verify-gzip.sh` (wired into CI) guards this: it asserts the nginx template
+still enables gzip for `application/json`/`application/javascript`, and — when given a
+URL — that a live endpoint returns `Content-Encoding: gzip`.
+
 ## API Key
 
 When `AUTH_REQUIRED=1`, the backend requires `X-API-Key` on protected routes.

@@ -76,7 +76,8 @@ jobs:
                    scripts/kill-rogue-yvy.sh \
                    scripts/generate-secrets.sh \
                    scripts/deploy-local.sh \
-                   scripts/deploy-nginx.sh; do
+                   scripts/deploy-nginx.sh \
+                   scripts/verify-gzip.sh; do
             [ -f "$f" ] && sh -n "$f" || echo "SKIP $f (not found)"
           done
 
@@ -90,7 +91,12 @@ jobs:
             scripts/start-lua-stack.sh scripts/stop-lua-stack.sh \
             scripts/kill-rogue-yvy.sh scripts/generate-secrets.sh \
             scripts/deploy-local.sh scripts/deploy-nginx.sh \
+            scripts/verify-gzip.sh \
           || true
+
+      - name: Guard nginx gzip config (template)
+        run: |
+          bash scripts/verify-gzip.sh
 
       - name: Validate Ansible playbook syntax
         run: |
