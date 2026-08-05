@@ -332,6 +332,19 @@
       register: api_key_result
       changed_when: false
 
+    - name: Descobrir linhagem do certificado SSL existente
+      ansible.builtin.shell: |
+        ls -d /etc/letsencrypt/live/{{ domain }}* 2>/dev/null | sort | tail -1 || true
+      register: ssl_lineage
+      changed_when: false
+
+    - name: Definir diretório live do certificado SSL
+      ansible.builtin.set_fact:
+        # Certbot may use a suffixed lineage (e.g. yvy.app.br-0001) if the
+        # original (yvy.app.br) had a broken www domain. Fall back to the base
+        # path on fresh installs.
+        ssl_live_dir: "{{ ssl_lineage.stdout if ssl_lineage.stdout else '/etc/letsencrypt/live/' ~ domain }}"
+
     - name: Deploy nginx config (HTTPS with HTTP redirect)
       vars:
         api_key: "{{ api_key_result.stdout }}"
@@ -363,10 +376,12 @@
 
     - name: Verificar certificado SSL existe
       ansible.builtin.stat:
-        path: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
+        path: "{{ ssl_live_dir }}/fullchain.pem"
       register: ssl_cert
 
     - name: Solicitar certificado SSL Let's Encrypt (se nao existir)
+      # NOTE: do NOT request www.{{ domain }} — it has no DNS record and will
+      # fail the ACME challenge (and trigger certbot's --expand prompt).
       when: not ssl_cert.stat.exists
       ansible.builtin.shell:
         cmd: |
@@ -376,16 +391,17 @@
             --agree-tos \
             --no-eff-email \
             --non-interactive \
-            -d "{{ domain }}" \
-            -d "www.{{ domain }}"
+            -d "{{ domain }}"
       ignore_errors: true
       register: cert_result
+      notify: reload nginx
 
     - name: Configurar renew automático do SSL
       ansible.builtin.copy:
         dest: /etc/cron.d/certbot-renew
         content: |
-          0 3 1 * * root certbot renew --quiet --deploy-hook "systemctl reload nginx"
+          # webroot renewal, twice monthly. Does NOT let certbot modify nginx.
+          0 3 1,15 * * root certbot renew --quiet --webroot -w /var/www/certbot --deploy-hook "systemctl reload nginx"
         owner: root
         group: root
         mode: '0644'

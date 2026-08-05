@@ -28,16 +28,18 @@ server {
     server_name {{ domain }} _;
 
     # SSL certificates (managed by certbot)
-    # NOTE: If auto-renewal created a suffixed lineage (e.g. {{ domain }}-0001)
-    # because the original ({{ domain }}/) had a broken www domain, point these
-    # at the -0001 path. Also ensure certbot.timer + old renewal config are
-    # removed so certbot does NOT revert this ssl_certificate directive.
-    ssl_certificate /etc/letsencrypt/live/{{ domain }}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/{{ domain }}/privkey.pem;
+    # ssl_live_dir is discovered by the playbook and points at the actual
+    # lineage (may be {{ domain }}-0001 if the original had a broken www domain).
+    ssl_certificate {{ ssl_live_dir }}/fullchain.pem;
+    ssl_certificate_key {{ ssl_live_dir }}/privkey.pem;
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
     # Gzip (the C server doesn't compress; do it here)
+    # This file is the SOURCE OF TRUTH for the full-Brazil /api/fires gzip behavior.
+    # Do NOT remove `application/json` / `application/javascript` from gzip_types —
+    # `scripts/verify-gzip.sh` in CI asserts they are present. See README.en.md
+    # "Full-Brazil fire payload (gzip)".
     gzip on;
     gzip_vary on;
     gzip_min_length 1024;
