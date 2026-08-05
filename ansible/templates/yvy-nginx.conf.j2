@@ -28,6 +28,10 @@ server {
     server_name {{ domain }} _;
 
     # SSL certificates (managed by certbot)
+    # NOTE: If auto-renewal created a suffixed lineage (e.g. {{ domain }}-0001)
+    # because the original ({{ domain }}/) had a broken www domain, point these
+    # at the -0001 path. Also ensure certbot.timer + old renewal config are
+    # removed so certbot does NOT revert this ssl_certificate directive.
     ssl_certificate /etc/letsencrypt/live/{{ domain }}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/{{ domain }}/privkey.pem;
     include /etc/letsencrypt/options-ssl-nginx.conf;
