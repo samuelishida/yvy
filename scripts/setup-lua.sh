@@ -16,7 +16,10 @@ case "$(uname -s)" in
 esac
 
 # ── Install Lua 5.1 + LuaRocks ────────────────────────────────────────────
-if [ "$OS" = "linux" ]; then
+# Skip the apt step when lua5.1 and luarocks are already present. The Ansible
+# playbook's apt task installs these, so re-running `apt-get update` (~15s)
+# on every deploy is wasted work.
+if [ "$OS" = "linux" ] && { ! command -v lua5.1 >/dev/null 2>&1 || ! command -v luarocks >/dev/null 2>&1; }; then
     echo "Installing Lua + LuaRocks..."
     sudo apt-get update -qq
     sudo apt-get install -y -qq \

@@ -2,6 +2,9 @@
 - name: Deploy Yvy na OCI
   hosts: yvy
   become: true
+  # No task uses ansible_facts; skipping fact gathering shaves seconds and
+  # silences the Python interpreter-discovery warning on every run.
+  gather_facts: false
   vars:
     app_dir: /opt/yvy
     repo_url: https://github.com/samuelishida/yvy.git
@@ -93,7 +96,8 @@
         executable: /bin/bash
       become_user: "{{ yvy_user }}"
       register: node_install
-      changed_when: "'already installed' not in node_install.stdout"
+      # nvm prints "already installed" to stderr when the version is present.
+      changed_when: "'already installed' not in node_install.stderr"
 
     - name: Obter caminho do Node bin
       ansible.builtin.shell:
@@ -114,7 +118,18 @@
         group: "{{ yvy_group }}"
         mode: '0755'
 
-    - name: Corrigir ownership do diretorio da aplicacao
+    - name: Verificar ownership do diretorio da aplicacao
+      ansible.builtin.stat:
+        path: "{{ app_dir }}"
+      register: app_dir_stat
+
+    # The git checkout runs as {{ yvy_user }}, so after the first deploy the
+    # tree is already owned correctly. Only recurse when it is not, to avoid
+    # walking node_modules (thousands of files) on every deploy.
+    - name: Corrigir ownership do diretorio da aplicacao (apenas se necessario)
+      when: >
+        app_dir_stat.stat.pw_name != yvy_user or
+        app_dir_stat.stat.gr_name != yvy_group
       ansible.builtin.file:
         path: "{{ app_dir }}"
         state: directory
@@ -247,7 +262,64 @@
           ansible.builtin.fail:
             msg: "Migração JSONB falhou; o backup SQLite foi restaurado."
 
-    - name: Instalar dependencias frontend
+    # ── Frontend build cache ──────────────────────────────────────────────
+    # npm ci (~2m) and react-scripts build (~3m) are the two slowest steps on
+    # the 1GB VM. They only need to run when the frontend actually changed:
+    #   * npm ci is skipped when node_modules exists and package-lock.json is
+    #     unchanged (checksum marker).
+    #   * npm run build is skipped when frontend/ is unchanged since the last
+    #     successful build (commit-SHA marker) and build/ is present.
+    # Markers live in {{ sqlite_backup_dir }} (outside the repo) so they
+    # survive the `git checkout` (force reset) and never pollute the tree.
+    - name: Verificar package-lock.json do frontend
+      ansible.builtin.stat:
+        path: "{{ app_dir }}/frontend/package-lock.json"
+      register: frontend_package_lock
+
+    - name: Verificar node_modules do frontend
+      ansible.builtin.stat:
+        path: "{{ app_dir }}/frontend/node_modules"
+      register: frontend_node_modules
+
+    - name: Ler checksum das dependencias instaladas
+      ansible.builtin.shell:
+        cmd: cat {{ sqlite_backup_dir }}/frontend-lock-sha 2>/dev/null || true
+      register: frontend_installed_lock_sha
+      changed_when: false
+
+    - name: Obter commit atual do repositorio
+      ansible.builtin.shell:
+        cmd: git -C {{ app_dir }} rev-parse HEAD
+      become_user: "{{ yvy_user }}"
+      register: repo_head
+      changed_when: false
+
+    - name: Ler commit do ultimo build frontend
+      ansible.builtin.shell:
+        cmd: cat {{ sqlite_backup_dir }}/frontend-build-sha 2>/dev/null || true
+      register: frontend_last_build_sha
+      changed_when: false
+
+    - name: Determinar se o frontend precisa ser reconstruido
+      ansible.builtin.shell:
+        cmd: |
+          last="{{ frontend_last_build_sha.stdout }}"
+          if [ -n "$last" ] \
+            && [ -d "{{ app_dir }}/frontend/build" ] \
+            && git -C {{ app_dir }} diff --quiet "$last" HEAD -- frontend/ 2>/dev/null; then
+            echo skip
+          else
+            echo build
+          fi
+        executable: /bin/bash
+      become_user: "{{ yvy_user }}"
+      register: frontend_build_needed
+      changed_when: false
+
+    - name: Instalar dependencias frontend (se necessario)
+      when: >
+        not frontend_node_modules.stat.exists or
+        frontend_package_lock.stat.checksum != frontend_installed_lock_sha.stdout
       ansible.builtin.shell:
         cmd: |
           export NVM_DIR="{{ nvm_dir }}"
@@ -256,8 +328,15 @@
           npm ci
         executable: /bin/bash
       become_user: "{{ yvy_user }}"
+      register: frontend_npm_ci
 
-    - name: Build frontend (produzir static build/)
+    - name: Gravar checksum das dependencias instaladas
+      ansible.builtin.shell:
+        cmd: echo "{{ frontend_package_lock.stat.checksum }}" > {{ sqlite_backup_dir }}/frontend-lock-sha
+      when: frontend_npm_ci.changed is defined and frontend_npm_ci.changed
+
+    - name: Build frontend (se mudou desde o ultimo deploy)
+      when: frontend_build_needed.stdout == 'build'
       ansible.builtin.shell:
         cmd: |
           export NVM_DIR="{{ nvm_dir }}"
@@ -266,6 +345,12 @@
           npm run build
         executable: /bin/bash
       become_user: "{{ yvy_user }}"
+      register: frontend_build
+
+    - name: Gravar commit do build frontend
+      ansible.builtin.shell:
+        cmd: echo "{{ repo_head.stdout }}" > {{ sqlite_backup_dir }}/frontend-build-sha
+      when: frontend_build.changed is defined and frontend_build.changed
 
     - name: Compilar servidor C frontend (yvy-server)
       ansible.builtin.shell:
