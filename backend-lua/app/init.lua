@@ -28,6 +28,7 @@ local STATS_PREWARM_INTERVAL = 60  -- 1 minute
 local BIOMES_PREWARM_INTERVAL = 300  -- 5 minutes
 local NEWS_PREWARM_INTERVAL = 300  -- 5 minutes
 local TI_PREWARM_INTERVAL = 300  -- 5 minutes
+local FIRE_CLASSIFY_INTERVAL = 600  -- 10 minutes
 
 -- ── Startup ──────────────────────────────────────────────────────────────
 
@@ -265,6 +266,24 @@ local function ti_at_risk_prewarm_loop()
     end
 end
 
+-- Classifica a natureza de focos novos/desatualizados. O job roda num
+-- subprocesso destacado (fires_mod.trigger_fire_classification spawna
+-- tools/classify_fires.lua) e grava o marcador Redis fires:classify:last_run;
+-- este loop só dispara quando há focos não-classificados — nunca bloqueia o
+-- loop copas.
+local function nature_backfill_loop()
+    copas.sleep(10)
+    while true do
+        pcall(function()
+            if db.count_unclassified() then
+                logger.info("Background fire-nature classification starting")
+                fires_mod.trigger_fire_classification(0)
+            end
+        end)
+        copas.sleep(FIRE_CLASSIFY_INTERVAL)
+    end
+end
+
 function _M.start_background_tasks()
     copas.addthread(fires_sync_loop)
     copas.addthread(news_sync_loop)
@@ -275,6 +294,7 @@ function _M.start_background_tasks()
     copas.addthread(dashboard_prewarm_loop)
     copas.addthread(state_backfill_loop)
     copas.addthread(ti_at_risk_prewarm_loop)
+    copas.addthread(nature_backfill_loop)
 end
 
 return _M

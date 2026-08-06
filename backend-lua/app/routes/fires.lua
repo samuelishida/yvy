@@ -64,7 +64,9 @@ function _M.get_fires(ctx)
         sw_lat, ne_lat, sw_lng, ne_lng = BR_SW_LAT, BR_NE_LAT, BR_SW_LNG, BR_NE_LNG
     end
 
-    local data = db.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, MAX_RESULTS)
+    -- Mapa carrega apenas focos dentro do Brasil (state atribuído = polígono IBGE).
+    -- Pontos em países vizinhos (dentro do bbox) são excluídos.
+    local data = db.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, MAX_RESULTS, true)
     local last_sync = redis.get("fires:last_sync")
 
     local response = cjson.encode({fires = data, last_sync = last_sync})
@@ -108,6 +110,9 @@ function _M.fetch_firms_data(global_sync)
                         acq_time = row.acq_time or row["acq_time"] or "",
                         satellite = row.satellite or row["satellite"] or "",
                         bright_ti4 = tonumber(row.bright_ti4 or row["bright_ti4"] or 0) or 0,
+                        fire_type = (row.fire_type or row["fire_type"] or ""):lower(),
+                        frp = tonumber(row.frp or row["frp"] or 0) or 0,
+                        daynight = (row.daynight or row["daynight"] or ""):upper(),
                         source = "NASA_FIRMS_VIIRS_SNPP",
                         state = state_lookup.classify_point(lon, lat),
                         ingested_at = utils.now_iso(),
@@ -182,6 +187,24 @@ function _M.get_fires_by_state(ctx)
     redis.set(cache_key, body, 60)
     ctx:set_header("Cache-Control", "public, max-age=60")
     ctx:send(200, body)
+end
+
+-- ── Fire nature stats (pure compute; rota em main.lua) ───────────────────
+
+function _M.get_fire_nature_stats(days, state)
+    days = days or 7
+    local classes, total = db.count_fires_by_nature(days, state)
+    local by_state = nil
+    if not state or state == "" then
+        by_state = db.count_fires_by_nature_by_state(days)
+    end
+    return {
+        days = days,
+        state = state,
+        total = total,
+        classes = classes,
+        by_state = by_state,
+    }
 end
 
 -- ── GET /api/fires/protected-share ───────────────────────────────────────
@@ -349,6 +372,36 @@ function _M.trigger_ti_at_risk_refresh(days, limit)
     if not ok then
         logger.warn("Failed to spawn ti-at-risk warmup: " .. tostring(err))
     end
+end
+
+-- Spawns a detached subprocess to (re)classify fire nature. Never blocks the
+-- copas loop. A Redis lock (setnx, TTL 1800s) prevents duplicate jobs and
+-- covers the full retroactive backfill (~159k+ rows). version=0 → routine
+-- (só não-classificados); version=NATURE_VERSION → reclassifica antigos.
+function _M.trigger_fire_classification(version)
+    version = tonumber(version) or 0
+
+    local lock_key = "fires:classify:lock"
+    if not redis.setnx(lock_key, "1", 1800) then
+        return false  -- another job is already in flight
+    end
+
+    local source = (debug.getinfo(1, "S").source or ""):gsub("^@", "")
+    local backend_dir = source:match("^(.*[/\\])app[/\\]routes[/\\]") or ""
+    local script = backend_dir .. "tools/classify_fires.lua"
+
+    local cmd
+    if package.config:sub(1, 1) == "\\" then
+        cmd = 'start /b lua5.1.exe "' .. script .. '" ' .. version .. ' >NUL 2>NUL'
+    else
+        cmd = 'nohup lua5.1 "' .. script .. '" ' .. version .. ' >/dev/null 2>&1 &'
+    end
+
+    local ok, err = pcall(os.execute, cmd)
+    if not ok then
+        logger.warn("Failed to spawn fire classification: " .. tostring(err))
+    end
+    return true
 end
 
 return _M

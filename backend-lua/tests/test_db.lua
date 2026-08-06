@@ -88,6 +88,79 @@ describe("db", function()
             -- Should reflect the update
             assert.are_equal("low", results[1].confidence)
         end)
+
+        it("persists and returns fire_type/frp/daynight", function()
+            local doc = {
+                lat = -17.0, lon = -53.0, confidence = "nominal",
+                acq_date = "2024-05-10", acq_time = "1500",
+                satellite = "NPP", bright_ti4 = 320.0,
+                fire_type = "vegetation", frp = 245.3, daynight = "D",
+                source = "NASA_FIRMS_VIIRS_SNPP",
+                ingested_at = utils.now_iso(),
+            }
+            db_mod.bulk_upsert_fires({doc})
+            local results = db_mod.find_fires(-18, -16, -54, -52)
+            assert.are_equal(1, #results)
+            assert.are_equal("vegetation", results[1].fire_type)
+            assert.are_equal(245.3, results[1].frp)
+            assert.are_equal("D", results[1].daynight)
+        end)
+
+        it("fire_type/frp/daynight nil-safe quando ausentes", function()
+            local doc = {
+                lat = -18.0, lon = -45.0, confidence = "high",
+                acq_date = "2024-05-11", acq_time = "1600",
+                satellite = "NPP", bright_ti4 = 360.0,
+                source = "NASA_FIRMS_VIIRS_SNPP",
+                ingested_at = utils.now_iso(),
+            }
+            db_mod.bulk_upsert_fires({doc})
+            local results = db_mod.find_fires(-19, -17, -46, -44)
+            assert.are_equal(1, #results)
+            assert.is_nil(results[1].fire_type)
+            assert.is_nil(results[1].frp)
+            assert.is_nil(results[1].daynight)
+        end)
+
+        it("brazil_only filtra focos fora do Brasil (state NULL ou vazio)", function()
+            -- Coordenadas isoladas no RS (região não usada por outros testes)
+            -- para não colidir com focos persistentes das suítes anteriores.
+            local BBOX = { sw_lat = -31.0, ne_lat = -29.0, sw_lng = -56.0, ne_lng = -52.0 }
+            -- Dentro do Brasil (state = RS)
+            local br = {
+                lat = -30.0, lon = -53.5, confidence = "high",
+                acq_date = "2024-06-02", acq_time = "1200",
+                satellite = "NPP", bright_ti4 = 350.0, state = "RS",
+                source = "NASA_FIRMS_VIIRS_SNPP",
+                ingested_at = utils.now_iso(),
+            }
+            -- Fora: state nil (ingest sem atribuição) — mesma bbox
+            local out_null = {
+                lat = -30.2, lon = -55.5, confidence = "low",
+                acq_date = "2024-06-02", acq_time = "1200",
+                satellite = "NPP", bright_ti4 = 300.0,
+                source = "NASA_FIRMS_VIIRS_SNPP",
+                ingested_at = utils.now_iso(),
+            }
+            -- Fora: state "" (backfill legado)
+            local out_empty = {
+                lat = -30.4, lon = -55.0, confidence = "low",
+                acq_date = "2024-06-02", acq_time = "1200",
+                satellite = "NPP", bright_ti4 = 310.0, state = "",
+                source = "NASA_FIRMS_VIIRS_SNPP",
+                ingested_at = utils.now_iso(),
+            }
+            db_mod.bulk_upsert_fires({br, out_null, out_empty})
+
+            -- Sem filtro: os 3 aparecem na bbox
+            local all = db_mod.find_fires(BBOX.sw_lat, BBOX.ne_lat, BBOX.sw_lng, BBOX.ne_lng)
+            assert.are_equal(3, #all)
+
+            -- Com filtro: só o dentro do Brasil (RS = lat -30.0)
+            local only = db_mod.find_fires(BBOX.sw_lat, BBOX.ne_lat, BBOX.sw_lng, BBOX.ne_lng, 10000, true)
+            assert.are_equal(1, #only)
+            assert.are_equal(-30.0, only[1].lat)
+        end)
     end)
 
     describe("bulk_upsert_news / get_news_page", function()
@@ -181,6 +254,117 @@ describe("db", function()
 
             local deleted = db_mod.prune_old_fires(90)
             assert.is_true(deleted >= 1)
+        end)
+    end)
+
+    describe("fire nature classification", function()
+        it("init_db cria colunas de nature (SCHEMA novo)", function()
+            local db = sqlite3.open(test_db_path)
+            local cols = {}
+            local stmt = db:prepare("PRAGMA table_info(fire_data)")
+            for row in stmt:rows() do
+                cols[row[2] or row["name"] or ""] = true
+            end
+            stmt:finalize()
+            db:close()
+            assert.is_true(cols["nature"])
+            assert.is_true(cols["nature_evidence"])
+            assert.is_true(cols["nature_at"])
+            assert.is_true(cols["nature_version"])
+        end)
+
+        it("update_fire_natures round-trip (batch, JSONB evidence + version)", function()
+            local doc = {
+                lat = -21.0, lon = -62.0, confidence = "high",
+                acq_date = "2024-06-01", acq_time = "1200",
+                satellite = "NPP", bright_ti4 = 350.0,
+                source = "NASA_FIRMS_VIIRS_SNPP",
+                ingested_at = utils.now_iso(),
+            }
+            db_mod.bulk_upsert_fires({doc})
+
+            local db = sqlite3.open(test_db_path)
+            local id
+            for row in db:nrows("SELECT id FROM fire_data WHERE lat=-21.0 AND lon=-62.0 AND acq_date='2024-06-01'") do
+                id = tonumber(row.id)
+            end
+            db:close()
+            assert.is_not_nil(id)
+
+            local n = db_mod.update_fire_natures({{id = id, nature = "crime", evidence = {moratorium = true}, at = utils.now_iso()}}, 1)
+            assert.are_equal(1, n)
+
+            local db2 = sqlite3.open(test_db_path)
+            local nature, version, ev
+            local stmt2 = db2:prepare("SELECT nature, nature_version, json(nature_evidence) AS ev FROM fire_data WHERE id=?")
+            stmt2:bind(1, id)
+            for r in stmt2:nrows() do
+                nature = r.nature
+                version = r.nature_version
+                ev = r.ev
+            end
+            stmt2:finalize()
+            db2:close()
+            assert.are_equal("crime", nature)
+            assert.are_equal(1, version)
+            assert.is_not_nil(ev and ev:find("true"))
+        end)
+
+        it("iter_fires_for_classification: min_version 0 exclui classificados; >0 inclui reclassificáveis", function()
+            local db = sqlite3.open(test_db_path)
+            local id
+            for row in db:nrows("SELECT id FROM fire_data WHERE lat=-21.0 AND lon=-62.0 AND acq_date='2024-06-01'") do
+                id = tonumber(row.id)
+            end
+            db:close()
+            assert.is_not_nil(id)
+
+            local it0 = db_mod.iter_fires_for_classification(10000, 0)
+            local found0 = false
+            for _, r in ipairs(it0) do if r.id == id then found0 = true end end
+            assert.is_false(found0, "classificado não deve aparecer com min_version=0")
+
+            local it2 = db_mod.iter_fires_for_classification(10000, 2)
+            local found2 = false
+            for _, r in ipairs(it2) do if r.id == id then found2 = true end end
+            assert.is_true(found2, "reclassificável deve aparecer com min_version=2")
+        end)
+
+        it("count_fires_by_nature agrupa (incl. NULL → unclassified)", function()
+            local doc = {
+                lat = -22.5, lon = -63.0, confidence = "nominal",
+                acq_date = "2020-01-02", acq_time = "1200",
+                satellite = "NPP", bright_ti4 = 330.0,
+                source = "NASA_FIRMS_VIIRS_SNPP",
+                ingested_at = utils.now_iso(),
+            }
+            db_mod.bulk_upsert_fires({doc})
+
+            local classes, total = db_mod.count_fires_by_nature(9999)
+            assert.is_number(total)
+            assert.is_true(total >= 2)
+            assert.is_true(classes.unclassified >= 1, "deve haver foco sem classificação")
+            assert.is_true(classes.crime >= 1, "o foco classificado como crime deve contar")
+        end)
+
+        it("bulk_upsert_fires NÃO apaga nature (coluna escalar)", function()
+            -- Re-upsert do mesmo foco classificado (mesmo lat/lon/acq_date)
+            local doc = {
+                lat = -21.0, lon = -62.0, confidence = "high",
+                acq_date = "2024-06-01", acq_time = "1200",
+                satellite = "NPP", bright_ti4 = 350.0,
+                source = "NASA_FIRMS_VIIRS_SNPP",
+                ingested_at = utils.now_iso(),
+            }
+            db_mod.bulk_upsert_fires({doc})
+
+            local db = sqlite3.open(test_db_path)
+            local nature
+            local stmt = db:prepare("SELECT nature FROM fire_data WHERE lat=-21.0 AND lon=-62.0 AND acq_date='2024-06-01'")
+            for r in stmt:nrows() do nature = r.nature end
+            stmt:finalize()
+            db:close()
+            assert.are_equal("crime", nature)
         end)
     end)
 end)

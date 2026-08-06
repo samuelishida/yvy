@@ -32,6 +32,7 @@ local auth          = require("app.middleware.auth")
 local rl            = require("app.middleware.rate_limit")
 local db            = require("app.db")
 local redis         = require("app.redis")
+local state_lookup  = require("app.lookups.state_lookup")
 local cjson         = require("cjson")
 
 local function read_json_file(candidates)
@@ -159,6 +160,13 @@ server.route("GET", "/api/fires/state-sparklines", fires.get_fires_state_sparkli
 server.route("GET", "/api/fires/protected-share", fires.get_protected_share)
 server.route("POST", "/api/fires/sync", fires.sync_fires)
 server.route("POST", "/api/admin/firms/sync", fires.admin_firms_sync)
+server.route("POST", "/api/admin/fires/classify", function(ctx)
+    if not auth.enforce(ctx) then return end
+    if not rl.enforce(ctx) then return end
+    local version = tonumber(ctx.req.args.version) or 0
+    local started = fires.trigger_fire_classification(version)
+    ctx:json(200, {started = started, version = version})
+end)
 
 -- Deforestation data
 server.route("GET", "/api/data", deforestation.get_data)
@@ -242,6 +250,42 @@ server.route("GET", "/api/fires/ti-at-risk", function(ctx)
     end
     fires.trigger_ti_at_risk_refresh(days, limit)
     ctx:set_header("Cache-Control", "public, max-age=30")
+    ctx:send(200, body)
+end)
+
+-- Fire nature classification stats (por classe e por estado)
+server.route("GET", "/api/fires/nature-stats", function(ctx)
+    if not auth.enforce(ctx) then return end
+    if not rl.enforce(ctx) then return end
+
+    local args = ctx.req.args or {}
+    local days = tonumber(args.days) or 7
+    if days < 1 then days = 1 end
+    if days > 3650 then days = 3650 end
+    local state = type(args.state) == "string" and args.state ~= "" and args.state:upper() or nil
+
+    if state then
+        local found = false
+        for _, uf in ipairs(state_lookup.list_ufs()) do
+            if uf == state then found = true break end
+        end
+        if not found then
+            ctx:json(400, {error = "invalid state"})
+            return
+        end
+    end
+
+    local cache_key = "fires:nature:" .. days .. (state and (":" .. state) or "")
+    local cached = redis.get(cache_key)
+    if cached then
+        ctx:set_header("Cache-Control", "public, max-age=300")
+        ctx:send(200, cached)
+        return
+    end
+
+    local body = cjson.encode(fires.get_fire_nature_stats(days, state))
+    redis.set(cache_key, body, 300)
+    ctx:set_header("Cache-Control", "public, max-age=300")
     ctx:send(200, body)
 end)
 

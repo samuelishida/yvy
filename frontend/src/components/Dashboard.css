@@ -401,6 +401,58 @@
   letter-spacing: 0.01em;
 }
 
+/* ── NatureStats (Inc 7) ─────────────────────────────── */
+.nature-classes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.nature-by-state__title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(138, 158, 147, 1);
+  margin: 6px 0 10px;
+}
+
+.nature-state-row {
+  display: grid;
+  grid-template-columns: 30px 1fr 56px;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+}
+
+.nature-state-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: rgba(138, 158, 147, 1);
+}
+
+.nature-state-track {
+  display: flex;
+  height: 10px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.nature-state-seg {
+  height: 100%;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.nature-state-total {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #E8F0EC;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Dashboard body ──────────────────────────────────── */
 .dash-body {
   display: grid;

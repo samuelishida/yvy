@@ -4,6 +4,7 @@ import { cachedFetch } from '../utils/apiCache';
 import HistoricalTrend from './Dashboard/HistoricalTrend';
 import GeoBreakdown from './Dashboard/GeoBreakdown';
 import TIAtRisk from './Dashboard/TIAtRisk';
+import NatureStats from './Dashboard/NatureStats';
 import './Dashboard.css';
 
 const asArray = v => Array.isArray(v) ? v : [];
@@ -126,6 +127,8 @@ export default function Dashboard() {
         </div>
 
         <TIAtRisk />
+
+        <NatureStats />
 
         <GeoBreakdown />
       </div>

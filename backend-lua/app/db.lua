@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS fire_data (
     acq_date TEXT,
     ingested_at TEXT,
     data BLOB,
+    nature TEXT,
+    nature_evidence BLOB,
+    nature_at TEXT,
+    nature_version INTEGER DEFAULT 0,
     UNIQUE(lat, lon, acq_date)
 );
 
@@ -73,6 +77,7 @@ CREATE INDEX IF NOT EXISTS idx_news_ingested ON news(ingested_at);
 CREATE INDEX IF NOT EXISTS idx_news_page ON news(publishedAt DESC, ingested_at DESC);
 CREATE INDEX IF NOT EXISTS idx_fire_confidence ON fire_data(json_extract(data, '$.confidence'));
 CREATE INDEX IF NOT EXISTS idx_fire_state ON fire_data(json_extract(data, '$.state'));
+CREATE INDEX IF NOT EXISTS idx_fire_fire_type ON fire_data(json_extract(data, '$.fire_type'));
 CREATE INDEX IF NOT EXISTS idx_def_name ON deforestation_data(json_extract(data, '$.name'));
 CREATE INDEX IF NOT EXISTS idx_news_source ON news(json_extract(data, '$.source_name'));
 
@@ -101,6 +106,7 @@ local function pool_acquire()
     db:exec("PRAGMA synchronous=NORMAL")
     db:exec("PRAGMA cache_size=-8000")
     db:exec("PRAGMA temp_store=MEMORY")
+    db:exec("PRAGMA mmap_size=268435456")  -- leitura pesada (ex: fire_data)
     return db
 end
 
@@ -232,6 +238,27 @@ function _M.init_db()
     local db = sqlite3.open(DB_PATH)
     check_sqlite_version(db)
     db:exec(SCHEMA)
+
+    -- Additive migration: colunas de `nature` (DB legado) + índices relacionados.
+    -- (Os índices ficam fora do SCHEMA porque a coluna pode não existir ainda num
+    -- DB legado — CREATE INDEX falharia durante o exec(SCHEMA).)
+    local fire_cols = {}
+    local stmt = db:prepare("PRAGMA table_info(fire_data)")
+    if stmt then
+        for row in stmt:rows() do
+            fire_cols[row[2] or row["name"] or ""] = true
+        end
+        stmt:finalize()
+    end
+    if not fire_cols["nature"] then
+        logger.info("Adding nature columns to fire_data (additive migration)")
+        db:exec("ALTER TABLE fire_data ADD COLUMN nature TEXT")
+        db:exec("ALTER TABLE fire_data ADD COLUMN nature_evidence BLOB")
+        db:exec("ALTER TABLE fire_data ADD COLUMN nature_at TEXT")
+        db:exec("ALTER TABLE fire_data ADD COLUMN nature_version INTEGER DEFAULT 0")
+    end
+    db:exec("CREATE INDEX IF NOT EXISTS idx_fire_nature ON fire_data(nature, nature_version)")
+    db:exec("CREATE INDEX IF NOT EXISTS idx_fire_acqdate_nature ON fire_data(acq_date, nature)")
     db:close()
 
     -- Build pool
@@ -241,6 +268,7 @@ function _M.init_db()
         conn:exec("PRAGMA synchronous=NORMAL")
         conn:exec("PRAGMA cache_size=-8000")
         conn:exec("PRAGMA temp_store=MEMORY")
+        conn:exec("PRAGMA mmap_size=268435456")
         pool_available[#pool_available + 1] = conn
     end
 
@@ -286,6 +314,9 @@ function _M.bulk_upsert_fires(docs)
             bright_ti4 = d.bright_ti4,
             source = d.source,
             state = d.state,
+            fire_type = d.fire_type,
+            frp = d.frp,
+            daynight = d.daynight,
         })
         exec_write(db, sql, {
             d.lat, d.lon, d.acq_date, d.ingested_at, data_json
@@ -309,24 +340,41 @@ local function rows_to_fires(rows)
             acq_time = d.acq_time,
             satellite = d.satellite,
             bright_ti4 = d.bright_ti4,
+            fire_type = d.fire_type,
+            frp = d.frp,
+            daynight = d.daynight,
+            nature = r.nature or r["nature"],
         }
     end
     return result
 end
 
-function _M.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit)
+-- Foco é atribuível a um estado brasileiro? Pontos fora do Brasil ficam com
+-- `state` NULL (ingest) ou `""` (backfill legado) — ambos fora do filtro.
+local function is_brazil_filter_sql()
+    return "json_extract(data, '$.state') IS NOT NULL AND json_extract(data, '$.state') != ''"
+end
+
+function _M.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit, brazil_only)
     limit = limit or 10000
     local db = pool_acquire()
 
     local sql = [[
-        SELECT lat, lon, acq_date, ingested_at, json(data) AS data_json
+        SELECT lat, lon, acq_date, ingested_at, nature, nature_at, json(data) AS data_json
         FROM fire_data
         WHERE lat >= ? AND lat <= ? AND lon >= ? AND lon <= ?
+    ]]
+    local params = {sw_lat, ne_lat, sw_lng, ne_lng}
+    if brazil_only then
+        sql = sql .. "\n          AND " .. is_brazil_filter_sql()
+    end
+    sql = sql .. [[
         ORDER BY acq_date DESC, lat, lon
         LIMIT ?
     ]]
+    params[#params + 1] = limit
 
-    local rows = fetch_all(db, sql, {sw_lat, ne_lat, sw_lng, ne_lng, limit})
+    local rows = fetch_all(db, sql, params)
     pool_release(db)
     return rows_to_fires(rows)
 end
@@ -334,21 +382,28 @@ end
 -- Same as find_fires but restricts to fires whose acq_date falls within the
 -- last `days` days, so a heavy classification loop only sees relevant rows
 -- instead of up to 50k historical ones.
-function _M.find_fires_since(days, sw_lat, ne_lat, sw_lng, ne_lng, limit)
+function _M.find_fires_since(days, sw_lat, ne_lat, sw_lng, ne_lng, limit, brazil_only)
     limit = limit or 50000
     local cutoff = os.date("!%Y-%m-%d", os.time() - (days or 7) * 86400)
     local db = pool_acquire()
 
     local sql = [[
-        SELECT lat, lon, acq_date, ingested_at, json(data) AS data_json
+        SELECT lat, lon, acq_date, ingested_at, nature, nature_at, json(data) AS data_json
         FROM fire_data
         WHERE lat >= ? AND lat <= ? AND lon >= ? AND lon <= ?
           AND acq_date >= ?
+    ]]
+    local params = {sw_lat, ne_lat, sw_lng, ne_lng, cutoff}
+    if brazil_only then
+        sql = sql .. "\n          AND " .. is_brazil_filter_sql()
+    end
+    sql = sql .. [[
         ORDER BY acq_date DESC, lat, lon
         LIMIT ?
     ]]
+    params[#params + 1] = limit
 
-    local rows = fetch_all(db, sql, {sw_lat, ne_lat, sw_lng, ne_lng, cutoff, limit})
+    local rows = fetch_all(db, sql, params)
     pool_release(db)
     return rows_to_fires(rows)
 end
@@ -544,6 +599,140 @@ function _M.update_fire_state(id, state)
         error(err)
     end
     pool_release(db)
+end
+
+-- ── Fire nature classification ───────────────────────────────────────────
+
+-- Batch update de nature/evidence/version numa transação. `version` é
+-- EXATAMENTE o min_version usado para selecionar as linhas (rotina=0;
+-- reclassify=NATURE_VERSION) — ver iter_fires_for_classification.
+function _M.update_fire_natures(rows, version)
+    if not rows or #rows == 0 then return 0 end
+    version = tonumber(version) or 0
+    local db = pool_acquire()
+    db:exec("BEGIN")
+    for _, r in ipairs(rows) do
+        local evidence_json = r.evidence and utils.encode_jsonb(r.evidence) or "{}"
+        exec_write(db, [[
+            UPDATE fire_data SET nature=?, nature_evidence=jsonb(?), nature_at=?, nature_version=? WHERE id=?
+        ]], {r.nature, evidence_json, r.at, version, r.id})
+    end
+    db:exec("COMMIT")
+    pool_release(db)
+    return #rows
+end
+
+-- Lote de focos a classificar. min_version:
+--   0 (rotina / fast path) → só nature IS NULL (nature_version >= 0 nunca < 0)
+--   NATURE_VERSION (reclassify pós-CAR/moratória) → nature_version < min_version + NULLs
+function _M.iter_fires_for_classification(batch_size, min_version)
+    batch_size = batch_size or 500
+    min_version = tonumber(min_version) or 0
+    local db = pool_acquire()
+    local sql = [[
+        SELECT id, lat, lon, acq_date,
+               json_extract(data, '$.state') AS state,
+               json_extract(data, '$.confidence') AS confidence,
+               json_extract(data, '$.bright_ti4') AS bright_ti4,
+               json_extract(data, '$.fire_type') AS fire_type
+        FROM fire_data
+        WHERE (nature IS NULL OR nature_version < ?) AND acq_date IS NOT NULL
+        ORDER BY id
+        LIMIT ?
+    ]]
+    local rows = fetch_all(db, sql, {min_version, batch_size})
+    pool_release(db)
+
+    local result = {}
+    for _, r in ipairs(rows) do
+        result[#result + 1] = {
+            id = tonumber(r.id or r["id"]),
+            lat = tonumber(r.lat or r["lat"]),
+            lon = tonumber(r.lon or r["lon"]),
+            acq_date = r.acq_date or r["acq_date"],
+            state = r.state or r["state"] or "",
+            confidence = r.confidence or r["confidence"],
+            bright_ti4 = tonumber(r.bright_ti4 or r["bright_ti4"]),
+            fire_type = r.fire_type or r["fire_type"],
+        }
+    end
+    return result
+end
+
+-- Há focos não-classificados? (cheap: LIMIT 1 sobre índice em nature)
+function _M.count_unclassified()
+    local db = pool_acquire()
+    local row = fetch_one(db, "SELECT 1 AS found FROM fire_data WHERE nature IS NULL LIMIT 1")
+    pool_release(db)
+    return row ~= nil
+end
+
+-- Distribuição por natureza (nacional ou por estado), num período de dias.
+-- Retorna (classes, total) — classes inclui 'unclassified' p/ nature NULL.
+function _M.count_fires_by_nature(days, state)
+    days = days or 7
+    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    local params = {cutoff}
+    local sql = [[
+        SELECT COALESCE(nature, 'unclassified') AS nature, COUNT(*) AS cnt
+        FROM fire_data
+        WHERE acq_date >= ?
+    ]]
+    if state and state ~= "" then
+        sql = sql .. " AND json_extract(data, '$.state') = ?"
+        params[#params + 1] = state
+    end
+    sql = sql .. " GROUP BY COALESCE(nature, 'unclassified')"
+
+    local db = pool_acquire()
+    local rows = fetch_all(db, sql, params)
+    pool_release(db)
+
+    local classes = {crime = 0, suspeito = 0, permitido = 0, natural = 0, unclassified = 0}
+    local total = 0
+    for _, r in ipairs(rows) do
+        local n = tonumber(r.cnt or r["cnt"]) or 0
+        local key = r.nature or r["nature"] or "unclassified"
+        classes[key] = (classes[key] or 0) + n
+        total = total + n
+    end
+    return classes, total
+end
+
+-- Distribuição por estado × natureza (ordenada por total desc).
+function _M.count_fires_by_nature_by_state(days)
+    days = days or 7
+    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    local db = pool_acquire()
+    local sql = [[
+        SELECT COALESCE(json_extract(data, '$.state'), '') AS st,
+               COALESCE(nature, 'unclassified') AS nature,
+               COUNT(*) AS cnt
+        FROM fire_data
+        WHERE acq_date >= ?
+        GROUP BY COALESCE(json_extract(data, '$.state'), ''), COALESCE(nature, 'unclassified')
+    ]]
+    local rows = fetch_all(db, sql, {cutoff})
+    pool_release(db)
+
+    local by_state = {}
+    for _, r in ipairs(rows) do
+        local st = r.st or r["st"] or ""
+        local nature = r.nature or r["nature"] or "unclassified"
+        local n = tonumber(r.cnt or r["cnt"]) or 0
+        local rec = by_state[st]
+        if not rec then
+            rec = {state = st, total = 0, crime = 0, suspeito = 0, permitido = 0, natural = 0, unclassified = 0}
+            by_state[st] = rec
+        end
+        rec[nature] = (rec[nature] or 0) + n
+        rec.total = rec.total + n
+    end
+
+    local list = {}
+    for _, rec in pairs(by_state) do list[#list + 1] = rec end
+    table.sort(list, function(a, b) return a.total > b.total end)
+    return list
 end
 
 -- ── Deforestation data ───────────────────────────────────────────────────

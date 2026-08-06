@@ -34,6 +34,16 @@ const FIRE_STYLES = {
   low:     { color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 0.55, radius: 1.5, weight: 0 },
 };
 
+// Nature classes (Inc 7): crime = vermelho, suspeito = laranja, permitido =
+// verde, natural = azul. Aplicado quando fire.nature vem preenchido (Inc 5);
+// sem nature cai no fallback por confidence (FIRE_STYLES).
+const FIRE_NATURE_COLORS = {
+  crime:     { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.9,  radius: 3,   weight: 0 },
+  suspeito:  { color: '#f97316', fillColor: '#f97316', fillOpacity: 0.82, radius: 2.5, weight: 0 },
+  permitido: { color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.78, radius: 2.5, weight: 0 },
+  natural:   { color: '#38bdf8', fillColor: '#38bdf8', fillOpacity: 0.72, radius: 2.5, weight: 0 },
+};
+
 const asArray = value => Array.isArray(value) ? value : [];
 
 const DEFAULT_BIOMES = [
@@ -79,10 +89,12 @@ function alertForFire(fire, alerts) {
   return best;
 }
 
-function fireStyle(confidence) {
-  const key = (confidence || 'low').toLowerCase();
-  if (key === 'nominal' || key === 'h') return FIRE_STYLES.nominal;
-  if (key === 'high') return FIRE_STYLES.high;
+function fireStyle(fire) {
+  const nature = fire?.nature;
+  if (nature && FIRE_NATURE_COLORS[nature]) return FIRE_NATURE_COLORS[nature];
+  const confidence = (fire?.confidence || 'low').toLowerCase();
+  if (confidence === 'nominal' || confidence === 'h') return FIRE_STYLES.nominal;
+  if (confidence === 'high') return FIRE_STYLES.high;
   return FIRE_STYLES.low;
 }
 
@@ -214,6 +226,15 @@ function FirePopupContent({ fire, fireAlert, t }) {
     <>
       <strong>{t('home.heatFocus')}</strong><br />
       {t('home.confidence')}: {fire.confidence}<br />
+      {fire.nature && (
+        <>
+          {t('home.nature')}:{' '}
+          <span style={{ color: FIRE_NATURE_COLORS[fire.nature]?.color || '#E8F0EC', fontWeight: 600 }}>
+            {t(`home.nature_${fire.nature}`)}
+          </span>
+          <br />
+        </>
+      )}
       {t('home.date')}: {fire.acq_date} {fire.acq_time}<br />
       {t('home.satellite')}: {fire.satellite}<br />
       {t('home.brightnessTemp')}: {fire.bright_ti4}K
@@ -387,7 +408,7 @@ function FireHoverLock({ fires, hoveredFireIdx, lockedFireIdx, onHoverEnd, onCle
         }
         const cursor = map.latLngToContainerPoint(e.latlng);
         const firePoint = map.latLngToContainerPoint([fire.lat, fire.lon]);
-        const baseRadius = fireStyle(fire.confidence).radius;
+        const baseRadius = fireStyle(fire).radius;
         if (cursor.distanceTo(firePoint) > Math.max(baseRadius + 6, 10)) {
           onHoverEnd();
         }
@@ -849,7 +870,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
                   key={`f-${fullIdx}`}
                   fire={fire}
                   idx={fullIdx}
-                  s={fireStyle(fire.confidence)}
+                  s={fireStyle(fire)}
                   highlighted={highlightedFires?.has(fullIdx)}
                 />
               ))}
@@ -870,6 +891,19 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             </>
           )}
         </MapContainer>
+
+      {/* Nature legend — bottom left, only meaningful while fires layer is on */}
+      {showFires && (
+        <div className="nature-legend">
+          <span className="nature-legend-title">{t('home.natureLegend')}</span>
+          {['crime', 'suspeito', 'permitido', 'natural'].map(n => (
+            <span key={n} className="nature-legend-item">
+              <span className="nature-legend-dot" style={{ background: FIRE_NATURE_COLORS[n].color }} />
+              {t(`home.nature_${n}`)}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Consolidated float panel — bottom right */}
       <FloatPanel
