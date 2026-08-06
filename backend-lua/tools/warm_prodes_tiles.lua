@@ -1,15 +1,12 @@
--- tools/warm_prodes_tiles.lua — detached subprocess that fetches a single
--- PRODES tile from the TerraBrasilis WMS and caches it in tiles_prodes.db.
+-- tools/warm_prodes_tiles.lua — MANUAL/one-off fetcher for a single PRODES
+-- tile from the TerraBrasilis WMS, cached into tiles_prodes.db.
 --
--- WHY: the backend is a single-threaded copas loop. The old tiles.lua code
--- did a synchronous `os.execute(curl ...)` (up to 20s) on a cache miss. A
--- browser zoom/pan burst (30-60 misses × ~2s each) serialized those
--- downloads and froze the whole API; the C frontend then hit its
--- MAX_CHILDREN cap and returned 503 "Server busy" for every tile. Mirroring
--- news_sync.lua / warm_ti_at_risk.lua, the fetch now runs detached
--- (nohup ... &) and the HTTP route returns the transparent PNG immediately
--- — the event loop never blocks, and the tile appears on the next request
--- once it is cached here.
+-- IMPORTANT: This is NOT spawned by the HTTP route anymore. PRODES is a COLD
+-- cache: it is pre-warmed offline by scripts/cache_prodes_tiles.py (single
+-- writer, one connection). Running this concurrently from multiple processes
+-- on the same DB corrupted tiles_prodes.db ("database disk image is
+-- malformed" → 500s). Use it only to backfill a specific tile by hand, and
+-- never in parallel bursts against the live cache.
 --
 -- Usage: lua5.1 tools/warm_prodes_tiles.lua <z> <x> <y>
 

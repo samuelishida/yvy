@@ -1,6 +1,11 @@
 -- tiles.lua — /api/tiles/prodes + /api/tiles/car
--- Serves PRODES WMS tiles from a local SQLite cache (proxy-on-miss to
--- TerraBrasilis WMS) and precomputed CAR tiles from tiles_car.db (miss → EMPTY_PNG).
+-- Serves PRODES WMS tiles and precomputed CAR tiles from local SQLite caches.
+--
+-- COLD-CACHE INVARIANT: tiles_prodes.db / tiles_car.db are pre-warmed OFFLINE
+-- by scripts/cache_prodes_tiles.py (single writer, one connection — safe). The
+-- backend opens them READ-ONLY and NEVER writes or spawns on-demand writers:
+-- concurrent multi-process INSERTs from separate workers corrupted the DB
+-- ("database disk image is malformed" → 500s). Miss → transparent PNG only.
 
 local sqlite3     = require("lsqlite3")
 local logger      = require("app.logger")
@@ -29,11 +34,19 @@ local function open_tiles_db(path)
     local f = io.open(path, "r")
     if not f then return nil end
     f:close()
-    local db = sqlite3.open(path)
-    db:exec("PRAGMA journal_mode=WAL")
+    -- READ-ONLY: this process must never write to a cold cache. Concurrent
+    -- writers from multiple processes are what corrupted tiles_prodes.db.
+    local db, err = sqlite3.open(path, sqlite3.OPEN_READONLY)
+    if not db then
+        logger.warn("Tiles DB open (read-only) failed for " .. path .. ": " .. tostring(err))
+        return nil
+    end
+    -- No journal_mode PRAGMA: setting WAL requires a write handle. The DB is
+    -- already WAL from the offline warmer; read-only WAL reads are fine.
+    db:exec("PRAGMA busy_timeout=5000")
     db:exec("PRAGMA cache_size=-4000")
     _dbs[path] = db
-    logger.info("Tiles DB opened: " .. path)
+    logger.info("Tiles DB opened read-only: " .. path)
     return db
 end
 
@@ -64,29 +77,6 @@ local function serve_png(ctx, data)
     ctx:send(200, data, "image/png")
 end
 
--- Spawns a detached subprocess (tools/warm_prodes_tiles.lua) to fetch and
--- cache one PRODES tile from the TerraBrasilis WMS. Never blocks the copas
--- loop: os.execute returns immediately for a backgrounded command, and the
--- download+insert runs off-loop. A Redis lock inside the worker dedupes
--- concurrent fetches of the same tile.
-local function spawn_prodes_warm(z, x, y)
-    local source = (debug.getinfo(1, "S").source or ""):gsub("^@", "")
-    local backend_dir = source:match("^(.*[/\\])app[/\\]routes[/\\]") or ""
-    local script = backend_dir .. "tools/warm_prodes_tiles.lua"
-
-    local cmd
-    if package.config:sub(1, 1) == "\\" then
-        cmd = 'start /b lua5.1.exe "' .. script .. '" ' .. z .. ' ' .. x .. ' ' .. y .. ' >NUL 2>NUL'
-    else
-        cmd = 'nohup lua5.1 "' .. script .. '" ' .. z .. ' ' .. x .. ' ' .. y .. ' >/dev/null 2>&1 &'
-    end
-
-    local ok, err = pcall(os.execute, cmd)
-    if not ok then
-        logger.warn("Failed to spawn prodes tile warm: " .. tostring(err))
-    end
-end
-
 function _M.get_tile(ctx)
     local z = tonumber(ctx.req.args.z)
     local x = tonumber(ctx.req.args.x)
@@ -113,15 +103,12 @@ function _M.get_tile(ctx)
         end
     end
 
-    -- 2. Cache miss: never block the single-threaded copas loop on a WMS
-    -- download. A zoom/pan burst (30-60 misses × ~2s each) used to freeze the
-    -- whole API and push the C frontend past its MAX_CHILDREN cap, returning
-    -- 503 "Server busy" for every tile. Spawn a detached fetch (see
-    -- tools/warm_prodes_tiles.lua) and serve the transparent PNG now; the
-    -- tile appears on the next request once the worker caches it. Short
-    -- max-age so browsers re-request (and get the real tile) after warming.
-    spawn_prodes_warm(z, x, y)
-
+    -- 2. Cache miss: PRODES is a COLD cache, pre-warmed offline by
+    -- scripts/cache_prodes_tiles.py (single writer — safe). We never download
+    -- or write from the request path: that is what corrupted the DB and froze
+    -- the single-threaded loop. Serve the transparent PNG; the tile appears
+    -- once the offline warmer has cached it. Short max-age so browsers
+    -- re-request (and pick up the real tile) after a re-warm.
     ctx:set_header("Cache-Control", "public, max-age=60")
     ctx:send(200, EMPTY_PNG, "image/png")
 end
