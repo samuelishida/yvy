@@ -69,9 +69,15 @@ function _M.load_car()
     end
     f:close()
 
-    car_conn = sqlite3.open(CAR_DB_PATH)
-    car_conn:exec("PRAGMA journal_mode=WAL")
-    car_conn:exec("PRAGMA synchronous=NORMAL")
+    car_conn = sqlite3.open(CAR_DB_PATH, sqlite3.OPEN_READONLY)
+    if not car_conn then
+        logger.warn("car.db open (read-only) failed at " .. CAR_DB_PATH .. " — CAR lookup disabled")
+        return
+    end
+    -- No journal_mode PRAGMA: car.db is already WAL from the offline import
+    -- (import_car.lua); setting WAL needs a write handle. Read-only is the
+    -- invariant for cold caches — the runtime must never write car.db.
+    car_conn:exec("PRAGMA busy_timeout=5000")
     car_conn:exec("PRAGMA cache_size=-8000")
     car_conn:exec("PRAGMA temp_store=MEMORY")
     car_conn:exec("PRAGMA mmap_size=268435456")  -- leitura pesada
