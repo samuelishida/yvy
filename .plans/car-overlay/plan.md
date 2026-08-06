@@ -140,7 +140,7 @@ the live endpoint. Inc 4 gates on all three.
 
 ### Inc 1 — Gerador de tiles CAR (offline, Python) (L)
 
-**Status:** DONE (2026-08-06) — `scripts/render_car_tiles.py` (multiprocessing 16 workers, resumível, `--self-test` da matemática de tiles); protótipo 1 tile (Cláudia/MT z10) + smoke z6–8 validados; **render completo z6–12 concluído**: 115.404 tiles / 339,5MB (z6 41 · z7 125 · z8 426 · z9 1.544 · z10 5.786 · z11 22.053 · z12 85.429), `integrity_check: ok`, ~6,5min no z10–12.
+**Status:** DONE (2026-08-06) — `scripts/render_car_tiles.py` (multiprocessing 16 workers, resumível, `--self-test` da matemática de tiles); protótipo 1 tile (Cláudia/MT z10) + smoke z6–8 validados; **render completo z6–12 concluído**: 115.404 tiles / 339,5MB (z6 41 · z7 125 · z8 426 · z9 1.544 · z10 5.786 · z11 22.053 · z12 85.429), `integrity_check: ok`, ~6,5min no z10–12. **Revisão (feedback usuário): uniform-fill z≤7 REJEITADO** (tiles quadradões não seguiam a forma do Brasil) — `--fill-max-zoom` default -1, polígonos reais em TODOS os zooms; re-render z6–7 (38+121 tiles) + CHUNK dinâmico p/ engajar workers em zooms baixos. Total final 115.397 tiles.
 **Depends on:** none (needs `backend-lua/data/car/car.db`, already present)
 **Unblocks:** 2, 3
 **Done criteria:** `scripts/render_car_tiles.py` produces `backend-lua/data/tiles_car.db`
@@ -312,7 +312,7 @@ tile eyeballed shows the lime-400 overlay.
 
 ### Inc 3 — Frontend: overlay CAR + clique-inspecionar (M)
 
-**Status:** DONE (2026-08-06) — `Home.js` (CAR_COLOR #a3e635, toggle, TileLayer zIndex 90 opacity 0.5, fire-popup-wins via FireEventsHandler, popup CAR) + `i18n.js` (`home.*`); `npm run build` OK; browser verificado: toggle CAR + overlay lime + click-inspect (Rondolândia/MT) + fire-popup-wins.
+**Status:** DONE (2026-08-06) — `Home.js` (CAR_COLOR #a3e635, toggle, TileLayer zIndex 90 opacity 0.5, fire-popup-wins via FireEventsHandler, popup CAR) + `i18n.js` (`home.*`); `npm run build` OK; browser verificado: toggle CAR + overlay lime + click-inspect (Rondolândia/MT) + fire-popup-wins. **Revisão (feedback usuário): popup preso** — fix toggle-close (`carInspectOpenRef`: 1º clique abre, próximo fecha) + `onClose` limpa estado (popup Leaflet preso capturava eventos de scroll/pointer).
 **Depends on:** 1 (prototype), 2 (pinned API contract)
 **Unblocks:** 4
 **Done criteria:** toggle "CAR" on the map shows the lime-400 overlay; clicking
