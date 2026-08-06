@@ -1,13 +1,15 @@
--- tiles.lua — /api/tiles/prodes
--- Serves PRODES WMS tiles from local SQLite cache.
--- On cache miss, proxies to TerraBrasilis WMS and caches the PNG.
+-- tiles.lua — /api/tiles/prodes + /api/tiles/car
+-- Serves PRODES WMS tiles from a local SQLite cache (proxy-on-miss to
+-- TerraBrasilis WMS) and precomputed CAR tiles from tiles_car.db (miss → EMPTY_PNG).
 
 local sqlite3     = require("lsqlite3")
 local http_client = require("app.http_client")
 local logger      = require("app.logger")
+local env         = require("app.env")
 
 local _M = {}
-local _db = nil
+-- Per-path cached connections (never open per request — 256-tile bursts).
+local _dbs = {}
 
 local WMS_BASE = "https://terrabrasilis.dpi.inpe.br/geoserver/prodes-brasil-nb/prodes_brasil/wms"
 
@@ -24,8 +26,22 @@ local EMPTY_PNG = string.char(
     0x60,0x82
 )
 
-local function open_db()
-    if _db then return _db end
+-- Open (and cache per-path) a tiles DB connection. Returns nil if missing.
+local function open_tiles_db(path)
+    if _dbs[path] then return _dbs[path] end
+    local f = io.open(path, "r")
+    if not f then return nil end
+    f:close()
+    local db = sqlite3.open(path)
+    db:exec("PRAGMA journal_mode=WAL")
+    db:exec("PRAGMA cache_size=-4000")
+    _dbs[path] = db
+    logger.info("Tiles DB opened: " .. path)
+    return db
+end
+
+-- PRODES cache DB (existing path candidates; lazy proxy on miss).
+local function open_prodes_db()
     local script_dir = debug.getinfo(1, "S").source:match("@(.*[/\\])") or ""
     local candidates = {
         script_dir .. "../../data/tiles_prodes.db",
@@ -42,12 +58,7 @@ local function open_db()
         logger.warn("tiles_prodes.db not found — run scripts/cache_prodes_tiles.py first")
         return nil
     end
-    local db = sqlite3.open(path)
-    db:exec("PRAGMA journal_mode=WAL")
-    db:exec("PRAGMA cache_size=-4000")
-    _db = db
-    logger.info("Tiles DB opened: " .. path)
-    return _db
+    return open_tiles_db(path)
 end
 
 local function tile_to_bbox(z, x, y)
@@ -76,7 +87,7 @@ function _M.get_tile(ctx)
     end
 
     -- 1. Cache lookup
-    local db = open_db()
+    local db = open_prodes_db()
     if db then
         local stmt = db:prepare("SELECT data FROM tiles WHERE z=? AND x=? AND y=?")
         if stmt then
@@ -131,6 +142,58 @@ function _M.get_tile(ctx)
         ctx:set_header("Cache-Control", "public, max-age=300")
         ctx:send(200, EMPTY_PNG, "image/png")
     end
+end
+
+-- ── CAR precomputed tiles (/api/tiles/car) ──────────────────────────────
+
+-- Path to tiles_car.db. Env override (CAR_TILES_DB) first — lets tests/ops
+-- point elsewhere; otherwise resolve like PRODES (existing-file candidates).
+local CAR_TILES_DB = env.get("CAR_TILES_DB") or ""
+if CAR_TILES_DB == "" then
+    local script_dir = debug.getinfo(1, "S").source:match("@(.*[/\\])") or ""
+    local candidates = {
+        script_dir .. "../../data/tiles_car.db",
+        script_dir .. "../data/tiles_car.db",
+        "data/tiles_car.db",
+        "/opt/yvy/backend-lua/data/tiles_car.db",
+    }
+    for _, p in ipairs(candidates) do
+        local f = io.open(p, "r")
+        if f then f:close(); CAR_TILES_DB = p; break end
+    end
+    if CAR_TILES_DB == "" then CAR_TILES_DB = "backend-lua/data/tiles_car.db" end
+end
+
+-- Serves precomputed CAR tiles from tiles_car.db. No live upstream (fully
+-- precomputed); cache miss returns the shared transparent PNG.
+function _M.get_tile_car(ctx)
+    local z = tonumber(ctx.req.args.z)
+    local x = tonumber(ctx.req.args.x)
+    local y = tonumber(ctx.req.args.y)
+
+    if not z or not x or not y then
+        ctx:error(400, "Missing z/x/y params")
+        return
+    end
+
+    local db = open_tiles_db(CAR_TILES_DB)
+    if db then
+        local stmt = db:prepare("SELECT data FROM tiles WHERE z=? AND x=? AND y=?")
+        if stmt then
+            stmt:bind(1, z); stmt:bind(2, x); stmt:bind(3, y)
+            for row in stmt:nrows() do
+                local data = row.data
+                stmt:finalize()
+                serve_png(ctx, data)
+                return
+            end
+            stmt:finalize()
+        end
+    end
+
+    -- Cache miss: no upstream to backfill — transparent PNG (graceful).
+    ctx:set_header("Cache-Control", "public, max-age=300")
+    ctx:send(200, EMPTY_PNG, "image/png")
 end
 
 return _M

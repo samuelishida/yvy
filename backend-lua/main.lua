@@ -177,6 +177,15 @@ server.route("GET", "/api/deforestation/historical", deforestation_stats.get_his
 -- PRODES tiles (WMS proxy/cache)
 server.route("GET", "/api/tiles/prodes", tiles.get_tile)
 
+-- CAR tiles (precomputed raster overlay — Inc 2, .plans/car-overlay)
+server.route("GET", "/api/tiles/car", tiles.get_tile_car)
+
+-- CAR point lookup (clique-para-inspecionar do overlay)
+server.route("GET", "/api/car/lookup", function(ctx)
+    local car_routes = require("app.routes.car")
+    car_routes.get_lookup(ctx)
+end)
+
 -- Biomes
 server.route("GET", "/api/biomes", biomes.get_biomes)
 
