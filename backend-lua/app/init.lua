@@ -27,6 +27,7 @@ local ALERTS_SYNC_INTERVAL = 1800  -- 30 minutes
 local STATS_PREWARM_INTERVAL = 60  -- 1 minute
 local BIOMES_PREWARM_INTERVAL = 300  -- 5 minutes
 local NEWS_PREWARM_INTERVAL = 300  -- 5 minutes
+local TI_PREWARM_INTERVAL = 300  -- 5 minutes
 
 -- ── Startup ──────────────────────────────────────────────────────────────
 
@@ -248,6 +249,22 @@ local function news_prewarm_loop()
     end
 end
 
+-- Pre-warmer for /api/fires/ti-at-risk. The compute runs in a detached
+-- subprocess (see fires.trigger_ti_at_risk_refresh) so this loop only spawns
+-- the refresher when the cache is missing — it never blocks the event loop.
+local function ti_at_risk_prewarm_loop()
+    copas.sleep(10)
+    while true do
+        pcall(function()
+            if not redis.get("fires:ti_at_risk:7:10") then
+                logger.info("Background ti-at-risk prewarm starting")
+                fires_mod.trigger_ti_at_risk_refresh(7, 10)
+            end
+        end)
+        copas.sleep(TI_PREWARM_INTERVAL)
+    end
+end
+
 function _M.start_background_tasks()
     copas.addthread(fires_sync_loop)
     copas.addthread(news_sync_loop)
@@ -257,6 +274,7 @@ function _M.start_background_tasks()
     copas.addthread(news_prewarm_loop)
     copas.addthread(dashboard_prewarm_loop)
     copas.addthread(state_backfill_loop)
+    copas.addthread(ti_at_risk_prewarm_loop)
 end
 
 return _M

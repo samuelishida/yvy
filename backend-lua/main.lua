@@ -213,6 +213,12 @@ server.route("GET", "/api/alerts", function(ctx)
 end)
 
 -- TI at-risk (top indigenous lands with recent fires)
+-- The point-in-polygon compute is CPU-heavy (~77s on a cold cache for ~19k
+-- recent fires x 547 TI polygons) and the backend is a single-threaded copas
+-- loop, so a synchronous compute would block EVERY other request (incl. news).
+-- The compute therefore runs in a detached subprocess (tools/warm_ti_at_risk.lua)
+-- that writes the result to Redis. This route only reads Redis and serves a
+-- last-known-good (stale) copy while a refresh is in flight — it never blocks.
 server.route("GET", "/api/fires/ti-at-risk", function(ctx)
     if not auth.enforce(ctx) then return end
     if not rl.enforce(ctx) then return end
@@ -220,6 +226,7 @@ server.route("GET", "/api/fires/ti-at-risk", function(ctx)
     local days = tonumber(ctx.req.args.days) or 7
     local limit = tonumber(ctx.req.args.limit) or 10
     local cache_key = "fires:ti_at_risk:" .. days .. ":" .. limit
+    local stale_key = cache_key .. ":stale"
 
     local cached = redis.get(cache_key)
     if cached then
@@ -228,52 +235,13 @@ server.route("GET", "/api/fires/ti-at-risk", function(ctx)
         return
     end
 
-    -- Fresh compute: classify fires against TI polygons
-    local fires_data = db.find_fires(-34.0, 5.5, -74.0, -34.0, 50000)
-    local cutoff = os.time() - days * 86400
-    local ti_lookup = require("app.lookups.indigenous_lands_lookup")
-    local by_ti = {}
-    for _, fire in ipairs(fires_data) do
-        local acq = fire.acq_date
-        local ts = acq and os.time({year = tonumber(acq:sub(1,4)), month = tonumber(acq:sub(6,7)), day = tonumber(acq:sub(9,10))}) or 0
-        if ts >= cutoff then
-            local info = ti_lookup.classify_point(fire.lon, fire.lat)
-            if info then
-                local name = info.name
-                local rec = by_ti[name]
-                if not rec then
-                    rec = {name = name, state_abbr = info.state_abbr or "", fire_count = 0, sum_lat = 0, sum_lon = 0}
-                    by_ti[name] = rec
-                end
-                rec.fire_count = rec.fire_count + 1
-                rec.sum_lat = rec.sum_lat + (tonumber(fire.lat) or 0)
-                rec.sum_lon = rec.sum_lon + (tonumber(fire.lon) or 0)
-            end
-        end
+    -- Cold path: serve last-known-good immediately + refresh in background.
+    local body = redis.get(stale_key)
+    if not body then
+        body = cjson.encode({ days = days, limit = limit, count = 0, lands = {} })
     end
-
-    local sorted = {}
-    for _, rec in pairs(by_ti) do
-        sorted[#sorted + 1] = rec
-    end
-    table.sort(sorted, function(a, b) return a.fire_count > b.fire_count end)
-
-    local result = {}
-    for i = 1, math.min(limit, #sorted) do
-        local r = sorted[i]
-        local n = r.fire_count > 0 and r.fire_count or 1
-        result[#result + 1] = {
-            name = r.name,
-            state_abbr = r.state_abbr,
-            fire_count = r.fire_count,
-            lat = r.sum_lat / n,
-            lon = r.sum_lon / n,
-        }
-    end
-
-    local body = cjson.encode({ days = days, limit = limit, count = #result, lands = result })
-    redis.set(cache_key, body, 600)
-    ctx:set_header("Cache-Control", "public, max-age=300")
+    fires.trigger_ti_at_risk_refresh(days, limit)
+    ctx:set_header("Cache-Control", "public, max-age=30")
     ctx:send(200, body)
 end)
 

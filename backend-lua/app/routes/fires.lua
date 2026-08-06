@@ -272,5 +272,84 @@ function _M.get_fires_state_sparklines(ctx)
     ctx:json(200, { days = days, sparklines = sparklines })
 end
 
+-- ── TI at-risk compute (runs off the copas loop) ─────────────────────────
+
+-- Pure compute for /api/fires/ti-at-risk. Returns the JSON body; callers are
+-- responsible for caching. Kept OFF the copas event loop (runs in a detached
+-- subprocess via trigger_ti_at_risk_refresh) because it is CPU-heavy.
+function _M.compute_ti_at_risk(days, limit)
+    days = days or 7
+    limit = limit or 10
+
+    local ti_lookup = require("app.lookups.indigenous_lands_lookup")
+    local fires_data = db.find_fires_since(days, BR_SW_LAT, BR_NE_LAT, BR_SW_LNG, BR_NE_LNG, 50000)
+
+    local by_ti = {}
+    for _, fire in ipairs(fires_data) do
+        local info = ti_lookup.classify_point(fire.lon, fire.lat)
+        if info then
+            local name = info.name
+            local rec = by_ti[name]
+            if not rec then
+                rec = {name = name, state_abbr = info.state_abbr or "", fire_count = 0, sum_lat = 0, sum_lon = 0}
+                by_ti[name] = rec
+            end
+            rec.fire_count = rec.fire_count + 1
+            rec.sum_lat = rec.sum_lat + (tonumber(fire.lat) or 0)
+            rec.sum_lon = rec.sum_lon + (tonumber(fire.lon) or 0)
+        end
+    end
+
+    local sorted = {}
+    for _, rec in pairs(by_ti) do
+        sorted[#sorted + 1] = rec
+    end
+    table.sort(sorted, function(a, b) return a.fire_count > b.fire_count end)
+
+    local result = {}
+    for i = 1, math.min(limit, #sorted) do
+        local r = sorted[i]
+        local n = r.fire_count > 0 and r.fire_count or 1
+        result[#result + 1] = {
+            name = r.name,
+            state_abbr = r.state_abbr,
+            fire_count = r.fire_count,
+            lat = r.sum_lat / n,
+            lon = r.sum_lon / n,
+        }
+    end
+
+    return cjson.encode({ days = days, limit = limit, count = #result, lands = result })
+end
+
+-- Spawns a detached subprocess to recompute the ti-at-risk payload. Never
+-- blocks the copas loop (os.execute returns immediately for a backgrounded
+-- command). A short Redis lock (setnx) prevents duplicate refreshers.
+function _M.trigger_ti_at_risk_refresh(days, limit)
+    days = days or 7
+    limit = limit or 10
+
+    local lock_key = "fires:ti_at_risk:lock:" .. days .. ":" .. limit
+    if not redis.setnx(lock_key, "1", 120) then
+        return  -- another refresh is already in flight
+    end
+
+    local source = (debug.getinfo(1, "S").source or ""):gsub("^@", "")
+    local backend_dir = source:match("^(.*[/\\])app[/\\]routes[/\\]") or ""
+    local script = backend_dir .. "tools/warm_ti_at_risk.lua"
+
+    local cmd
+    if package.config:sub(1, 1) == "\\" then
+        cmd = 'start /b lua5.1.exe "' .. script .. '" ' .. days .. ' ' .. limit .. ' >NUL 2>NUL'
+    else
+        cmd = 'nohup lua5.1 "' .. script .. '" ' .. days .. ' ' .. limit .. ' >/dev/null 2>&1 &'
+    end
+
+    local ok, err = pcall(os.execute, cmd)
+    if not ok then
+        logger.warn("Failed to spawn ti-at-risk warmup: " .. tostring(err))
+    end
+end
+
 return _M
 

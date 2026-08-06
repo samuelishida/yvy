@@ -12,8 +12,26 @@ local _M = {}
 
 local LOOKUP_KEY = "indigenous_lands"
 
--- List of {name, meta, rings}
+-- List of {name, meta, rings, bounds}
 local lands = {}
+
+-- Bounding box of the outer ring, used as a cheap reject before the expensive
+-- point-in-polygon ray-cast. rings[1] is the outer ring (see geo.point_in_polygon).
+local function compute_bounds(rings)
+    local outer = rings and rings[1]
+    if not outer or #outer == 0 then
+        return { -180, -90, 180, 90 }
+    end
+    local min_lon, min_lat, max_lon, max_lat = math.huge, math.huge, -math.huge, -math.huge
+    for _, pt in ipairs(outer) do
+        local lon, lat = pt[1], pt[2]
+        if lon < min_lon then min_lon = lon end
+        if lon > max_lon then max_lon = lon end
+        if lat < min_lat then min_lat = lat end
+        if lat > max_lat then max_lat = lat end
+    end
+    return { min_lon, min_lat, max_lon, max_lat }
+end
 
 local function _build_from_parsed(parsed)
     lands = {}
@@ -26,7 +44,7 @@ local function _build_from_parsed(parsed)
                     clean_meta[k] = v
                 end
             end
-            lands[#lands + 1] = {name = name, meta = clean_meta, rings = rings}
+            lands[#lands + 1] = {name = name, meta = clean_meta, rings = rings, bounds = compute_bounds(rings)}
         end
     end
 end
@@ -81,7 +99,11 @@ function _M.count() return #lands end
 
 function _M.classify_point(lon, lat)
     for _, entry in ipairs(lands) do
-        if geo.point_in_polygon(lon, lat, entry.rings) then
+        -- Cheap bounding-box reject first: most fire points are nowhere near
+        -- any TI polygon, so skip the ray-cast for them entirely.
+        local b = entry.bounds
+        if lon >= b[1] and lon <= b[3] and lat >= b[2] and lat <= b[4]
+           and geo.point_in_polygon(lon, lat, entry.rings) then
             local result = {name = entry.name}
             for k, v in pairs(entry.meta) do
                 result[k] = v

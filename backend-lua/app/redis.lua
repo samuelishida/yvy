@@ -132,6 +132,19 @@ function _M.set(key, value, ttl)
     pool_release(s)
 end
 
+-- Atomic SET if the key does not exist (SET NX EX). Used as a short-lived
+-- lock so only one background refresher runs at a time. Returns true if the
+-- key was set (caller should proceed), false if it already existed.
+function _M.setnx(key, value, ttl)
+    ttl = ttl or CACHE_TTL_DEFAULT
+    local s = pool_acquire()
+    if not s then return true end  -- Redis down: allow the caller to proceed
+    command(s, "SET", key, value, "NX", "EX", ttl)
+    local res = read_response(s)
+    pool_release(s)
+    return res == "OK"
+end
+
 function _M.delete(key)
     local s = pool_acquire()
     if not s then return end

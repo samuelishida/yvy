@@ -297,21 +297,7 @@ function _M.bulk_upsert_fires(docs)
     return #docs
 end
 
-function _M.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit)
-    limit = limit or 10000
-    local db = pool_acquire()
-
-    local sql = [[
-        SELECT lat, lon, acq_date, ingested_at, json(data) AS data_json
-        FROM fire_data
-        WHERE lat >= ? AND lat <= ? AND lon >= ? AND lon <= ?
-        ORDER BY acq_date DESC, lat, lon
-        LIMIT ?
-    ]]
-
-    local rows = fetch_all(db, sql, {sw_lat, ne_lat, sw_lng, ne_lng, limit})
-    pool_release(db)
-
+local function rows_to_fires(rows)
     local result = {}
     for _, r in ipairs(rows) do
         local d = utils.decode_jsonb(r.data_json or r["data_json"])
@@ -326,6 +312,45 @@ function _M.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit)
         }
     end
     return result
+end
+
+function _M.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit)
+    limit = limit or 10000
+    local db = pool_acquire()
+
+    local sql = [[
+        SELECT lat, lon, acq_date, ingested_at, json(data) AS data_json
+        FROM fire_data
+        WHERE lat >= ? AND lat <= ? AND lon >= ? AND lon <= ?
+        ORDER BY acq_date DESC, lat, lon
+        LIMIT ?
+    ]]
+
+    local rows = fetch_all(db, sql, {sw_lat, ne_lat, sw_lng, ne_lng, limit})
+    pool_release(db)
+    return rows_to_fires(rows)
+end
+
+-- Same as find_fires but restricts to fires whose acq_date falls within the
+-- last `days` days, so a heavy classification loop only sees relevant rows
+-- instead of up to 50k historical ones.
+function _M.find_fires_since(days, sw_lat, ne_lat, sw_lng, ne_lng, limit)
+    limit = limit or 50000
+    local cutoff = os.date("!%Y-%m-%d", os.time() - (days or 7) * 86400)
+    local db = pool_acquire()
+
+    local sql = [[
+        SELECT lat, lon, acq_date, ingested_at, json(data) AS data_json
+        FROM fire_data
+        WHERE lat >= ? AND lat <= ? AND lon >= ? AND lon <= ?
+          AND acq_date >= ?
+        ORDER BY acq_date DESC, lat, lon
+        LIMIT ?
+    ]]
+
+    local rows = fetch_all(db, sql, {sw_lat, ne_lat, sw_lng, ne_lng, cutoff, limit})
+    pool_release(db)
+    return rows_to_fires(rows)
 end
 
 function _M.prune_old_fires(days)
