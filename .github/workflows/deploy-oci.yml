@@ -1,19 +1,25 @@
 name: Deploy to OCI
 
 on:
-  push:
-    branches:
-      - main
-      - master
+  # Só dispara DEPOIS que o workflow "CI" terminar — não mais em paralelo no push.
+  # O guard no job garante deploy apenas quando o CI passou (conclusion=success)
+  # e o run foi na main. workflow_dispatch segue disponível p/ deploy manual.
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
   workflow_dispatch:
 
 jobs:
   deploy:
     name: Deploy via OCI CLI + Ansible
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # workflow_run: check out o commit exato que o CI testou; dispatch: branch default
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
       - name: Setup OCI deploy tooling
         uses: actions/setup-python@v5
