@@ -46,7 +46,7 @@ describe("fire_classify", function()
             assert.is_true(classify.thermal_weak(15, 360, "vegetation"))
             assert.is_false(classify.thermal_weak(50, 360, "vegetation"))
         end)
-        it("bright_ti4 baixo + fire_type industrial → fraco (string e numérico)", function()
+        it("bright_ti4 baixo (< 310K) → fraco mesmo sem tipo industrial", function()
             local cfg = { thermal = {
                 confidence_weak = {"low"}, confidence_weak_num = 20,
                 bright_ti4_weak = 310, fire_type_industrial = {"other", "industrial"},
@@ -55,13 +55,16 @@ describe("fire_classify", function()
             assert.is_true(classify.thermal_weak("nominal", 300, "industrial", cfg))
             assert.is_true(classify.thermal_weak("nominal", 300, 0, cfg))
             assert.is_false(classify.thermal_weak("nominal", 340, "industrial", cfg))  -- bright alto
-            assert.is_false(classify.thermal_weak("nominal", 300, "vegetation", cfg))    -- tipo não industrial
+            assert.is_true(classify.thermal_weak("nominal", 300, "vegetation", cfg))    -- BT baixo basta
         end)
         it("nil-safe: bright_ti4 nil → não fraco", function()
             assert.is_false(classify.thermal_weak("nominal", nil, nil))
         end)
         it("default config sem industriais → ramo industrial inativo", function()
-            assert.is_false(classify.thermal_weak("nominal", 300, "industrial"))
+            -- Com BT alto, o ramo industrial (inativo no default) não marca fraco
+            assert.is_false(classify.thermal_weak("nominal", 340, "industrial"))
+            -- BT baixo segue fraco independente do tipo (regra nova)
+            assert.is_true(classify.thermal_weak("nominal", 300, "industrial"))
         end)
     end)
 
@@ -110,8 +113,8 @@ describe("fire_classify", function()
             assert.are_equal("natural", r.nature)
             assert.is_true(r.evidence.thermal_weak)
         end)
-        it("NATURE_VERSION default = 1", function()
-            assert.are_equal(1, classify.NATURE_VERSION)
+        it("NATURE_VERSION default = 2", function()
+            assert.are_equal(2, classify.NATURE_VERSION)
         end)
     end)
 end)
