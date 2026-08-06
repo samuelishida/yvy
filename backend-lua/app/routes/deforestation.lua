@@ -48,7 +48,11 @@ function _M.get_data(ctx)
 
     local cache_key = string.format("data:%.1f:%.1f:%.1f:%.1f", sw_lat, ne_lat, sw_lng, ne_lng)
     local cached = redis.get(cache_key)
-    if cached then ctx:send(200, cached); return end
+    if cached then
+        ctx:set_header("Cache-Control", "public, max-age=60")
+        ctx:send(200, cached)
+        return
+    end
 
     local data = db.find_deforestation(sw_lat, ne_lat, sw_lng, ne_lng, MAX_RESULTS)
     local records = {}
@@ -62,6 +66,7 @@ function _M.get_data(ctx)
 
     local body = cjson.encode(records)
     redis.set(cache_key, body, 900)
+    ctx:set_header("Cache-Control", "public, max-age=60")
     ctx:send(200, body)
 end
 

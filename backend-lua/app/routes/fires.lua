@@ -140,6 +140,16 @@ function _M.fetch_firms_data(global_sync)
     end
 
     redis.delete_pattern("firescache:*")
+    -- Invalidate all derived caches that depend on fire data: dashboard
+    -- timeseries, by-state breakdowns, stats summary, biomes, and
+    -- protected-share. Without this, the dashboard showed stale data for
+    -- up to 60-300s after a FIRMS sync (same class of bug as the news
+    -- "set antigo" — cache outliving the data it represents).
+    redis.delete_pattern("fires:ts:*")
+    redis.delete_pattern("fires:bystate:*")
+    redis.delete("stats:all")
+    redis.delete("biomes:all")
+    redis.delete("fires:protected_share")
     redis.set("fires:last_sync", utils.now_iso(), 3600)
     logger.info("FIRMS sync complete: " .. total_count .. " records")
     return total_count
