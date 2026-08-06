@@ -709,8 +709,8 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
   // Unique per-mount key prevents "Map container already initialized" on remount
   const [mapKey] = useState(() => ++_mapMountCounter);
   const [visibleFires, setVisibleFires] = useState([]);
-  // CAR overlay (Inc 3): showCar toggle + carInspect popup state (local ao card).
-  const [showCar, setShowCar] = useState(false);
+  // CAR overlay (Inc 3): showCar toggle (padrão ON) + carInspect popup state (local ao card).
+  const [showCar, setShowCar] = useState(true);
   const [carInspect, setCarInspect] = useState(null);
   const alertRows = asArray(alerts);
   const fireRows = asArray(fires);
@@ -823,13 +823,13 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             className={`layer-toggle${showIndigenous ? ' active' : ''}`}
             onClick={() => setShowIndigenous(!showIndigenous)}
           >
-            <span className="lt-dot" /> {t('home.layerIndigenous')}
+            <span className="lt-dot" style={{ background: INDIGENOUS_STYLE.color }} /> {t('home.layerIndigenous')}
           </button>
           <button
             className={`layer-toggle${showConservation ? ' active' : ''}`}
             onClick={() => setShowConservation(!showConservation)}
           >
-            <span className="lt-dot" /> {t('home.layerConservation')}
+            <span className="lt-dot" style={{ background: CONSERVATION_STYLE.color }} /> {t('home.layerConservation')}
           </button>
           <button
             className={`layer-toggle${showCar ? ' active' : ''}`}
