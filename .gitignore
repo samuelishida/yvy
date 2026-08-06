@@ -192,3 +192,13 @@ backend-lua/data/*.db-shm
 backend-lua/data/*.db-wal
 backend-lua/data/prodes_brasil_2024_v20260407/
 backend-lua/data/tiles_prodes.db
+
+# Yvy — dados locais / tooling (não versionar)
+# Dumps CAR (GeoJSON por UF, vários GB) — importar no servidor
+backend-lua/data/car/
+# Backups do SQLite (ex.: yvy.db.backup-*)
+backend-lua/data/*.db.backup*
+# Status de sessão (stale, de outra branch)
+status.md
+# Estado interno da ferramenta Raptor
+.raptor/
