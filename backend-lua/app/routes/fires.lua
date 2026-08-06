@@ -103,6 +103,20 @@ function _M.fetch_firms_data(global_sync)
                 local lat = tonumber(row.latitude or row["latitude"])
                 local lon = tonumber(row.longitude or row["longitude"])
                 if lat and lon and lat >= -90 and lat <= 90 and lon >= -180 and lon <= 180 then
+                    -- VIIRS CSV usa coluna "type" (0=veg, 1=industrial, 2=offshore, 3=water);
+                    -- MODIS usa "fire_type". Tentamos "type" primeiro, converte
+                    -- numérico p/ number (ativa ramo fire_type_industrial_num do
+                    -- thermal_weak), string p/ lowercase (ramo fire_type_industrial).
+                    local fire_type_raw = row.type or row["type"]
+                        or row.fire_type or row["fire_type"] or ""
+                    local fire_type
+                    local ft_num = tonumber(fire_type_raw)
+                    if ft_num ~= nil then
+                        fire_type = ft_num
+                    else
+                        fire_type = tostring(fire_type_raw):lower()
+                    end
+
                     fire_docs[#fire_docs + 1] = {
                         lat = lat, lon = lon,
                         confidence = (row.confidence or row["confidence"] or "low"):lower(),
@@ -110,7 +124,7 @@ function _M.fetch_firms_data(global_sync)
                         acq_time = row.acq_time or row["acq_time"] or "",
                         satellite = row.satellite or row["satellite"] or "",
                         bright_ti4 = tonumber(row.bright_ti4 or row["bright_ti4"] or 0) or 0,
-                        fire_type = (row.fire_type or row["fire_type"] or ""):lower(),
+                        fire_type = fire_type,
                         frp = tonumber(row.frp or row["frp"] or 0) or 0,
                         daynight = (row.daynight or row["daynight"] or ""):upper(),
                         source = "NASA_FIRMS_VIIRS_SNPP",
