@@ -715,9 +715,17 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
   const alertRows = asArray(alerts);
   const fireRows = asArray(fires);
 
-  // Clique-para-inspecionar: consulta /api/car/lookup e mostra o imóvel.
-  // Popup "sem imóvel" só dentro do Brasil (evita spam de popup em oceano).
+  // Clique-para-inspecionar: 1º clique abre o popup do imóvel; o próximo clique
+  // no mapa FECHA (toggle) — evita o card preso. Popup "sem imóvel" só dentro
+  // do Brasil (evita spam de popup em oceano). onClose limpa o estado quando o
+  // Leaflet fecha nativamente (ex: abriu o popup de fogo por cima).
+  const carInspectOpenRef = useRef(false);
+  carInspectOpenRef.current = carInspect != null;
   const onCarInspect = async (latlng) => {
+    if (carInspectOpenRef.current) {
+      setCarInspect(null);
+      return;
+    }
     try {
       const d = await cachedFetch(`/api/car/lookup?lat=${latlng.lat}&lon=${latlng.lng}`, { ttl: 60_000 });
       const imovel = (d && d.imovel) || null;
@@ -952,7 +960,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             </>
           )}
           {carInspect && (
-            <Popup position={[carInspect.lat, carInspect.lng]} autoClose closeOnClick>
+            <Popup position={[carInspect.lat, carInspect.lng]} autoClose closeOnClick onClose={() => setCarInspect(null)}>
               {carInspect.imovel ? (
                 <div>
                   <strong>📋 {carInspect.imovel.id}</strong><br/>
