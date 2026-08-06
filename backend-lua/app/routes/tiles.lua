@@ -34,23 +34,63 @@ local function open_tiles_db(path)
     local f = io.open(path, "r")
     if not f then return nil end
     f:close()
-    -- READ-ONLY: this process must never write to a cold cache. Concurrent
-    -- writers from multiple processes are what corrupted tiles_prodes.db.
-    local db, err = sqlite3.open(path, sqlite3.OPEN_READONLY)
+    -- Open a READ-WRITE handle but with PRAGMA query_only=ON. A truly
+    -- read-only WAL connection cannot maintain the shared-memory index when
+    -- another process (the offline warmer) checkpoints the WAL, so a cached
+    -- long-lived connection goes stale and reads garbage ("database disk
+    -- image is malformed" → 500s). A read-write handle tracks WAL checkpoints
+    -- correctly, and query_only=ON makes SQLite refuse ANY write on it — so
+    -- the cold-cache invariant holds: this process can never write, and thus
+    -- can never corrupt tiles_prodes.db / tiles_car.db.
+    local db, err = sqlite3.open(path)
     if not db then
-        logger.warn("Tiles DB open (read-only) failed for " .. path .. ": " .. tostring(err))
+        logger.warn("Tiles DB open failed for " .. path .. ": " .. tostring(err))
         return nil
     end
-    -- No journal_mode PRAGMA: setting WAL requires a write handle. The DB is
-    -- already WAL from the offline warmer; read-only WAL reads are fine.
+    db:exec("PRAGMA query_only=ON")
     db:exec("PRAGMA busy_timeout=5000")
     db:exec("PRAGMA cache_size=-4000")
     _dbs[path] = db
-    logger.info("Tiles DB opened read-only: " .. path)
+    logger.info("Tiles DB opened (query_only): " .. path)
     return db
 end
 
--- PRODES cache DB (existing path candidates; lazy proxy on miss).
+-- Look up one tile row in a cached connection. Returns data blob or nil.
+-- If the cached connection has gone stale (e.g. the offline warmer
+-- checkpointed the WAL mid-request), drop it, reopen fresh and retry once —
+-- never surface a 500 for a transient WAL staleness.
+local function lookup_tile(path, db, z, x, y)
+    local function query(conn)
+        local stmt = conn:prepare("SELECT data FROM tiles WHERE z=? AND x=? AND y=?")
+        if not stmt then return nil end
+        stmt:bind(1, z); stmt:bind(2, x); stmt:bind(3, y)
+        local d
+        for row in stmt:nrows() do
+            d = row.data
+        end
+        stmt:finalize()
+        return d
+    end
+
+    local ok, data = pcall(query, db)
+    if ok then return data end
+
+    -- Stale connection: close, forget, reopen once and retry.
+    logger.warn("Tiles DB read failed (stale conn?), reopening: " .. tostring(data))
+    pcall(function() db:close() end)
+    _dbs[path] = nil
+    local db2 = open_tiles_db(path)
+    if not db2 then return nil end
+    local ok2, data2 = pcall(query, db2)
+    if not ok2 then
+        logger.error("Tiles DB read failed after reopen: " .. tostring(data2))
+        return nil
+    end
+    return data2
+end
+
+-- PRODES cache DB (existing path candidates; lazy proxy on miss). Returns
+-- path, db (db nil if missing).
 local function open_prodes_db()
     local script_dir = debug.getinfo(1, "S").source:match("@(.*[/\\])") or ""
     local candidates = {
@@ -66,9 +106,9 @@ local function open_prodes_db()
     end
     if not path then
         logger.warn("tiles_prodes.db not found — run scripts/cache_prodes_tiles.py first")
-        return nil
+        return nil, nil
     end
-    return open_tiles_db(path)
+    return path, open_tiles_db(path)
 end
 
 local function serve_png(ctx, data)
@@ -88,18 +128,12 @@ function _M.get_tile(ctx)
     end
 
     -- 1. Cache lookup
-    local db = open_prodes_db()
+    local path, db = open_prodes_db()
     if db then
-        local stmt = db:prepare("SELECT data FROM tiles WHERE z=? AND x=? AND y=?")
-        if stmt then
-            stmt:bind(1, z); stmt:bind(2, x); stmt:bind(3, y)
-            for row in stmt:nrows() do
-                local data = row.data
-                stmt:finalize()
-                serve_png(ctx, data)
-                return
-            end
-            stmt:finalize()
+        local data = lookup_tile(path, db, z, x, y)
+        if data then
+            serve_png(ctx, data)
+            return
         end
     end
 
@@ -147,16 +181,10 @@ function _M.get_tile_car(ctx)
 
     local db = open_tiles_db(CAR_TILES_DB)
     if db then
-        local stmt = db:prepare("SELECT data FROM tiles WHERE z=? AND x=? AND y=?")
-        if stmt then
-            stmt:bind(1, z); stmt:bind(2, x); stmt:bind(3, y)
-            for row in stmt:nrows() do
-                local data = row.data
-                stmt:finalize()
-                serve_png(ctx, data)
-                return
-            end
-            stmt:finalize()
+        local data = lookup_tile(CAR_TILES_DB, db, z, x, y)
+        if data then
+            serve_png(ctx, data)
+            return
         end
     end
 
