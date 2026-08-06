@@ -140,7 +140,7 @@ the live endpoint. Inc 4 gates on all three.
 
 ### Inc 1 — Gerador de tiles CAR (offline, Python) (L)
 
-**Status:** DONE (2026-08-06) — `scripts/render_car_tiles.py` (multiprocessing 16 workers, resumível, `--self-test` da matemática de tiles); protótipo 1 tile (Cláudia/MT z10) + smoke z6–8 validados; **render completo z6–12 em background** (z6–11 OK: 29.975 tiles; z12 rodando).
+**Status:** DONE (2026-08-06) — `scripts/render_car_tiles.py` (multiprocessing 16 workers, resumível, `--self-test` da matemática de tiles); protótipo 1 tile (Cláudia/MT z10) + smoke z6–8 validados; **render completo z6–12 concluído**: 115.404 tiles / 339,5MB (z6 41 · z7 125 · z8 426 · z9 1.544 · z10 5.786 · z11 22.053 · z12 85.429), `integrity_check: ok`, ~6,5min no z10–12.
 **Depends on:** none (needs `backend-lua/data/car/car.db`, already present)
 **Unblocks:** 2, 3
 **Done criteria:** `scripts/render_car_tiles.py` produces `backend-lua/data/tiles_car.db`
