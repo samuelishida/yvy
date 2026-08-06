@@ -294,8 +294,8 @@ def main():
     parser.add_argument("--car-db", default=None, help="Override car.db path")
     parser.add_argument("--out", default=None, help="Override tiles_car.db path")
     parser.add_argument("--fill", default="#a3e635", help="Overlay color #rrggbb")
-    parser.add_argument("--fill-max-zoom", type=int, default=7,
-                        help="Zoom <= this uses uniform fill (no polygon decode)")
+    parser.add_argument("--fill-max-zoom", type=int, default=-1,
+                        help="Zoom <= this uses uniform fill (blocky; default -1 = disabled → real polygons at all zooms)")
     parser.add_argument("--workers", type=int, default=None,
                         help="Render worker processes (default: min(16, cpu_count))")
     parser.add_argument("--min-px", type=float, default=0.5,
@@ -337,7 +337,6 @@ def main():
 
     total = 0
     t_all = time.time()
-    CHUNK = 200
     for z in range(args.min_zoom, args.max_zoom + 1):
         t0 = time.time()
         tiles = covered_tiles(car_db, z)
@@ -345,7 +344,10 @@ def main():
         if not work:
             print(f"z{z}: tudo cacheado ({len(tiles):,} cobertos)", flush=True)
             continue
-        chunks = [work[i:i + CHUNK] for i in range(0, len(work), CHUNK)]
+        # Chunk small enough that all workers engage even at low zooms
+        # (few tiles) — keeps load balanced for z6-7 too.
+        chunk = max(8, math.ceil(len(work) / (workers * 4)))
+        chunks = [work[i:i + chunk] for i in range(0, len(work), chunk)]
         rendered = 0
         with ProcessPoolExecutor(max_workers=workers) as ex:
             futures = [
