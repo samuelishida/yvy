@@ -111,7 +111,11 @@ const News = () => {
         setError(null);
 
         if (page === 1) {
-          const cached = getCache(cacheKey, 15);
+          // Short TTL (2 min): news is a live feed — a long cache made
+          // navigating back to /news show a stale set ("set antigo") even
+          // though new articles had been ingested. 2 min is just a paint
+          // optimization; the fetch below always refreshes on mount.
+          const cached = getCache(cacheKey, 2);
           if (cached) {
             setArticles(cached);
             cacheUsed = true;

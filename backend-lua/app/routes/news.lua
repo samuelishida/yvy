@@ -184,7 +184,12 @@ function _M.get_news(ctx)
     local cache_key = news_cache_key(lang, page, page_size)
     local cached = redis.get(cache_key)
     if cached then
-        ctx:set_header("Cache-Control", "public, max-age=300")
+        -- no-cache: browser/reverse-proxy must revalidate each time. News is a
+        -- live feed — a public max-age=300 made the browser serve a stale set
+        -- for 5 min when navigating back to /news ("carrega um set antigo").
+        -- Backend speed still comes from the Redis cache; it is invalidated on
+        -- every sync (fetch_and_save_news -> redis.delete_pattern("news:*")).
+        ctx:set_header("Cache-Control", "no-cache")
         ctx:send(200, cached)
         return
     end
@@ -223,7 +228,8 @@ function _M.get_news(ctx)
 
     local body = cjson.encode(articles)
     redis.set(cache_key, body, NEWS_CACHE_TTL)
-    ctx:set_header("Cache-Control", "public, max-age=300")
+    -- no-cache (see above): never let the browser cache a news page.
+    ctx:set_header("Cache-Control", "no-cache")
     ctx:send(200, body)
 end
 
