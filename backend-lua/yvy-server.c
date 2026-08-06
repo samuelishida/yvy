@@ -405,6 +405,8 @@ static void serve_static(int client, const char *path) {
 
 /* ── Proxy request to Lua backend ───────────────────────────────────────── */
 
+static size_t parse_content_length(const char *headers_buf, size_t headers_size);
+
 static void proxy_to_backend(int client, const char *method, const char *path,
                               char headers[][2][MAX_HEADER_VAL], int num_headers,
                               const char *body, size_t body_len) {
@@ -512,33 +514,95 @@ static void proxy_to_backend(int client, const char *method, const char *path,
 
     /* Read backend response. Buffer up to MAX_RESPONSE_SIZE for atomic flush
      * (gives client headers + body in one go, preserving backend's Content-Length).
-     * If cap is exceeded mid-stream, send what we have and stream the rest. */
+     * We honor the backend's Content-Length so we don't have to wait for the
+     * connection to close: the Lua backend spawns detached subprocesses (news
+     * sync, classification, ti-at-risk) that inherit the client socket fd, so
+     * EOF may only arrive when the child exits (tens of seconds later). Once
+     * the advertised body is fully buffered we flush and return. If the cap is
+     * exceeded mid-stream we flush what we have and stream the rest, also
+     * Content-Length-aware. Without a Content-Length we fall back to reading
+     * until EOF, as before. */
     dynbuf resp;
     int streaming = 0;
     char chunk[BUFFER_SIZE];
     ssize_t n;
+    size_t headers_size = 0;      /* header block size incl. "\r\n\r\n"; 0 = not parsed */
+    size_t content_length = 0;    /* backend-advertised body length */
+    int have_content_length = 0;  /* parsed from backend headers */
+    size_t body_sent = 0;         /* body bytes already forwarded to the client */
 
     if (dynbuf_init(&resp, DYNBUF_INITIAL_CAP) < 0) {
-        streaming = 1;  /* OOM: degrade to streaming */
+        streaming = 1;  /* OOM: degrade to streaming (EOF-terminated) */
     }
 
     while ((n = recv(backend_fd, chunk, sizeof(chunk), 0)) > 0) {
         if (streaming) {
-            if (send_all(client, chunk, (size_t)n) < 0) goto proxy_done;
+            size_t fwd = (size_t)n;
+            if (have_content_length) {
+                if (body_sent >= content_length) break;
+                if (fwd > content_length - body_sent) fwd = content_length - body_sent;
+            }
+            if (fwd > 0 && send_all(client, chunk, fwd) < 0) goto proxy_done;
+            body_sent += fwd;
+            if (have_content_length && body_sent >= content_length) break;
             continue;
         }
 
         if (dynbuf_append(&resp, chunk, (size_t)n, MAX_RESPONSE_SIZE) < 0) {
-            /* Cap hit: flush buffered bytes, then stream the rest as-is. */
+            /* Cap hit: parse Content-Length if not yet, flush buffered bytes,
+             * then stream the rest as-is (Content-Length-aware). */
+            if (headers_size == 0) {
+                const char *eoh = memmem(resp.data, resp.len, "\r\n\r\n", 4);
+                if (eoh) {
+                    headers_size = (size_t)(eoh - resp.data) + 4;
+                    size_t cl = parse_content_length(resp.data, headers_size);
+                    if (cl > 0) {
+                        have_content_length = 1;
+                        content_length = cl;
+                    }
+                }
+            }
             if (send_all(client, resp.data, resp.len) < 0) { dynbuf_free(&resp); goto proxy_done; }
+            if (headers_size > 0) {
+                body_sent = resp.len > headers_size ? resp.len - headers_size : 0;
+            } else {
+                body_sent = 0;
+            }
             dynbuf_free(&resp);
             streaming = 1;
-            /* Now forward this chunk too */
-            if (send_all(client, chunk, (size_t)n) < 0) goto proxy_done;
+            /* Forward this chunk too */
+            size_t fwd = (size_t)n;
+            if (have_content_length) {
+                if (body_sent >= content_length) break;
+                if (fwd > content_length - body_sent) fwd = content_length - body_sent;
+            }
+            if (fwd > 0 && send_all(client, chunk, fwd) < 0) goto proxy_done;
+            body_sent += fwd;
+            if (have_content_length && body_sent >= content_length) break;
+            continue;
+        }
+
+        /* Buffered mode: parse headers once the header block is complete. */
+        if (headers_size == 0) {
+            const char *eoh = memmem(resp.data, resp.len, "\r\n\r\n", 4);
+            if (eoh) {
+                headers_size = (size_t)(eoh - resp.data) + 4;
+                size_t cl = parse_content_length(resp.data, headers_size);
+                if (cl > 0) {
+                    have_content_length = 1;
+                    content_length = cl;
+                }
+            }
+        }
+
+        /* Once the full advertised body is buffered, we're done — no need to
+         * wait for connection close (a detached subprocess may hold the fd). */
+        if (have_content_length && headers_size > 0) {
+            if (resp.len - headers_size >= content_length) break;
         }
     }
 
-    /* Backend EOF reached. Flush buffered response if any. */
+    /* Response complete (Content-Length met) or EOF reached. Flush buffered. */
     if (!streaming && resp.len > 0) {
         send_all(client, resp.data, resp.len);
     }

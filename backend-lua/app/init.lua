@@ -120,9 +120,12 @@ local function news_sync_loop()
                 age / 60, NEWS_SYNC_INTERVAL / 60))
             copas.sleep(NEWS_SYNC_INTERVAL - age)
         else
-            logger.info("Background news sync starting")
-            pcall(news_mod.fetch_and_save_news)
-            redis.set("news:last_sync", os.date("!%Y-%m-%dT%H:%M:%SZ"), NEWS_SYNC_INTERVAL * 2)
+            -- Run the sync in a detached subprocess (tools/news_sync.lua):
+            -- the fetch/enrich/translate does blocking HTTPS and would freeze
+            -- the whole copas loop if run inline (first-use /api/news stalled
+            -- ~27s). The subprocess writes news:last_sync when it completes.
+            logger.info("Background news sync starting (detached subprocess)")
+            news_mod.trigger_news_sync(false)
             copas.sleep(NEWS_SYNC_INTERVAL)
         end
     end

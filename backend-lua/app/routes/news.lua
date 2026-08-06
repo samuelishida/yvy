@@ -312,6 +312,40 @@ function _M.fetch_and_save_news(opts)
     return db.get_news_page(1, 20, "pt")
 end
 
+-- Spawns a detached subprocess (tools/news_sync.lua) to run the full news
+-- sync. Never blocks the copas loop — os.execute returns immediately for a
+-- backgrounded command, and the blocking HTTP/translation work runs off-loop.
+-- A Redis lock (setnx, TTL 1800s) prevents duplicate syncs.
+function _M.trigger_news_sync(force)
+    force = force or false
+
+    -- NB: NOT "news:sync:lock" — fetch_and_save_news calls
+    -- redis.delete_pattern("news:*") at the end of every sync, which would
+    -- wipe a lock named under the "news:" prefix. This key must outlive the
+    -- sync for its full TTL to guard against overlapping syncs.
+    local lock_key = "news_sync:lock"
+    if not redis.setnx(lock_key, "1", 1800) then
+        return false  -- another sync is already in flight
+    end
+
+    local source = (debug.getinfo(1, "S").source or ""):gsub("^@", "")
+    local backend_dir = source:match("^(.*[/\\])app[/\\]routes[/\\]") or ""
+    local script = backend_dir .. "tools/news_sync.lua"
+
+    local cmd
+    if package.config:sub(1, 1) == "\\" then
+        cmd = 'start /b lua5.1.exe "' .. script .. '" ' .. (force and "1" or "0") .. ' >NUL 2>NUL'
+    else
+        cmd = 'nohup lua5.1 "' .. script .. '" ' .. (force and "1" or "0") .. ' >/dev/null 2>&1 &'
+    end
+
+    local ok, err = pcall(os.execute, cmd)
+    if not ok then
+        logger.warn("Failed to spawn news sync: " .. tostring(err))
+    end
+    return true
+end
+
 function _M.refresh_news(ctx)
     if os.getenv("AUTH_REQUIRED") == "1" then
         if not auth.enforce(ctx) then return end
@@ -319,8 +353,11 @@ function _M.refresh_news(ctx)
     if not rl.enforce(ctx) then return end
 
     local force = ctx.req.args and (ctx.req.args.force == "1" or ctx.req.args.force == "true")
-    _M.fetch_and_save_news({force = force})
-    ctx:json(200, {status = "refreshed", forced = force or false})
+    local triggered = _M.trigger_news_sync(force)
+    ctx:json(200, {
+        status = triggered and "sync_triggered" or "sync_in_progress",
+        forced = force or false,
+    })
 end
 
 function _M.repair_news(ctx)
@@ -337,12 +374,11 @@ function _M.admin_news_sync(ctx)
     if not auth.enforce(ctx) then return end
     if not rl.enforce(ctx) then return end
 
-    logger.info("Manual news sync triggered")
-    local articles = _M.fetch_and_save_news()
+    logger.info("Manual news sync triggered (detached subprocess)")
+    local triggered = _M.trigger_news_sync(false)
     ctx:json(200, {
-        status = "success",
-        message = "News sync complete. " .. #articles .. " articles available.",
-        count = #articles,
+        status = triggered and "sync_triggered" or "sync_in_progress",
+        message = "News sync running in background. /api/news refreshes when it completes.",
     })
 end
 
