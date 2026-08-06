@@ -3,15 +3,12 @@
 -- TerraBrasilis WMS) and precomputed CAR tiles from tiles_car.db (miss → EMPTY_PNG).
 
 local sqlite3     = require("lsqlite3")
-local http_client = require("app.http_client")
 local logger      = require("app.logger")
 local env         = require("app.env")
 
 local _M = {}
 -- Per-path cached connections (never open per request — 256-tile bursts).
 local _dbs = {}
-
-local WMS_BASE = "https://terrabrasilis.dpi.inpe.br/geoserver/prodes-brasil-nb/prodes_brasil/wms"
 
 -- Minimal 1x1 transparent PNG (returned when tile has no data)
 local EMPTY_PNG = string.char(
@@ -61,19 +58,33 @@ local function open_prodes_db()
     return open_tiles_db(path)
 end
 
-local function tile_to_bbox(z, x, y)
-    local n = 2 ^ z
-    local lon_min = x / n * 360 - 180
-    local lon_max = (x + 1) / n * 360 - 180
-    local lat_max = math.atan(math.sinh(math.pi * (1 - 2 * y / n))) * 180 / math.pi
-    local lat_min = math.atan(math.sinh(math.pi * (1 - 2 * (y + 1) / n))) * 180 / math.pi
-    return lon_min, lat_min, lon_max, lat_max
-end
-
 local function serve_png(ctx, data)
     ctx:set_header("Cache-Control", "public, max-age=2592000, immutable")
     ctx:set_header("Access-Control-Allow-Origin", "*")
     ctx:send(200, data, "image/png")
+end
+
+-- Spawns a detached subprocess (tools/warm_prodes_tiles.lua) to fetch and
+-- cache one PRODES tile from the TerraBrasilis WMS. Never blocks the copas
+-- loop: os.execute returns immediately for a backgrounded command, and the
+-- download+insert runs off-loop. A Redis lock inside the worker dedupes
+-- concurrent fetches of the same tile.
+local function spawn_prodes_warm(z, x, y)
+    local source = (debug.getinfo(1, "S").source or ""):gsub("^@", "")
+    local backend_dir = source:match("^(.*[/\\])app[/\\]routes[/\\]") or ""
+    local script = backend_dir .. "tools/warm_prodes_tiles.lua"
+
+    local cmd
+    if package.config:sub(1, 1) == "\\" then
+        cmd = 'start /b lua5.1.exe "' .. script .. '" ' .. z .. ' ' .. x .. ' ' .. y .. ' >NUL 2>NUL'
+    else
+        cmd = 'nohup lua5.1 "' .. script .. '" ' .. z .. ' ' .. x .. ' ' .. y .. ' >/dev/null 2>&1 &'
+    end
+
+    local ok, err = pcall(os.execute, cmd)
+    if not ok then
+        logger.warn("Failed to spawn prodes tile warm: " .. tostring(err))
+    end
 end
 
 function _M.get_tile(ctx)
@@ -102,46 +113,17 @@ function _M.get_tile(ctx)
         end
     end
 
-    -- 2. Cache miss: fetch from TerraBrasilis WMS, save to temp file (binary-safe)
-    local lon_min, lat_min, lon_max, lat_max = tile_to_bbox(z, x, y)
-    local wms_url = string.format(
-        "%s?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap"
-        .. "&BBOX=%.6f,%.6f,%.6f,%.6f&SRS=EPSG%%3A4326"
-        .. "&WIDTH=256&HEIGHT=256&LAYERS=prodes_brasil"
-        .. "&FORMAT=image%%2Fpng&TRANSPARENT=TRUE",
-        WMS_BASE, lon_min, lat_min, lon_max, lat_max
-    )
+    -- 2. Cache miss: never block the single-threaded copas loop on a WMS
+    -- download. A zoom/pan burst (30-60 misses × ~2s each) used to freeze the
+    -- whole API and push the C frontend past its MAX_CHILDREN cap, returning
+    -- 503 "Server busy" for every tile. Spawn a detached fetch (see
+    -- tools/warm_prodes_tiles.lua) and serve the transparent PNG now; the
+    -- tile appears on the next request once the worker caches it. Short
+    -- max-age so browsers re-request (and get the real tile) after warming.
+    spawn_prodes_warm(z, x, y)
 
-    local tmp = (os.getenv("TEMP") or os.getenv("TMP") or ".") .. "/yvy_tile_" .. z .. "_" .. x .. "_" .. y .. ".png"
-    local ok = http_client.download(wms_url, tmp, 20)
-    local data
-    if ok then
-        local f = io.open(tmp, "rb")
-        if f then
-            data = f:read("*a")
-            f:close()
-            os.remove(tmp)
-        end
-    end
-
-    -- 3. Validate PNG magic bytes; cache and serve
-    if data and #data > 8 and data:sub(1, 4) == "\137PNG" then
-        if db then
-            local ins = db:prepare(
-                "INSERT OR REPLACE INTO tiles (z,x,y,data,content_type,fetched_at) VALUES (?,?,?,?,?,?)"
-            )
-            if ins then
-                ins:bind(1, z); ins:bind(2, x); ins:bind(3, y)
-                ins:bind_blob(4, data); ins:bind(5, "image/png")
-                ins:bind(6, os.date("!%Y-%m-%dT%H:%M:%SZ"))
-                ins:step(); ins:finalize()
-            end
-        end
-        serve_png(ctx, data)
-    else
-        ctx:set_header("Cache-Control", "public, max-age=300")
-        ctx:send(200, EMPTY_PNG, "image/png")
-    end
+    ctx:set_header("Cache-Control", "public, max-age=60")
+    ctx:send(200, EMPTY_PNG, "image/png")
 end
 
 -- ── CAR precomputed tiles (/api/tiles/car) ──────────────────────────────

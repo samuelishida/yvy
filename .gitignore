@@ -198,6 +198,8 @@ backend-lua/data/tiles_prodes.db
 backend-lua/data/car/
 # Backups do SQLite (ex.: yvy.db.backup-*)
 backend-lua/data/*.db.backup*
+# DBs temporários criados pelos testes busted (ex.: yvy_car_route_*.db)
+backend-lua/yvy_*.db
 # Status de sessão (stale, de outra branch)
 status.md
 # Estado interno da ferramenta Raptor
