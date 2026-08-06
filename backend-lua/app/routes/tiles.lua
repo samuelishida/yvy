@@ -3,9 +3,11 @@
 --
 -- COLD-CACHE INVARIANT: tiles_prodes.db / tiles_car.db are pre-warmed OFFLINE
 -- by scripts/cache_prodes_tiles.py (single writer, one connection — safe). The
--- backend opens them READ-ONLY and NEVER writes or spawns on-demand writers:
--- concurrent multi-process INSERTs from separate workers corrupted the DB
--- ("database disk image is malformed" → 500s). Miss → transparent PNG only.
+-- backend opens them READ-ONLY (query_only=ON) and NEVER writes or spawns
+-- on-demand writers: concurrent multi-process INSERTs from separate workers
+-- corrupted the DB ("database disk image is malformed" → 500s). Miss → try the
+-- nearest cached ANCESTOR tile (keeps the layer visible during a re-warm),
+-- else transparent PNG.
 
 local sqlite3     = require("lsqlite3")
 local logger      = require("app.logger")
@@ -54,7 +56,6 @@ local function open_tiles_db(path)
     logger.info("Tiles DB opened (query_only): " .. path)
     return db
 end
-
 -- Look up one tile row in a cached connection. Returns data blob or nil.
 -- If the cached connection has gone stale (e.g. the offline warmer
 -- checkpointed the WAL mid-request), drop it, reopen fresh and retry once —
@@ -89,9 +90,35 @@ local function lookup_tile(path, db, z, x, y)
     return data2
 end
 
--- PRODES cache DB (existing path candidates; lazy proxy on miss). Returns
--- path, db (db nil if missing).
+-- Walk up to the nearest cached ANCESTOR tile. The warmer fills z3→z12 in
+-- order, so during a re-warm a missing child almost always has a cached parent
+-- — serving it keeps the layer visible instead of a transparent hole (the
+-- "PRODES disappears when zooming in" symptom). Bounded so a truly-empty area
+-- costs at most MAX_FALLBACK_DEPTH cheap SELECTs. Returns data or nil.
+local MAX_FALLBACK_DEPTH = 6
+
+local function lookup_ancestor(path, db, z, x, y)
+    local az, ax, ay = z, x, y
+    for _ = 1, MAX_FALLBACK_DEPTH do
+        if az <= 3 then break end -- never go below z3 (coarse but complete)
+        az = az - 1
+        ax = math.floor(ax / 2)
+        ay = math.floor(ay / 2)
+        local data = lookup_tile(path, db, az, ax, ay)
+        if data then return data end
+    end
+    return nil
+end
+
+-- PRODES cache DB (env override PRODES_TILES_DB first — lets tests/ops point
+-- elsewhere; otherwise existing path candidates). Returns path, db (db nil if
+-- missing).
 local function open_prodes_db()
+    local override = env.get("PRODES_TILES_DB") or ""
+    if override ~= "" then
+        local f = io.open(override, "r")
+        if f then f:close(); return override, open_tiles_db(override) end
+    end
     local script_dir = debug.getinfo(1, "S").source:match("@(.*[/\\])") or ""
     local candidates = {
         script_dir .. "../../data/tiles_prodes.db",
@@ -140,9 +167,20 @@ function _M.get_tile(ctx)
     -- 2. Cache miss: PRODES is a COLD cache, pre-warmed offline by
     -- scripts/cache_prodes_tiles.py (single writer — safe). We never download
     -- or write from the request path: that is what corrupted the DB and froze
-    -- the single-threaded loop. Serve the transparent PNG; the tile appears
-    -- once the offline warmer has cached it. Short max-age so browsers
-    -- re-request (and pick up the real tile) after a re-warm.
+    -- the single-threaded loop. First serve the nearest cached ANCESTOR tile
+    -- (the warmer fills low→high zoom, so the parent almost always exists —
+    -- this keeps the layer visible while the re-warm is in progress); only if
+    -- no ancestor exists (area has no data) serve the transparent PNG. Short
+    -- max-age either way so browsers re-request the REAL tile once the warm
+    -- has cached it.
+    if db then
+        local data = lookup_ancestor(path, db, z, x, y)
+        if data then
+            ctx:set_header("Cache-Control", "public, max-age=60")
+            ctx:send(200, data, "image/png")
+            return
+        end
+    end
     ctx:set_header("Cache-Control", "public, max-age=60")
     ctx:send(200, EMPTY_PNG, "image/png")
 end
