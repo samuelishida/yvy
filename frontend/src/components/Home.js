@@ -844,7 +844,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
       <MapContainer
           key={mapKey}
           center={[-14.235, -51.925]}
-          zoom={4}
+          zoom={5}
           zoomSnap={0.5}
           zoomDelta={0.5}
           scrollWheelZoom
