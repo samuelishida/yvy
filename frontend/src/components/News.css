@@ -154,6 +154,20 @@
   letter-spacing: 0.04em;
 }
 
+.news-stale-banner {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: #FFA726;
+  text-align: center;
+  padding: 10px 20px;
+  background: rgba(255, 167, 38, 0.08);
+  border: 1px solid rgba(255, 167, 38, 0.2);
+  border-radius: 8px;
+  width: 100%;
+  max-width: 860px;
+  margin: 0 0 16px;
+}
+
 .news-loading {
   font-family: var(--font-body);
   font-size: 12px;

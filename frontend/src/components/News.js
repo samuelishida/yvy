@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo, memo } from 'react';
 import { useI18n } from '../i18n';
-import { getCache, setCache } from '../utils/cache';
+import { getCache, setCacheSync } from '../utils/cache';
 import './News.css';
 
 const PAGE_SIZE = 5;
@@ -95,6 +95,7 @@ const News = () => {
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState(null);
+  const [stale, setStale] = useState(false);  // true when showing cached data after a failed refresh
   const cacheKey = `news_${lang}`;
   const fetchingRef = useRef(false);
   const sentinelRef = useRef(null);
@@ -109,6 +110,7 @@ const News = () => {
       let cacheUsed = false;
       try {
         setError(null);
+        setStale(false);
 
         if (page === 1) {
           // Short TTL (2 min): news is a live feed — a long cache made
@@ -122,7 +124,10 @@ const News = () => {
           }
         }
 
-        if (!cacheUsed || page > 1) setLoading(true);
+        // Always show loading — even with cached data the user should know
+        // a refresh is happening. Without this, a failed fetch on a cached
+        // page silently showed stale data forever with no visual feedback.
+        setLoading(true);
 
         const response = await fetch(`/api/news?page=${page}&page_size=${PAGE_SIZE}&lang=${lang}`, { signal: ac.signal });
         if (cancelled) return;
@@ -131,7 +136,13 @@ const News = () => {
         const data = normalizeArticles(payload);
 
         if (!response.ok) {
-          if (cacheUsed && page === 1) return;
+          // Never silently keep stale data. If we have cached articles,
+          // mark them as stale so the user knows the fetch failed.
+          if (cacheUsed && page === 1) {
+            setStale(true);
+            setHasMore(false);
+            return;
+          }
           throw new Error(
             typeof payload?.error === 'string' && payload.error.trim()
               ? payload.error
@@ -141,7 +152,7 @@ const News = () => {
 
         if (page === 1) {
           setArticles(data);
-          setCache(cacheKey, data);
+          setCacheSync(cacheKey, data);  // sync write — small payload, no need to defer
         } else {
           setArticles((prevArticles) => {
             const seen = new Set(prevArticles.map(a => a.url));
@@ -154,7 +165,12 @@ const News = () => {
         }
       } catch (err) {
         if (err.name === 'AbortError' || cancelled) return;
-        if (!cacheUsed) {
+        // If we have cached data, mark it stale instead of replacing with
+        // an empty error state — the user can still read what's there.
+        if (cacheUsed && page === 1) {
+          setStale(true);
+          setHasMore(false);
+        } else {
           setError(err?.message || t('news.errorLoading'));
           if (page === 1) setArticles([]);
           setHasMore(false);
@@ -199,6 +215,11 @@ const News = () => {
 
   return (
     <div className="news-container">
+      {stale && articles.length > 0 && (
+        <p className="news-stale-banner">
+          ⚠ {lang === 'pt' ? 'Mostrando dados em cache — não foi possível atualizar.' : 'Showing cached data — could not refresh.'}
+        </p>
+      )}
       {error && !articles.length && <p className="news-error">{error}</p>}
       {articles.map((article) => (
         <NewsArticle key={article.url} article={article} lang={lang} readMoreText={readMoreText} />
