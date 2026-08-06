@@ -139,7 +139,7 @@ function findFireAtPoint(map, fires, point, maxRadius = 8, gridRef) {
 }
 
 // Throttled fire hit detection for pointer events with spatial grid caching
-function FireEventsHandler({ fires, fireAlertMap, visibleToFullIdxMap, onFireOver, onFireClick, onFireHoverEnd }) {
+function FireEventsHandler({ fires, fireAlertMap, visibleToFullIdxMap, onFireOver, onFireClick, onFireHoverEnd, showCar, onCarInspect }) {
   const rafRef = useRef(null);
   const lastIdxRef = useRef(null);
   const gridRef = useRef(new Map());
@@ -187,12 +187,19 @@ function FireEventsHandler({ fires, fireAlertMap, visibleToFullIdxMap, onFireOve
     },
     click: (e) => {
       if (isZoomingRef.current) return;
-      if (!fires || fires.length === 0) return;
-      const visIdx = findFireAtPoint(map, fires, e.containerPoint, 8, gridRef);
-      const fullIdx = visIdx != null ? visibleToFullIdxMap.get(visIdx) : null;
-      const alertId = fullIdx != null ? fireAlertMap.get(fullIdx) : null;
-      if (alertId != null) {
-        onFireClick(alertId, fullIdx, e);
+      // 1. Fire hit-test first — o popup de fogo vence quando clica num foco.
+      if (fires && fires.length > 0) {
+        const visIdx = findFireAtPoint(map, fires, e.containerPoint, 8, gridRef);
+        const fullIdx = visIdx != null ? visibleToFullIdxMap.get(visIdx) : null;
+        const alertId = fullIdx != null ? fireAlertMap.get(fullIdx) : null;
+        if (alertId != null) {
+          onFireClick(alertId, fullIdx, e);
+          return;
+        }
+      }
+      // 2. Click em espaço vazio do mapa + overlay CAR ativo → inspeciona imóvel.
+      if (showCar) {
+        onCarInspect(e.latlng);
       }
     },
   });
@@ -629,6 +636,17 @@ const ALERT_TYPE_KEYS = {
 const INDIGENOUS_STYLE = { color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.22, weight: 2.5, opacity: 0.9, dashArray: '6 4' };
 const CONSERVATION_STYLE = { color: '#4ade80', fillColor: '#4ade80', fillOpacity: 0.2, weight: 2.5, opacity: 0.9, dashArray: '6 4' };
 
+// CAR overlay (Inc 3): lime-400 (#a3e635) — mais vivo/claro que o green-400 das UCs.
+// Tiles renderizados opacos; o TileLayer opacity=0.5 é o único controle de
+// transparência. CAR_TILES_VERSION é bumped ao regenerar os tiles (busta caches).
+const CAR_COLOR = '#a3e635';
+const CAR_TILES_VERSION = '1';
+
+// Bounds do Brasil para o popup "sem imóvel" (mesmo clamp do backend).
+const BR_BOUNDS = { swLat: -34.0, neLat: 5.5, swLng: -74.0, neLng: -34.0 };
+const isInBrazil = (lat, lng) =>
+  lat >= BR_BOUNDS.swLat && lat <= BR_BOUNDS.neLat && lng >= BR_BOUNDS.swLng && lng <= BR_BOUNDS.neLng;
+
 
 function BiomeHighlightLayer({ activeBiome, biomeGeoJSON }) {
   const map = useMap();
@@ -691,8 +709,27 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
   // Unique per-mount key prevents "Map container already initialized" on remount
   const [mapKey] = useState(() => ++_mapMountCounter);
   const [visibleFires, setVisibleFires] = useState([]);
+  // CAR overlay (Inc 3): showCar toggle + carInspect popup state (local ao card).
+  const [showCar, setShowCar] = useState(false);
+  const [carInspect, setCarInspect] = useState(null);
   const alertRows = asArray(alerts);
   const fireRows = asArray(fires);
+
+  // Clique-para-inspecionar: consulta /api/car/lookup e mostra o imóvel.
+  // Popup "sem imóvel" só dentro do Brasil (evita spam de popup em oceano).
+  const onCarInspect = async (latlng) => {
+    try {
+      const d = await cachedFetch(`/api/car/lookup?lat=${latlng.lat}&lon=${latlng.lng}`, { ttl: 60_000 });
+      const imovel = (d && d.imovel) || null;
+      if (!imovel && !isInBrazil(latlng.lat, latlng.lng)) {
+        setCarInspect(null);
+        return;
+      }
+      setCarInspect({ lat: latlng.lat, lng: latlng.lng, imovel });
+    } catch (e) {
+      // silencioso — sem popup em falha de lookup
+    }
+  };
 
   const fireAlertMap = useMemo(() => {
     const m = new Map();
@@ -786,6 +823,12 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           >
             <span className="lt-dot" /> {t('home.layerConservation')}
           </button>
+          <button
+            className={`layer-toggle${showCar ? ' active' : ''}`}
+            onClick={() => setShowCar(!showCar)}
+          >
+            <span className="lt-dot" style={{ background: CAR_COLOR }} /> {t('home.layerCar')}<span className="lt-sub">CAR</span>
+          </button>
         </div>
       </div>
 
@@ -824,6 +867,20 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             attribution="&copy; INPE/TerraBrasilis PRODES"
             zIndex={100}
           />
+          <TileLayer
+            key="car-tiles"
+            url={`/api/tiles/car?z={z}&x={x}&y={y}&v=${CAR_TILES_VERSION}`}
+            opacity={showCar ? 0.5 : 0}
+            tileSize={256}
+            maxNativeZoom={12}
+            minZoom={2}
+            keepBuffer={4}
+            updateWhenZooming={false}
+            updateWhenIdle={false}
+            fadeIn={150}
+            attribution="&copy; SICAR"
+            zIndex={90}
+          />
           {showFires && activeAlert?.center && (
             <Circle
               center={activeAlert.center}
@@ -855,16 +912,20 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           )}
           <ViewportFireFilter fires={fireRows} onVisibleFiresChange={setVisibleFires} />
           <CanvasRedrawOnToggle flag={showFires} />
+          {(showFires || showCar) && (
+            <FireEventsHandler
+              fires={visibleFires}
+              fireAlertMap={fireAlertMap}
+              visibleToFullIdxMap={visibleToFullIdxMap}
+              onFireOver={onFireOver}
+              onFireClick={onFireClick}
+              onFireHoverEnd={onFireHoverEnd}
+              showCar={showCar}
+              onCarInspect={onCarInspect}
+            />
+          )}
           {showFires && (
             <>
-              <FireEventsHandler
-                fires={visibleFires}
-                fireAlertMap={fireAlertMap}
-                visibleToFullIdxMap={visibleToFullIdxMap}
-                onFireOver={onFireOver}
-                onFireClick={onFireClick}
-                onFireHoverEnd={onFireHoverEnd}
-              />
               {fireRenderList.map(({ fire, fullIdx }, visIdx) => (
                 <FireMarker
                   key={`f-${fullIdx}`}
@@ -889,6 +950,18 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
                 </Popup>
               )}
             </>
+          )}
+          {carInspect && (
+            <Popup position={[carInspect.lat, carInspect.lng]} autoClose closeOnClick>
+              {carInspect.imovel ? (
+                <div>
+                  <strong>📋 {carInspect.imovel.id}</strong><br/>
+                  {carInspect.imovel.name}/{carInspect.imovel.uf}
+                </div>
+              ) : (
+                <div>{t('home.noCar')}</div>
+              )}
+            </Popup>
           )}
         </MapContainer>
 
