@@ -354,9 +354,9 @@
   margin-bottom: 12px;
 }
 
-.fp-gauges { display: flex; align-items: flex-start; gap: 12px; }
+.fp-gauges { display: flex; align-items: flex-start; gap: 8px; width: 100%; }
 
-.fp-gauge { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
+.fp-gauge { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; min-width: 0; }
 
 .fp-gauge-svg { position: relative; width: 52px; height: 52px; }
 
