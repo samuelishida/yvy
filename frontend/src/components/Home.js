@@ -709,8 +709,8 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
   // Unique per-mount key prevents "Map container already initialized" on remount
   const [mapKey] = useState(() => ++_mapMountCounter);
   const [visibleFires, setVisibleFires] = useState([]);
-  // CAR overlay (Inc 3): showCar toggle (padrão ON) + carInspect popup state (local ao card).
-  const [showCar, setShowCar] = useState(true);
+  // CAR overlay (Inc 3): showCar toggle (padrão OFF) + carInspect popup state (local ao card).
+  const [showCar, setShowCar] = useState(false);
   const [carInspect, setCarInspect] = useState(null);
   const alertRows = asArray(alerts);
   const fireRows = asArray(fires);
@@ -1010,8 +1010,8 @@ export default function Home() {
   const [temperature,    setTemperature]    = useState(null);
   const [showDeforest,   setShowDeforest]   = useState(true);
   const [showFires,      setShowFires]      = useState(true);
-  const [showIndigenous, setShowIndigenous] = useState(false);
-  const [showConservation, setShowConservation] = useState(false);
+  const [showIndigenous, setShowIndigenous] = useState(true);
+  const [showConservation, setShowConservation] = useState(true);
   const [indigenousGeo,  setIndigenousGeo]  = useState(null);
   const [conservationGeo, setConservationGeo] = useState(null);
   const [alerts,         setAlerts]         = useState([]);
