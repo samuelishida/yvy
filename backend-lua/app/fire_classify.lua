@@ -19,7 +19,7 @@ require("app.env")
 local _M = {}
 
 -- Versão da regra — lida no require; usada pelo backfill (tools/classify_fires.lua)
-_M.NATURE_VERSION = tonumber(os.getenv("FIRE_NATURE_VERSION") or "1") or 1
+_M.NATURE_VERSION = tonumber(os.getenv("FIRE_NATURE_VERSION") or "2") or 2
 
 local DEFAULT_CONFIG = {
     thermal = {
@@ -120,11 +120,15 @@ function _M.thermal_weak(confidence, bright_ti4, fire_type, cfg)
         industrial = contains(th.fire_type_industrial, fire_type:lower())
     end
 
-    -- bright_ti4 baixo E industrial → fraco (nil não descarta foco real)
+    -- bright_ti4 muito baixo → sempre suspeito de alarme falso.
+    -- Queimadas reais (vegetação) têm bright_ti4 320-360K; valores < 310K
+    -- são tipicamente telhados metálicos, solo exposto quente, ruído de sensor.
+    -- O ramo "industrial" anterior era inalcançável (fire_type_industrial_num
+    -- estava vazio → contains({}, 0) sempre false → ~20k falsos alarmes).
     local bt = tonumber(bright_ti4)
-    local weak_thermal = bt ~= nil and bt < (th.bright_ti4_weak or 310) and industrial
+    if bt ~= nil and bt < (th.bright_ti4_weak or 310.0) then return true end
 
-    return weak_conf or weak_thermal
+    return weak_conf
 end
 
 -- Classifica a natureza de um foco.
