@@ -49,11 +49,15 @@ while true do
     local batch = db.iter_fires_for_classification(BATCH, version)
     if #batch == 0 then break end
 
+    -- TI/UC retornam {name, ...meta}; o classificador espera só o NOME
+    -- (evidência limpa: "nome" como string, não objeto).
+    local function name_of(t) return t and (t.name or t.full_name) or nil end
+
     local rows = {}
     for _, row in ipairs(batch) do
         local territory = {
-            indigenous   = ti.classify_point(row.lon, row.lat),
-            conservation = uc.classify_point(row.lon, row.lat),
+            indigenous   = name_of(ti.classify_point(row.lon, row.lat)),
+            conservation = name_of(uc.classify_point(row.lon, row.lat)),
             car          = car and car.classify_point and car.classify_point(row.lon, row.lat) or nil,
         }
         local res = fire_classify.classify_fire(row, territory)

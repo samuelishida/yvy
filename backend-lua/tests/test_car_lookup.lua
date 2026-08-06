@@ -68,3 +68,46 @@ describe("car_lookup", function()
         assert.is_false(car.is_private(-70.0, -5.0))
     end)
 end)
+
+describe("car_import multi-arquivo (ids sem colisão)", function()
+    local mf_db = "./yvy_car_multi_" .. tostring(os.time()) .. ".db"
+    local second_file = "./yvy_car_second_" .. tostring(os.time()) .. ".json"
+
+    local function write_second_fixture()
+        local json = [==[
+{"type":"FeatureCollection","features":[
+  {"type":"Feature","properties":{"cod_imovel":"XX-1","uf":"XX","municipio":"M1","area":900},"geometry":{"type":"Polygon","coordinates":[[[-58.0,-13.0],[-56.0,-13.0],[-56.0,-11.0],[-58.0,-11.0],[-58.0,-13.0]]]}},
+  {"type":"Feature","properties":{"cod_imovel":"XX-2","uf":"XX","municipio":"M2","area":700},"geometry":{"type":"Polygon","coordinates":[[[-60.0,-15.0],[-59.0,-15.0],[-59.0,-14.0],[-60.0,-14.0],[-60.0,-15.0]]]}}
+]}
+]==]
+        local f = io.open(second_file, "w")
+        f:write(json)
+        f:close()
+    end
+
+    it("importa 2 arquivos sem colidir ids e sem rtree órfão", function()
+        write_second_fixture()
+        local conn = sqlite3.open(mf_db)
+        conn:exec("PRAGMA journal_mode=WAL")
+        car_import.create_schema(conn)
+
+        local n1 = car_import.import_file(conn, FIXTURE, 0)
+        assert.are_equal(3, n1)
+        local n2 = car_import.import_file(conn, second_file, n1)
+        assert.are_equal(2, n2)
+
+        local data_n, rtree_n = 0, 0
+        for r in conn:nrows("SELECT COUNT(*) AS n FROM car_data") do data_n = r.n end
+        for r in conn:nrows("SELECT COUNT(*) AS n FROM car_rtree") do rtree_n = r.n end
+        conn:close()
+        assert.are_equal(5, data_n)
+        assert.are_equal(5, rtree_n, "rtree não deve ter órfãos (car_data == car_rtree)")
+    end)
+
+    teardown(function()
+        os.remove(mf_db)
+        os.remove(mf_db .. "-wal")
+        os.remove(mf_db .. "-shm")
+        os.remove(second_file)
+    end)
+end)

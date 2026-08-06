@@ -521,7 +521,7 @@ retorna distribuição (nacional e por estado), cacheado em Redis.
 
 ### Inc 6 — Camada CAR + índice espacial em SQLite (L)
 
-**Status:** DONE (2026-08-06) — `car_lookup` (RTree+JSONB) + `car_import` + `tools/import_car.lua` + `test_car_lookup`; RO importado (194.352 imóveis, 86MB) e validação real: 17/23 focos RO (73,9%) em CAR
+**Status:** DONE (2026-08-06) — `car_lookup` (RTree+JSONB) + `car_import` + `tools/import_car.lua` + `test_car_lookup`; **import completo das 27 UFs: 8.468.340 imóveis (car.db 6,8GB), car_data == car_rtree (sem órfãos)**. FIX: `import_file(conn, path, start_id)` — id global por offset acumulado (antes zerava por arquivo → colisão de PK, DB ficava com ~1,3M em vez de 8,4M) + só insere rtree quando `car_data` vinga. Validação real multi-UF: RO 73,9%, MT 74,6%, BA 71,8%, MG 79,9%, SP 85,5%, PA 76,3%, MA 80,0%, GO 82,0%. Deploy: car.db enviado para a VM (importar no servidor estouraria RAM de 1GB — MG.json precisa ~28GB em Lua).
 **Depends on:** 2, 3 (precisa de `nature_version` p/ reclassificação)
 **Unblocks:** re-run do Inc 4 com `territory.car` preenchido
 **Done criteria:** `car_lookup` consulta `car.db` (tabelas `car_data` + `car_cell`,

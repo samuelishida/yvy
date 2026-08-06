@@ -80,8 +80,11 @@ function _M.create_schema(conn)
 end
 
 -- Importa um arquivo GeoJSON FeatureCollection para car.db (na conexão dada).
--- Retorna o nº de imóveis inseridos (0 em erro/arquivo ausente).
-function _M.import_file(conn, path)
+-- `start_id` = nº de imóveis já inseridos (offset global de id), evitando
+-- colisão de PK entre arquivos. Retorna o nº de imóveis inseridos (0 em
+-- erro/arquivo ausente).
+function _M.import_file(conn, path, start_id)
+    start_id = start_id or 0
     local f = io.open(path, "r")
     if not f then
         logger.warn("CAR file not found: " .. tostring(path))
@@ -114,22 +117,29 @@ function _M.import_file(conn, path)
             if type(geom) == "table" then
                 local bbox, rounded = _M.prepare_geometry(geom)
                 if bbox then
-                    n = n + 1
+                    -- id global (start_id + contador) evita colisão de PK entre
+                    -- arquivos — o contador n só avança quando o insert vinga.
+                    local id = start_id + n + 1
                     insert_data:reset()
-                    insert_data:bind(1, n)
-                    insert_data:bind(2, p.cod_imovel or ("CAR_" .. n))
+                    insert_data:bind(1, id)
+                    insert_data:bind(2, p.cod_imovel or ("CAR_" .. id))
                     insert_data:bind(3, p.uf or "")
                     insert_data:bind(4, p.municipio or "")
                     insert_data:bind(5, tonumber(p.area) or 0)
                     insert_data:bind(6, cjson.encode(rounded))
-                    insert_data:step()
-                    insert_rtree:reset()
-                    insert_rtree:bind(1, n)
-                    insert_rtree:bind(2, bbox[1])
-                    insert_rtree:bind(3, bbox[3])
-                    insert_rtree:bind(4, bbox[2])
-                    insert_rtree:bind(5, bbox[4])
-                    insert_rtree:step()
+                    local rc = insert_data:step()
+                    if rc == sqlite3.DONE then
+                        insert_rtree:reset()
+                        insert_rtree:bind(1, id)
+                        insert_rtree:bind(2, bbox[1])
+                        insert_rtree:bind(3, bbox[3])
+                        insert_rtree:bind(4, bbox[2])
+                        insert_rtree:bind(5, bbox[4])
+                        insert_rtree:step()
+                        n = n + 1
+                    else
+                        logger.warn("CAR row skipped (constraint): " .. tostring(p.cod_imovel))
+                    end
                 end
             end
         end

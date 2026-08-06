@@ -57,7 +57,8 @@ table.sort(targets)
 
 local total = 0
 for _, uf in ipairs(targets) do
-    total = total + car_import.import_file(conn, data_dir .. "/" .. uf .. ".json")
+    local n = car_import.import_file(conn, data_dir .. "/" .. uf .. ".json", total)
+    total = total + n
 end
 
 conn:exec("PRAGMA wal_checkpoint(TRUNCATE)")
