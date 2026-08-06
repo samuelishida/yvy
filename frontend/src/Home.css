@@ -441,7 +441,9 @@
 
   .float-panel {
     width: min(210px, calc(100vw - 24px));
-    bottom: 8px;
+    /* bottom: 40px clears the 2-line Leaflet attribution (~34px) on mobile.
+       At bottom: 8px the collapsed card overlapped the attribution bar. */
+    bottom: 40px;
     right: 8px;
   }
   .fp-count { font-size: 22px; }
