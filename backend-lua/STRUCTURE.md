@@ -5,7 +5,6 @@
 ```
 backend-lua/
 ├── main.lua                      # Backend entry point
-├── main_frontend.lua             # Frontend entry point (deprecated)
 ├── yvy-server.c                  # C HTTP server for frontend
 ├── Makefile                      # Build C server
 │

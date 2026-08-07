@@ -86,7 +86,6 @@ yvy/
 │
 ├── backend-lua/
 │   ├── main.lua              ← Backend entry point
-│   ├── main_frontend.lua     ← (deprecated, kept for reference)
 │   ├── app/
 │   │   ├── server.lua        ← API router
 │   │   ├── db.lua            ← Database layer
