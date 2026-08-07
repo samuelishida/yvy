@@ -100,6 +100,28 @@ describe("fire_classify", function()
             assert.are_equal("suspeito", r.nature)
             assert.is_true(r.evidence.no_authorization)
         end)
+        it("DETER real na propriedade (≤7d) → suspeito vira crime (Inc 4)", function()
+            local territory = {
+                car = { name = "F", id = "RO-1" },
+                deter = {
+                    has_deter_nearby = true, deter_classname = "DESMATAMENTO_VEG",
+                    deter_view_date = "2026-08-06", car_imovel = "RO-1", severity = "maximo",
+                },
+            }
+            local r = classify.classify_fire(fire(), territory)
+            assert.are_equal("crime", r.nature)
+            assert.is_true(r.evidence.deter.has_deter_nearby)
+            assert.are_equal("DESMATAMENTO_VEG", r.evidence.deter.deter_classname)
+        end)
+        it("Pass-2 (classname=FIRMS) sem DETER real → NÃO upgrade (Inc 4)", function()
+            local territory = {
+                car = { name = "F", id = "RO-2" },
+                deter = { has_deter_nearby = false, car_imovel = "RO-2", severity = "medio" },
+            }
+            local r = classify.classify_fire(fire(), territory)
+            assert.are_equal("suspeito", r.nature)
+            assert.is_true(r.evidence.no_authorization)
+        end)
         it("sem território + moratória → suspeito", function()
             local r = classify.classify_fire(fire({acq_date = "2026-08-15"}), {})
             assert.are_equal("suspeito", r.nature)

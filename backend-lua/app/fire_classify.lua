@@ -174,6 +174,15 @@ function _M.classify_fire(fire, territory, cfg)
             return { nature = "permitido", evidence = evidence }
         end
         evidence.no_authorization = true
+        -- Inc 4 (plan: terrabrasilis-integration): DETER confirmou desmatamento
+        -- na MESMA propriedade em ≤7 dias → suspeito vira crime (Cenário C).
+        -- territory.deter é injetado pelo chamador (tools/enrich_fire_deter.lua);
+        -- has_deter_nearby=false cobre as linhas Pass-2 (classname="FIRMS", fogo
+        -- sem alerta DETER real) — não rotular como crime sem DETER.
+        if territory.deter and territory.deter.has_deter_nearby then
+            evidence.deter = territory.deter
+            return { nature = "crime", evidence = evidence }
+        end
         return { nature = "suspeito", evidence = evidence }
     end
 

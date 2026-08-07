@@ -502,6 +502,33 @@ end
 
 -- ── Public API ───────────────────────────────────────────────────────────
 
+-- Alertas DETER em UC/TI (plan: terrabrasilis-integration, Inc 6). O scan
+-- espacial roda detached (tools/deter_protected_alerts.lua) e grava entradas
+-- cruas em Redis `alerts:deter_protected`; aqui só lemos + aplicamos o tick
+-- tiered (R6 — evita alert fatigue): crit para MINERACAO/DESMATAMENTO_CR/
+-- DESMATAMENTO_VEG ou >50 ha; warn para o resto.
+local function deter_protected_alerts()
+    local redis = require("app.redis")
+    local body = redis.get("alerts:deter_protected")
+    if not body or body == "" then return {} end
+    local ok, entries = pcall(cjson.decode, body)
+    if not ok or type(entries) ~= "table" then return {} end
+
+    local alerts = {}
+    for _, e in ipairs(entries) do
+        local cls = e.classname or ""
+        local area_ha = tonumber(e.area_ha) or 0
+        local tick = "warn"
+        if cls == "MINERACAO" or cls == "DESMATAMENTO_CR" or cls == "DESMATAMENTO_VEG"
+           or area_ha > 50 then
+            tick = "crit"
+        end
+        e.tick = tick
+        alerts[#alerts + 1] = e
+    end
+    return alerts
+end
+
 function _M.generate_all_alerts(fires, deforestation_data, waqi_token)
     local all_alerts = {}
 
@@ -518,6 +545,9 @@ function _M.generate_all_alerts(fires, deforestation_data, waqi_token)
 
     local ok, prodes = pcall(prodes_alerts)
     if ok and prodes then extend(prodes) end
+
+    local det_ok, det = pcall(deter_protected_alerts)
+    if det_ok and det then extend(det) end
 
     local pm25_ok, pm25 = pcall(pm25_alerts, waqi_token)
     if pm25_ok and pm25 then extend(pm25) end

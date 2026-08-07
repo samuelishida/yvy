@@ -31,6 +31,8 @@ local GET_PREFIX = "SELECT cod_imovel, uf, municipio, area, json(geom) AS g FROM
 
 -- Decodifica a geometria JSONB (via json(geom) já em texto) e testa o ponto.
 -- GeoJSON usa [lon, lat]; geo.point_in_polygon espera {lon, lat} por vértice.
+-- Exposto como _M.point_in_geojson (plan: terrabrasilis-integration, Inc 12)
+-- para reuso na verificação PRODES por recibo (routes/car.lua).
 local function point_in_geojson(lon, lat, geojson_text)
     local ok, geom = pcall(cjson.decode, geojson_text)
     if not ok or type(geom) ~= "table" or not geom.coordinates then return false end
@@ -58,6 +60,81 @@ local function point_in_geojson(lon, lat, geojson_text)
         end
     end
     return false
+end
+
+_M.point_in_geojson = point_in_geojson
+
+-- Bbox (min_lon/min_lat/max_lon/max_lat) de uma geometria GeoJSON decodificada
+-- (Polygon ou MultiPolygon). Usado por get_by_cod_imovel para o scan PRODES.
+local function geom_bbox(geom)
+    if type(geom) ~= "table" or type(geom.coordinates) ~= "table" then return nil end
+    local rings = {}
+    if geom.type == "Polygon" then
+        rings = geom.coordinates
+    elseif geom.type == "MultiPolygon" then
+        for _, poly in ipairs(geom.coordinates) do
+            for _, ring in ipairs(poly) do
+                rings[#rings + 1] = ring
+            end
+        end
+    else
+        return nil
+    end
+
+    local min_lon, min_lat = 1 / 0, 1 / 0
+    local max_lon, max_lat = -1 / 0, -1 / 0
+    for _, ring in ipairs(rings) do
+        for _, pt in ipairs(ring) do
+            local lon, lat = tonumber(pt[1]), tonumber(pt[2])
+            if lon and lat then
+                if lon < min_lon then min_lon = lon end
+                if lon > max_lon then max_lon = lon end
+                if lat < min_lat then min_lat = lat end
+                if lat > max_lat then max_lat = lat end
+            end
+        end
+    end
+    if min_lon == 1 / 0 then return nil end
+    return { min_lon = min_lon, min_lat = min_lat, max_lon = max_lon, max_lat = max_lat }
+end
+
+-- Lookup de um imóvel pelo número do recibo CAR (cod_imovel UNIQUE).
+-- car_import armazena cod_imovel verbatim do SICAR — normalizamos apenas para
+-- UPPERCASE (stripping agressivo quebraria o match). Retorna
+-- {id, uf, municipio, area_ha, geom (GeoJSON text), bbox} ou nil.
+function _M.get_by_cod_imovel(cod_imovel)
+    if not car_conn then return nil end
+    if type(cod_imovel) ~= "string" or cod_imovel == "" then return nil end
+    local code = cod_imovel:upper()
+
+    local stmt = car_conn:prepare(
+        "SELECT cod_imovel, uf, municipio, area, json(geom) AS g FROM car_data WHERE cod_imovel = ? LIMIT 1"
+    )
+    if not stmt then return nil end
+    stmt:bind(1, code)
+    local row
+    for r in stmt:nrows() do row = r end
+    stmt:finalize()
+    if not row or not (row.g or row["g"]) then return nil end
+
+    local g = row.g or row["g"]
+    local ok, geom = pcall(cjson.decode, g)
+    if not ok then return nil end
+    local bbox = geom_bbox(geom)
+    if not bbox then return nil end
+
+    return {
+        id = row.cod_imovel,
+        uf = row.uf,
+        municipio = row.municipio,
+        area_ha = tonumber(row.area) or 0,
+        geom = g,
+        bbox = bbox,
+    }
+end
+
+function _M.is_loaded()
+    return car_conn ~= nil and _M.count() > 0
 end
 
 function _M.load_car()

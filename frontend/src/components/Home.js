@@ -245,6 +245,24 @@ function FirePopupContent({ fire, fireAlert, t }) {
       {t('home.date')}: {fire.acq_date} {fire.acq_time}<br />
       {t('home.satellite')}: {fire.satellite}<br />
       {t('home.brightnessTemp')}: {fire.bright_ti4}K
+      {fire.vegetation && (
+        <>
+          <br />
+          <span style={{ color: '#2dd4ff' }}>
+            {fire.vegetation.status === 'deforested' || (fire.vegetation.status || '').startsWith('deforested')
+              ? `${t('home.fireInDeforested')} (${fire.vegetation.class_name || fire.vegetation.year || ''})`
+              : (fire.vegetation.status || '').startsWith('regrowth')
+                ? t('home.fireInRegrowth')
+                : t('home.fireInNativeVeg')}
+          </span>
+        </>
+      )}
+      {fire.ams && fire.ams.risk_level && (
+        <>
+          <br />
+          <span style={{ color: '#f97316' }}>🔥 {t('home.amsRisk')}: {fire.ams.risk_level} (AMS {fire.ams.view_date || ''})</span>
+        </>
+      )}
       {landTag && (
         <>
           <br />
@@ -463,7 +481,7 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
   const aqiColor = aqiVal <= 50 ? '#4ade80' : aqiVal <= 100 ? '#fbbf24' : '#ef4444';
 
   const sortedAlerts = useMemo(() => {
-    const typePriority = { indigenous_land: 0, conservation_unit: 1, cluster: 2, night_fire: 3, prodes: 4, pm25: 5 };
+    const typePriority = { indigenous_land: 0, conservation_unit: 1, deter_protected: 2, cluster: 3, night_fire: 4, prodes: 5, pm25: 6 };
     return alerts.filter(a => !isOutOfBrazil(a)).sort((a, b) => {
       const pa = typePriority[a.type] ?? 9;
       const pb = typePriority[b.type] ?? 9;
@@ -631,6 +649,7 @@ const ALERT_TYPE_KEYS = {
   conservation_unit: 'alertConservationUnit',
   prodes: 'alertProdes',
   pm25: 'alertPm25',
+  deter_protected: 'alertDeterProtected',
 };
 
 const INDIGENOUS_STYLE = { color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.22, weight: 2.5, opacity: 0.9, dashArray: '6 4' };
@@ -704,14 +723,74 @@ function BiomeHighlightLayer({ activeBiome, biomeGeoJSON }) {
   return null;
 }
 
-const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, t, alerts, activeAlertId, flyToAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, airQuality, temperature, activeBiome, biomeGeoJSON, onBiomeHover }) {
-  const [satellite, setSatellite] = useState(true);
+// Voa até o bbox do imóvel quando o resultado da verificação PRODES chega
+// (plan: terrabrasilis-integration, Inc 12). Filho do MapContainer (useMap).
+const ProdesFlyTo = React.memo(function ProdesFlyTo({ bbox }) {
+  const map = useMap();
+  useEffect(() => {
+    if (bbox) {
+      map.flyToBounds(
+        [[bbox.min_lat, bbox.min_lon], [bbox.max_lat, bbox.max_lon]],
+        { padding: [48, 48], maxZoom: 14 }
+      );
+    }
+  }, [map, bbox]);
+  return null;
+});
+
+const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, t, alerts, activeAlertId, flyToAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, airQuality, temperature, activeBiome, biomeGeoJSON, onBiomeHover }) {  const [satellite, setSatellite] = useState(true);
   // Unique per-mount key prevents "Map container already initialized" on remount
   const [mapKey] = useState(() => ++_mapMountCounter);
   const [visibleFires, setVisibleFires] = useState([]);
   // CAR overlay (Inc 3): showCar toggle (padrão OFF) + carInspect popup state (local ao card).
   const [showCar, setShowCar] = useState(false);
   const [carInspect, setCarInspect] = useState(null);
+  // TerraClass / Cerrado vegetation overlays (Inc 9): opcionais, padrão OFF.
+  const [showTerraClass, setShowTerraClass] = useState(false);
+  const [showCerradoVeg, setShowCerradoVeg] = useState(false);
+  // AMS fire-spreading-risk overlay (Inc 11): opcional, padrão OFF.
+  const [showAms, setShowAms] = useState(false);
+  const [amsRisk, setAmsRisk] = useState(null);
+  useEffect(() => {
+    if (!showAms) return;
+    let alive = true;
+    cachedFetch('/api/ams/risk?sw_lat=-34&ne_lat=5.5&sw_lng=-74&ne_lng=-34&days=3', { ttl: 300_000 })
+      .then(d => { if (alive) setAmsRisk(d); })
+      .catch(() => { if (alive) setAmsRisk(null); });
+    return () => { alive = false; };
+  }, [showAms]);
+  const amsGeoJSON = useMemo(() => {
+    if (!amsRisk || !amsRisk.polygons || !amsRisk.polygons.length) return null;
+    return {
+      type: 'FeatureCollection',
+      features: amsRisk.polygons.map(p => ({
+        type: 'Feature',
+        properties: { risk_level: p.risk_level, view_date: p.view_date, municipio: p.municipio },
+        geometry: p.geom,
+      })),
+    };
+  }, [amsRisk]);
+  // Verificação PRODES por recibo CAR (plan: terrabrasilis-integration, Inc 12).
+  const [prodesInput, setProdesInput] = useState('');
+  const [prodesResult, setProdesResult] = useState(null);
+  const [prodesLoading, setProdesLoading] = useState(false);
+  const [prodesError, setProdesError] = useState(null);
+  const prodesQuery = async (e) => {
+    e.preventDefault();
+    const cod = prodesInput.trim();
+    if (!cod || prodesLoading) return;
+    setProdesLoading(true);
+    setProdesError(null);
+    try {
+      const d = await cachedFetch(`/api/car/prodes?cod_imovel=${encodeURIComponent(cod)}`, { ttl: 60_000 });
+      setProdesResult(d);
+    } catch (err) {
+      setProdesError(String((err && err.message) || err));
+      setProdesResult(null);
+    } finally {
+      setProdesLoading(false);
+    }
+  };
   const alertRows = asArray(alerts);
   const fireRows = asArray(fires);
 
@@ -837,7 +916,81 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           >
             <span className="lt-dot" style={{ background: CAR_COLOR }} /> {t('home.layerCar')}<span className="lt-sub">CAR</span>
           </button>
+          <button
+            className={`layer-toggle${showTerraClass ? ' active' : ''}`}
+            onClick={() => setShowTerraClass(!showTerraClass)}
+          >
+            <span className="lt-dot" style={{ background: '#2dd4bf' }} /> {t('home.layerTerraClass')}
+          </button>
+          <button
+            className={`layer-toggle${showCerradoVeg ? ' active' : ''}`}
+            onClick={() => setShowCerradoVeg(!showCerradoVeg)}
+          >
+            <span className="lt-dot" style={{ background: '#a3e635' }} /> {t('home.layerCerradoVeg')}
+          </button>
+          <button
+            className={`layer-toggle${showAms ? ' active' : ''}`}
+            onClick={() => setShowAms(!showAms)}
+          >
+            <span className="lt-dot" style={{ background: '#f97316' }} /> {t('home.layerAms')}<span className="lt-sub">AMS</span>
+          </button>
         </div>
+      </div>
+
+      {/* Verificação PRODES por recibo CAR (plan: terrabrasilis-integration, Inc 12) */}
+      <div className="prodes-check">
+        <form className="prodes-check-form" onSubmit={prodesQuery}>
+          <input
+            className="prodes-check-input"
+            value={prodesInput}
+            onChange={(e) => setProdesInput(e.target.value)}
+            placeholder={t('home.receiptPlaceholder')}
+            aria-label={t('home.receiptPlaceholder')}
+          />
+          <button className="prodes-check-btn" type="submit" disabled={prodesLoading}>
+            {prodesLoading ? t('home.checkingProperty') : t('home.verifyProperty')}
+          </button>
+        </form>
+        {prodesError && <div className="prodes-error">{prodesError}</div>}
+        {prodesResult && (
+          <div className="prodes-result">
+            {prodesResult.data ? (
+              <>
+                <div className="prodes-result-title">{t('home.propertySummary')}</div>
+                <div className="prodes-result-code"><strong>{prodesResult.data.cod_imovel}</strong></div>
+                {prodesResult.data.has_prodes ? (
+                  <div className="prodes-result-yes">
+                    {t('home.hasProdesYes', {
+                      area: prodesResult.data.prodes_area_ha,
+                      years: (prodesResult.data.years || []).join(', '),
+                    })}
+                  </div>
+                ) : (
+                  <div className="prodes-result-no">{t('home.hasProdesNo')}</div>
+                )}
+                <div className="prodes-result-meta">
+                  {t('home.propertyAreaLabel', { area: prodesResult.data.property_area_ha ?? '—' })} · {t('home.prodesEstimate')}
+                </div>
+                {prodesResult.data.years && prodesResult.data.years.length > 0 && (
+                  <div className="prodes-result-meta">
+                    {t('home.yearsLabel', { years: prodesResult.data.years.join(', ') })}
+                  </div>
+                )}
+                {prodesResult.data.regrowth && (
+                  <div className="prodes-result-meta">{t('home.regrowthNote')}</div>
+                )}
+              </>
+            ) : (
+              <div className="prodes-result-no">
+                {prodesResult.note === 'CAR unavailable'
+                  ? t('home.carUnavailable')
+                  : prodesResult.found === false
+                    ? t('home.propertyNotFound')
+                    : t('home.prodesNotAvailable')}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Map */}
@@ -853,6 +1006,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
         >
           <TileLayer key={satellite ? 'sat' : 'osm'} attribution={tileAttr} url={tileUrl} />
           <MapController activeAlert={flyToAlert} />
+          <ProdesFlyTo bbox={prodesResult && prodesResult.data ? prodesResult.data.bbox : null} />
           <BiomeHighlightLayer activeBiome={activeBiome} biomeGeoJSON={biomeGeoJSON} />
           <FireHoverLock
             fires={fireRows}
@@ -889,6 +1043,34 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             attribution="&copy; SICAR"
             zIndex={90}
           />
+          <TileLayer
+            key="terraclass-tiles"
+            url="/api/tiles/terraclass?z={z}&x={x}&y={y}&layer=terraclass"
+            opacity={showTerraClass ? 0.5 : 0}
+            tileSize={256}
+            maxNativeZoom={12}
+            minZoom={2}
+            keepBuffer={4}
+            updateWhenZooming={false}
+            updateWhenIdle={false}
+            fadeIn={150}
+            attribution="&copy; INPE TerraClass"
+            zIndex={80}
+          />
+          <TileLayer
+            key="cerrado-veg-tiles"
+            url="/api/tiles/cerrado-veg?z={z}&x={x}&y={y}"
+            opacity={showCerradoVeg ? 0.5 : 0}
+            tileSize={256}
+            maxNativeZoom={12}
+            minZoom={2}
+            keepBuffer={4}
+            updateWhenZooming={false}
+            updateWhenIdle={false}
+            fadeIn={150}
+            attribution="&copy; INPE Cerrado Veg"
+            zIndex={85}
+          />
           {showFires && activeAlert?.center && (
             <Circle
               center={activeAlert.center}
@@ -915,6 +1097,25 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               onEachFeature={(feature, layer) => {
                 const p = feature.properties;
                 layer.bindPopup(`<strong>🌿 ${p.name}</strong><br/>${p.category || 'UC'} · ${p.state_abbr || ''}`);
+              }}
+            />
+          )}
+          {showAms && amsGeoJSON && (
+            <GeoJSON
+              key="ams-risk"
+              data={amsGeoJSON}
+              style={(feature) => ({
+                color: feature.properties.risk_level === 'ALTO' || feature.properties.risk_level === 'ALTA'
+                  ? '#ef4444' : feature.properties.risk_level === 'MODERADO'
+                    ? '#f97316' : '#2dd4ff',
+                fillColor: feature.properties.risk_level === 'ALTO' || feature.properties.risk_level === 'ALTA'
+                  ? '#ef4444' : feature.properties.risk_level === 'MODERADO'
+                    ? '#f97316' : '#2dd4ff',
+                fillOpacity: 0.12, weight: 1.5, opacity: 0.6, dashArray: '6 4',
+              })}
+              onEachFeature={(feature, layer) => {
+                const p = feature.properties;
+                layer.bindPopup(`🔥 ${t('home.amsRisk')}: ${p.risk_level || '?'} (AMS ${p.view_date || ''})`);
               }}
             />
           )}
@@ -1146,7 +1347,7 @@ export default function Home() {
     const validFire = f => f.lat != null && f.lon != null;
     const cached = getCache('fires', 240);
     if (cached) setFires(asArray(cached.fires).filter(validFire));
-    fetch('/api/fires', { signal: ac.signal })
+    fetch('/api/fires?vegetation=true&ams=true', { signal: ac.signal })
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(d => {
         const f = asArray(d.fires).filter(validFire);

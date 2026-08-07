@@ -42,7 +42,7 @@ function _M.get_fires(ctx)
     local sw_lat = args.sw_lat
     local sw_lng = args.sw_lng
 
-    local cache_key = "firescache:" .. (ne_lat or "global") .. ":" .. (ne_lng or "") .. ":" .. (sw_lat or "") .. ":" .. (sw_lng or "")
+    local cache_key = "firescache:" .. (ne_lat or "global") .. ":" .. (ne_lng or "") .. ":" .. (sw_lat or "") .. ":" .. (sw_lng or "") .. (args.vegetation == "true" and ":veg" or "") .. (args.source and (":" .. args.source) or "") .. (args.ams == "true" and ":ams" or "")
 
     local cached = redis.get(cache_key)
     if cached then
@@ -66,7 +66,31 @@ function _M.get_fires(ctx)
 
     -- Mapa carrega apenas focos dentro do Brasil (state atribuído = polígono IBGE).
     -- Pontos em países vizinhos (dentro do bbox) são excluídos.
-    local data = db.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, MAX_RESULTS, true)
+    -- Filtro opcional de fonte (Inc 10): ?source=bdqueimadas|firms|all
+    local source_filter
+    if args.source == "bdqueimadas" then
+        source_filter = "%BDQ%"
+    elseif args.source == "firms" then
+        source_filter = "NASA_FIRMS%"
+    end
+    local data = db.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, MAX_RESULTS, true, source_filter)
+
+    -- Inc 8 (plan: terrabrasilis-integration): ?vegetation=true cruza cada foco
+    -- com PRODES no local — UMA query de deforestation_data por bbox + atribuição.
+    if args.vegetation == "true" then
+        local veg_map = db.get_vegetation_context_batch(sw_lat, ne_lat, sw_lng, ne_lng, data)
+        for i, f in ipairs(data) do
+            f.vegetation = veg_map[i] or { status = "unknown" }
+        end
+    end
+
+    -- Inc 11: ?ams=true adiciona o risco de propagação AMS a cada foco.
+    if args.ams == "true" then
+        for _, f in ipairs(data) do
+            f.ams = db.get_ams_risk_at(f.lat, f.lon)
+        end
+    end
+
     local last_sync = redis.get("fires:last_sync")
 
     local response = cjson.encode({fires = data, last_sync = last_sync})

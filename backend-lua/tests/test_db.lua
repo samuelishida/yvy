@@ -36,6 +36,45 @@ describe("db", function()
             assert.is_true(tables["fire_data"])
             assert.is_true(tables["deforestation_data"])
             assert.is_true(tables["news"])
+
+            -- TerraBrasilis integration tables (plan: terrabrasilis-integration, Inc 1)
+            assert.is_true(tables["deter_polygons"])
+            assert.is_true(tables["deter_car_alerts"])
+            assert.is_true(tables["deter_alerts"])
+            assert.is_true(tables["ams_risk"])
+        end)
+    end)
+
+    describe("terrabrasilis schema", function()
+        it("creates the bbox expression indexes", function()
+            local db = sqlite3.open(test_db_path)
+            local idx = {}
+            local stmt = db:prepare("SELECT name FROM sqlite_master WHERE type='index'")
+            for row in stmt:rows() do
+                idx[row[1] or ""] = true
+            end
+            stmt:finalize()
+            db:close()
+
+            assert.is_true(idx["idx_deter_bbox"])
+            assert.is_true(idx["idx_ams_bbox"])
+            assert.is_true(idx["idx_fire_source"])
+        end)
+
+        it("deter_car_alerts enforces the dedup key", function()
+            local db = sqlite3.open(test_db_path)
+            local sql = [[
+                INSERT INTO deter_car_alerts (cod_imovel, classname, view_date, severity, ingested_at)
+                VALUES ('BR-RO-1', 'DESMATAMENTO_VEG', '2026-08-06', 'maximo', '2026-08-07T00:00:00Z')
+            ]]
+            db:exec(sql)
+            db:exec(sql)  -- duplicate (cod_imovel, classname, view_date) → no-op
+            local n = 0
+            for row in db:nrows("SELECT COUNT(*) AS cnt FROM deter_car_alerts") do
+                n = tonumber(row.cnt) or 0
+            end
+            db:close()
+            assert.are_equal(1, n)
         end)
     end)
 

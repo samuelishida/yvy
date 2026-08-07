@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily PRODES version check for Yvy (Inc 5)
+
+[Timer]
+OnCalendar=*-*-* 03:10:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

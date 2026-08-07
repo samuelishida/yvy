@@ -38,12 +38,19 @@ def main():
     parser.add_argument("--target", type=int, default=200_000, help="Target output point count")
     parser.add_argument("--tif", default=None, help="Path to input GeoTIFF")
     parser.add_argument("--pixel-count", type=int, default=None, help="Known total qualifying pixel count (skip pass 1)")
+    parser.add_argument("--version", default="prodes_brasil_2024_v20260407",
+                        help="PRODES version dir/base name (Inc 5 auto-update)")
+    parser.add_argument("--base-dir", default=None,
+                        help="Override data dir (default <project>/backend-lua/data/<version>)")
     args = parser.parse_args()
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_dir = os.path.dirname(script_dir)
-    data_dir = os.path.join(project_dir, "backend-lua", "data", "prodes_brasil_2024_v20260407")
-    base = "prodes_brasil_2024_v20260407"
+    if args.base_dir:
+        data_dir = args.base_dir
+    else:
+        data_dir = os.path.join(project_dir, "backend-lua", "data", args.version)
+    base = args.version
 
     tif_path = args.tif or os.path.join(data_dir, f"{base}.tif")
     csv_path = os.path.join(data_dir, f"{base}.csv")

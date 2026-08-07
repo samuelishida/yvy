@@ -116,6 +116,18 @@ jobs:
             ansible/playbook.yml
           echo "Ansible syntax OK"
 
+  python-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # py_compile only checks syntax (no imports run), so no deps are needed.
+      # New TerraBrasilis batch scripts must compile before they can run.
+      - name: Validate Python syntax
+        run: |
+          python3 -m py_compile scripts/*.py
+
   frontend-build:
     runs-on: ubuntu-latest
     steps:

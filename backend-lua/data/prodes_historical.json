@@ -1,25 +1,80 @@
 {
   "source": "INPE PRODES — Taxa de desmatamento anual da Amazônia Legal Brasileira (km²)",
   "source_url": "http://terrabrasilis.dpi.inpe.br/app/dashboard/deforestation/biomes/legal_amazon/rates",
-  "last_updated": "2026-05-15",
-  "notes": "Reference year runs Aug 1 (Y-1) to Jul 31 (Y). Values rounded to whole km². 2024 figure is INPE's published estimate as of release date and may be revised in subsequent consolidations.",
+  "last_updated": "2026-08-07",
+  "notes": "Reference year runs Aug 1 (Y-1) to Jul 31 (Y). Values from TerraBrasilis rates2025.json (dashboard API), rounded to whole km². 2023/2024 reflect the consolidated figures; 2025 = 5,731 km² is the PRODES 2025 rate (Aug 2024–Jul 2025).",
   "yearly": [
-    { "year": 2008, "amazon_km2": 12911 },
-    { "year": 2009, "amazon_km2": 7464  },
-    { "year": 2010, "amazon_km2": 7000  },
-    { "year": 2011, "amazon_km2": 6418  },
-    { "year": 2012, "amazon_km2": 4571  },
-    { "year": 2013, "amazon_km2": 5891  },
-    { "year": 2014, "amazon_km2": 5012  },
-    { "year": 2015, "amazon_km2": 6207  },
-    { "year": 2016, "amazon_km2": 7893  },
-    { "year": 2017, "amazon_km2": 6947  },
-    { "year": 2018, "amazon_km2": 7536  },
-    { "year": 2019, "amazon_km2": 10129 },
-    { "year": 2020, "amazon_km2": 10851 },
-    { "year": 2021, "amazon_km2": 13038 },
-    { "year": 2022, "amazon_km2": 11594 },
-    { "year": 2023, "amazon_km2": 9001  },
-    { "year": 2024, "amazon_km2": 6288  }
+    {
+      "year": 2008,
+      "amazon_km2": 12911
+    },
+    {
+      "year": 2009,
+      "amazon_km2": 7464
+    },
+    {
+      "year": 2010,
+      "amazon_km2": 7000
+    },
+    {
+      "year": 2011,
+      "amazon_km2": 6418
+    },
+    {
+      "year": 2012,
+      "amazon_km2": 4571
+    },
+    {
+      "year": 2013,
+      "amazon_km2": 5891
+    },
+    {
+      "year": 2014,
+      "amazon_km2": 5012
+    },
+    {
+      "year": 2015,
+      "amazon_km2": 6207
+    },
+    {
+      "year": 2016,
+      "amazon_km2": 7893
+    },
+    {
+      "year": 2017,
+      "amazon_km2": 6947
+    },
+    {
+      "year": 2018,
+      "amazon_km2": 7536
+    },
+    {
+      "year": 2019,
+      "amazon_km2": 10129
+    },
+    {
+      "year": 2020,
+      "amazon_km2": 10851
+    },
+    {
+      "year": 2021,
+      "amazon_km2": 13038
+    },
+    {
+      "year": 2022,
+      "amazon_km2": 11594
+    },
+    {
+      "year": 2023,
+      "amazon_km2": 9064
+    },
+    {
+      "year": 2024,
+      "amazon_km2": 6518
+    },
+    {
+      "year": 2025,
+      "amazon_km2": 5731
+    }
   ]
 }

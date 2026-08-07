@@ -87,6 +87,84 @@ CREATE TABLE IF NOT EXISTS lookup_data (
     updated_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_lookup_updated ON lookup_data(updated_at);
+
+-- ── TerraBrasilis integration tables (.plans/terrabrasilis-integration) ──
+-- `geom` is declared BLOB (SQLite BLOB affinity stores values as-is) but
+-- Python writers store GeoJSON as TEXT (python3 sqlite3 may link SQLite
+-- < 3.45 without jsonb()); Lua json()/json_extract() read TEXT and JSONB
+-- alike, so both storage forms are safe.
+
+CREATE TABLE IF NOT EXISTS deter_polygons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    classname TEXT,
+    view_date TEXT,
+    uf TEXT,
+    municipality TEXT,
+    mun_geocod TEXT,
+    area_km2 REAL,
+    uc TEXT,
+    areauckm REAL,
+    areamunkm REAL,
+    publish_month TEXT,
+    sensor TEXT,
+    satellite TEXT,
+    min_lat REAL,
+    min_lon REAL,
+    max_lat REAL,
+    max_lon REAL,
+    geom BLOB,
+    ingested_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_deter_bbox ON deter_polygons(min_lat, min_lon, max_lat, max_lon);
+CREATE INDEX IF NOT EXISTS idx_deter_view_date ON deter_polygons(view_date);
+
+CREATE TABLE IF NOT EXISTS deter_car_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cod_imovel TEXT,
+    classname TEXT,
+    view_date TEXT,
+    uf TEXT,
+    municipio TEXT,
+    area_afetada_ha REAL,
+    fire_count INTEGER,
+    fire_dates TEXT,
+    severity TEXT,
+    ingested_at TEXT,
+    UNIQUE(cod_imovel, classname, view_date)
+);
+
+CREATE TABLE IF NOT EXISTS deter_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mun_geocod TEXT,
+    municipality TEXT,
+    classname TEXT,
+    view_date TEXT,
+    area_km2 REAL,
+    uf TEXT,
+    ingested_at TEXT,
+    UNIQUE(mun_geocod, classname, view_date)
+);
+
+CREATE TABLE IF NOT EXISTS ams_risk (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    view_date TEXT,
+    viewed_at TEXT,
+    satelite TEXT,
+    municipio TEXT,
+    biome TEXT,
+    geocode TEXT,
+    layer TEXT,
+    risk_level TEXT,
+    min_lat REAL,
+    min_lon REAL,
+    max_lat REAL,
+    max_lon REAL,
+    geom BLOB,
+    ingested_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ams_bbox ON ams_risk(min_lat, min_lon, max_lat, max_lon);
+
+CREATE INDEX IF NOT EXISTS idx_fire_source ON fire_data(json_extract(data, '$.source'));
 ]]
 
 -- ── Connection pool ──────────────────────────────────────────────────────
@@ -260,6 +338,22 @@ function _M.init_db()
     end
     db:exec("CREATE INDEX IF NOT EXISTS idx_fire_nature ON fire_data(nature, nature_version)")
     db:exec("CREATE INDEX IF NOT EXISTS idx_fire_acqdate_nature ON fire_data(acq_date, nature)")
+
+    -- Additive: deter_alerts.municipality (plan: terrabrasilis-integration,
+    -- Inc 2 — needed by by_municipality stats; tables may predate the column).
+    local det_cols = {}
+    local dstmt = db:prepare("PRAGMA table_info(deter_alerts)")
+    if dstmt then
+        for row in dstmt:rows() do
+            det_cols[row[2] or row["name"] or ""] = true
+        end
+        dstmt:finalize()
+    end
+    if not det_cols["municipality"] then
+        logger.info("Adding municipality column to deter_alerts (additive migration)")
+        db:exec("ALTER TABLE deter_alerts ADD COLUMN municipality TEXT")
+    end
+
     db:close()
 
     -- Build pool
@@ -283,6 +377,28 @@ function _M.optimize_db()
     local db = sqlite3.open(DB_PATH)
     db:exec("PRAGMA optimize")
     db:close()
+end
+
+-- Caminho do arquivo SQLite (usado por ingest.lua para backup PRODES_FORCE_UPDATE).
+function _M.path()
+    return DB_PATH
+end
+
+-- Remove TODAS as linhas de deforestation_data (PRODES_FORCE_UPDATE re-ingest).
+-- Retorna true em sucesso; false se o DELETE falhar (DB travado) após 3 tentativas.
+function _M.truncate_deforestation()
+    local db_path = DB_PATH
+    for attempt = 1, 3 do
+        local db = sqlite3.open(db_path)
+        db:exec("PRAGMA busy_timeout=15000")
+        local rc = db:exec("DELETE FROM deforestation_data")
+        db:exec("PRAGMA wal_checkpoint(TRUNCATE)")
+        db:close()
+        if rc == sqlite3.OK then
+            return true
+        end
+    end
+    return false
 end
 
 function _M.close_db()
@@ -330,6 +446,43 @@ function _M.bulk_upsert_fires(docs)
     return #docs
 end
 
+-- Como bulk_upsert_fires, mas ON CONFLICT DO NOTHING — usado pelo BdQueimadas
+-- (plan: terrabrasilis-integration, Inc 10): quando o FIRMS já tem o mesmo foco
+-- (lat,lon,acq_date), mantém o FIRMS (maior confiança); o BDQ só preenche gaps.
+function _M.bulk_upsert_fires_keep_first(docs)
+    if not docs or #docs == 0 then return 0 end
+
+    local db = pool_acquire()
+    db:exec("BEGIN")
+
+    local sql = [[
+        INSERT INTO fire_data (lat, lon, acq_date, ingested_at, data)
+        VALUES (?, ?, ?, ?, jsonb(?))
+        ON CONFLICT(lat, lon, acq_date) DO NOTHING
+    ]]
+
+    for _, d in ipairs(docs) do
+        local data_json = utils.encode_jsonb({
+            confidence = d.confidence,
+            acq_time = d.acq_time,
+            satellite = d.satellite,
+            bright_ti4 = d.bright_ti4,
+            source = d.source,
+            state = d.state,
+            fire_type = d.fire_type,
+            frp = d.frp,
+            daynight = d.daynight,
+        })
+        exec_write(db, sql, {
+            d.lat, d.lon, d.acq_date, d.ingested_at, data_json
+        })
+    end
+
+    db:exec("COMMIT")
+    pool_release(db)
+    return #docs
+end
+
 local function rows_to_fires(rows)
     local result = {}
     for _, r in ipairs(rows) do
@@ -345,6 +498,7 @@ local function rows_to_fires(rows)
             fire_type = d.fire_type,
             frp = d.frp,
             daynight = d.daynight,
+            source = d.source,  -- Inc 10: origem (FIRMS / BdQueimadas)
             nature = r.nature or r["nature"],
         }
     end
@@ -357,7 +511,7 @@ local function is_brazil_filter_sql()
     return "json_extract(data, '$.state') IS NOT NULL AND json_extract(data, '$.state') != ''"
 end
 
-function _M.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit, brazil_only)
+function _M.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit, brazil_only, source)
     limit = limit or 10000
     local db = pool_acquire()
 
@@ -369,6 +523,11 @@ function _M.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit, brazil_only)
     local params = {sw_lat, ne_lat, sw_lng, ne_lng}
     if brazil_only then
         sql = sql .. "\n          AND " .. is_brazil_filter_sql()
+    end
+    -- Filtro opcional de fonte (Inc 10): ex. "%BDQ%" ou "NASA_FIRMS%"
+    if source then
+        sql = sql .. "\n          AND json_extract(data, '$.source') LIKE ?"
+        params[#params + 1] = source
     end
     sql = sql .. [[
         ORDER BY acq_date DESC, lat, lon
@@ -661,6 +820,45 @@ function _M.iter_fires_for_classification(batch_size, min_version)
     return result
 end
 
+-- Focos recentes (por data), paginados por id — usado pelo enriquecimento
+-- FIRMS×DETER (plan: terrabrasilis-integration, Inc 4), que reprocessa todos
+-- os focos da janela (não só não-classificados).
+function _M.iter_fires_recent(days, batch_size, min_id)
+    days = days or 7
+    batch_size = batch_size or 500
+    min_id = tonumber(min_id) or 0
+    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    local db = pool_acquire()
+    local sql = [[
+        SELECT id, lat, lon, acq_date,
+               json_extract(data, '$.state') AS state,
+               json_extract(data, '$.confidence') AS confidence,
+               json_extract(data, '$.bright_ti4') AS bright_ti4,
+               json_extract(data, '$.fire_type') AS fire_type
+        FROM fire_data
+        WHERE acq_date >= ? AND acq_date IS NOT NULL AND id > ?
+        ORDER BY id
+        LIMIT ?
+    ]]
+    local rows = fetch_all(db, sql, {cutoff, min_id, batch_size})
+    pool_release(db)
+
+    local result = {}
+    for _, r in ipairs(rows) do
+        result[#result + 1] = {
+            id = tonumber(r.id or r["id"]),
+            lat = tonumber(r.lat or r["lat"]),
+            lon = tonumber(r.lon or r["lon"]),
+            acq_date = r.acq_date or r["acq_date"],
+            state = r.state or r["state"] or "",
+            confidence = r.confidence or r["confidence"],
+            bright_ti4 = tonumber(r.bright_ti4 or r["bright_ti4"]),
+            fire_type = r.fire_type or r["fire_type"],
+        }
+    end
+    return result
+end
+
 -- Há focos não-classificados? (cheap: LIMIT 1 sobre índice em nature)
 function _M.count_unclassified()
     local db = pool_acquire()
@@ -795,6 +993,129 @@ function _M.find_deforestation(sw_lat, ne_lat, sw_lng, ne_lng, limit)
             lon = r.lon or r["lon"],
             timestamp = d.timestamp,
         }
+    end
+    return result
+end
+
+-- PRODES points dentro de um bbox, com class/year decodificados do campo
+-- `data.name` (rótulo da legenda QML, ex. `d2020`/`r2014` — não há coluna
+-- estruturada de ano/classe). Usado pela verificação PRODES por recibo CAR
+-- (plan: terrabrasilis-integration, Inc 12) e pelo crossing fogo×vegetação.
+-- type = "deforestation" (classe d*) | "regrowth" (classe r*).
+function _M.get_deforestation_in_bbox(sw_lat, ne_lat, sw_lng, ne_lng, limit)
+    limit = limit or 50000
+    local db = pool_acquire()
+
+    local sql = [[
+        SELECT lat, lon, json(data) AS data_json
+        FROM deforestation_data
+        WHERE lat >= ? AND lat <= ? AND lon >= ? AND lon <= ?
+        LIMIT ?
+    ]]
+
+    local rows = fetch_all(db, sql, {sw_lat, ne_lat, sw_lng, ne_lng, limit})
+    pool_release(db)
+
+    local result = {}
+    for _, r in ipairs(rows) do
+        local d = utils.decode_jsonb(r.data_json or r["data_json"])
+        local class_name, year, kind = nil, nil, nil
+        if type(d.name) == "string" then
+            local prefix, yyyy = d.name:match("^([dr])(%d%d%d%d)$")
+            if prefix then
+                class_name = d.name
+                year = tonumber(yyyy)
+                kind = (prefix == "d") and "deforestation" or "regrowth"
+            end
+        end
+        result[#result + 1] = {
+            lat = r.lat or r["lat"],
+            lon = r.lon or r["lon"],
+            class_name = class_name,
+            year = year,
+            type = kind,
+        }
+    end
+    return result
+end
+
+-- ── Fire × vegetation context (plan: terrabrasilis-integration, Inc 8) ──
+
+-- ~30m em graus (resolução do pixel PRODES) — a checagem de proximidade.
+local VEG_PAD = 0.0003
+
+-- Grid de células ~0.001° (≈110m) sobre pontos PRODES, para lookup O(1) por
+-- vizinhança 3x3. Célula = chave "ci,cj" com ci=floor(lat*1000+0.5).
+local function build_veg_grid(points)
+    local grid = {}
+    for _, p in ipairs(points) do
+        local ci = math.floor((p.lat or 0) * 1000 + 0.5)
+        local cj = math.floor((p.lon or 0) * 1000 + 0.5)
+        local key = string.format("%d,%d", ci, cj)
+        local cell = grid[key]
+        if not cell then cell = {}; grid[key] = cell end
+        cell[#cell + 1] = p
+    end
+    return grid
+end
+
+-- Classifica o contexto vegetacional de um ponto: `native` (sem PRODES a ~30m)
+-- | `deforested_<year>` | `regrowth_<year>`. Múltiplas classes sobrepostas →
+-- prioriza desmatamento e ano mais recente.
+local function vegetation_at(lat, lon, grid)
+    local best
+    local ci = math.floor((lat or 0) * 1000 + 0.5)
+    local cj = math.floor((lon or 0) * 1000 + 0.5)
+    for di = -1, 1 do
+        for dj = -1, 1 do
+            local cell = grid[string.format("%d,%d", ci + di, cj + dj)]
+            if cell then
+                for _, p in ipairs(cell) do
+                    local dlat = (p.lat or 0) - (lat or 0)
+                    local dlon = (p.lon or 0) - (lon or 0)
+                    if math.sqrt(dlat * dlat + dlon * dlon) <= VEG_PAD then
+                        local score_d = (p.type == "deforestation") and 1 or 0
+                        local score_y = p.year or 0
+                        if not best or score_d > best.score_d
+                           or (score_d == best.score_d and score_y > best.score_y) then
+                            best = { p = p, score_d = score_d, score_y = score_y }
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if not best then
+        return { status = "native" }
+    end
+    local p = best.p
+    if p.type == "regrowth" then
+        return { status = "regrowth_" .. p.year, year = p.year, class_name = p.class_name }
+    end
+    return { status = "deforested_" .. p.year, year = p.year, class_name = p.class_name }
+end
+
+-- Contexto vegetacional de um único foco (popup individual).
+function _M.get_fire_vegetation_context(lat, lon)
+    local pts = _M.get_deforestation_in_bbox(lat - 0.002, lat + 0.002, lon - 0.002, lon + 0.002, 5000)
+    if #pts == 0 then return { status = "native" } end
+    return vegetation_at(lat, lon, build_veg_grid(pts))
+end
+
+-- Contexto em lote para um bbox de focos — UMA query de deforestation_data e
+-- atribuição por foco (evita N queries por foco em bboxes grandes). Retorna
+-- tabela índice-do-foco → {status, year, class_name}.
+function _M.get_vegetation_context_batch(sw_lat, ne_lat, sw_lng, ne_lng, fires)
+    local result = {}
+    if not fires or #fires == 0 then return result end
+    local pts = _M.get_deforestation_in_bbox(sw_lat, ne_lat, sw_lng, ne_lng, 200000)
+    if #pts == 0 then
+        for i = 1, #fires do result[i] = { status = "native" } end
+        return result
+    end
+    local grid = build_veg_grid(pts)
+    for i, f in ipairs(fires) do
+        result[i] = vegetation_at(f.lat, f.lon, grid)
     end
     return result
 end
@@ -1269,6 +1590,361 @@ function _M.migrate_to_jsonb()
 
     db:close()
     logger.info("Migration to JSONB complete")
+end
+
+-- ── DETER (plan: terrabrasilis-integration, Inc 2) ────────────────────────
+
+-- Polígonos DETER dentro de um bbox, com filtro opcional de dias e geom
+-- decodificada (JSON TEXT ou JSONB → tabela). Usa as colunas escalares de bbox
+-- persistidas pelo writer Python (idx_deter_bbox).
+function _M.get_deter_polygons(sw_lat, ne_lat, sw_lng, ne_lng, days, limit)
+    limit = limit or 500
+    local db = pool_acquire()
+    local sql = [[
+        SELECT id, classname, view_date, uf, municipality, mun_geocod, area_km2, uc,
+               min_lat, min_lon, max_lat, max_lon, json(geom) AS geom_json
+        FROM deter_polygons
+        WHERE min_lat <= ? AND max_lat >= ? AND min_lon <= ? AND max_lon >= ?
+    ]]
+    local params = {ne_lat, sw_lat, ne_lng, sw_lng}
+    if days then
+        local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+        sql = sql .. " AND view_date >= ?"
+        params[#params + 1] = cutoff
+    end
+    sql = sql .. " ORDER BY view_date DESC LIMIT ?"
+    params[#params + 1] = limit
+
+    local rows = fetch_all(db, sql, params)
+    pool_release(db)
+
+    local result = {}
+    for _, r in ipairs(rows) do
+        result[#result + 1] = {
+            id = r.id or r["id"],
+            classname = r.classname,
+            view_date = r.view_date,
+            uf = r.uf,
+            municipality = r.municipality,
+            mun_geocod = r.mun_geocod,
+            area_km2 = r.area_km2,
+            uc = r.uc,
+            bbox = {
+                min_lat = r.min_lat, min_lon = r.min_lon,
+                max_lat = r.max_lat, max_lon = r.max_lon,
+            },
+            geom = utils.decode_jsonb(r.geom_json or r["geom_json"]),
+        }
+    end
+    return result
+end
+
+-- DETER polígonos recentes (por data), paginados por id — usado pelo scan de
+-- alertas em UC/TI (plan: terrabrasilis-integration, Inc 6).
+function _M.iter_deter_recent(days, batch_size, min_id)
+    days = days or 30
+    batch_size = batch_size or 1000
+    min_id = tonumber(min_id) or 0
+    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    local db = pool_acquire()
+    local rows = fetch_all(db, [[
+        SELECT id, classname, view_date, area_km2, uc, areauckm,
+               min_lat, min_lon, max_lat, max_lon, json(geom) AS geom_json
+        FROM deter_polygons
+        WHERE view_date >= ? AND id > ?
+        ORDER BY id
+        LIMIT ?
+    ]], {cutoff, min_id, batch_size})
+    pool_release(db)
+
+    local result = {}
+    for _, r in ipairs(rows) do
+        result[#result + 1] = {
+            id = tonumber(r.id or r["id"]),
+            classname = r.classname,
+            view_date = r.view_date,
+            area_km2 = tonumber(r.area_km2),
+            uc = r.uc,
+            areauckm = tonumber(r.areauckm),
+            min_lat = tonumber(r.min_lat), min_lon = tonumber(r.min_lon),
+            max_lat = tonumber(r.max_lat), max_lon = tonumber(r.max_lon),
+            geom = utils.decode_jsonb(r.geom_json or r["geom_json"]),
+        }
+    end
+    return result
+end
+
+-- Estatísticas DETER agregadas num período. `by_municipality` lê `deter_alerts`
+-- (histórico completo backfilled + rollup diário); o resto lê a janela de
+-- polígonos (`deter_polygons`, retenção ~90 dias — R2).
+function _M.get_deter_stats(days)
+    days = days or 30
+    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    local db = pool_acquire()
+
+    local total = 0
+    local row = fetch_one(db, "SELECT COALESCE(SUM(area_km2), 0) AS s FROM deter_polygons WHERE view_date >= ?", {cutoff})
+    total = tonumber(row and (row.s or row["s"])) or 0
+
+    local by_class = {}
+    for _, r in ipairs(fetch_all(db, [[
+        SELECT classname AS name, SUM(area_km2) AS km2 FROM deter_polygons
+        WHERE view_date >= ? GROUP BY classname ORDER BY km2 DESC
+    ]], {cutoff})) do
+        by_class[#by_class + 1] = { name = r.name, km2 = tonumber(r.km2) or 0 }
+    end
+
+    local by_uf = {}
+    for _, r in ipairs(fetch_all(db, [[
+        SELECT uf, SUM(area_km2) AS km2 FROM deter_polygons
+        WHERE view_date >= ? AND uf IS NOT NULL GROUP BY uf ORDER BY km2 DESC
+    ]], {cutoff})) do
+        by_uf[#by_uf + 1] = { uf = r.uf, km2 = tonumber(r.km2) or 0 }
+    end
+
+    local by_day = {}
+    for _, r in ipairs(fetch_all(db, [[
+        SELECT view_date AS date, SUM(area_km2) AS km2 FROM deter_polygons
+        WHERE view_date >= ? GROUP BY view_date ORDER BY view_date
+    ]], {cutoff})) do
+        by_day[#by_day + 1] = { date = r.date, km2 = tonumber(r.km2) or 0 }
+    end
+
+    local by_municipality = {}
+    for _, r in ipairs(fetch_all(db, [[
+        SELECT mun_geocod, MAX(municipality) AS name, SUM(area_km2) AS km2
+        FROM deter_alerts WHERE view_date >= ? AND mun_geocod IS NOT NULL
+        GROUP BY mun_geocod ORDER BY km2 DESC LIMIT 50
+    ]], {cutoff})) do
+        by_municipality[#by_municipality + 1] = {
+            mun_geocod = r.mun_geocod, name = r.name, km2 = tonumber(r.km2) or 0,
+        }
+    end
+
+    pool_release(db)
+    return {
+        total_km2 = total,
+        by_class = by_class,
+        by_uf = by_uf,
+        by_day = by_day,
+        by_municipality = by_municipality,
+    }
+end
+
+-- Linhas de `deter_alerts` (agregado geocod×classe×data), filtros opcionais.
+function _M.get_deter_alerts(mun_geocod, classname, days)
+    days = days or 90
+    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    local db = pool_acquire()
+    local sql = [[
+        SELECT mun_geocod, classname, view_date, area_km2, uf
+        FROM deter_alerts WHERE view_date >= ?
+    ]]
+    local params = {cutoff}
+    if mun_geocod then
+        sql = sql .. " AND mun_geocod = ?"
+        params[#params + 1] = mun_geocod
+    end
+    if classname then
+        sql = sql .. " AND classname = ?"
+        params[#params + 1] = classname
+    end
+    sql = sql .. " ORDER BY view_date DESC"
+
+    local rows = fetch_all(db, sql, params)
+    pool_release(db)
+
+    local result = {}
+    for _, r in ipairs(rows) do
+        result[#result + 1] = {
+            mun_geocod = r.mun_geocod,
+            classname = r.classname,
+            view_date = r.view_date,
+            area_km2 = r.area_km2,
+            uf = r.uf,
+        }
+    end
+    return result
+end
+
+-- ── DETER × CAR alerts (plan: terrabrasilis-integration, Inc 3) ───────────
+
+-- Alerta por propriedade CAR (deter_car_alerts), paginado e filtrável.
+-- severity ranking: maximo > alto > medio > baixo.
+function _M.get_car_alerts(uf, municipio, severity, days, page, page_size)
+    days = days or 7
+    page = page or 1
+    page_size = page_size or 20
+    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+
+    local db = pool_acquire()
+    local where = " WHERE view_date >= ?"
+    local params = {cutoff}
+    if uf then
+        where = where .. " AND uf = ?"
+        params[#params + 1] = uf
+    end
+    if municipio then
+        where = where .. " AND municipio LIKE ?"
+        params[#params + 1] = "%" .. municipio .. "%"
+    end
+    if severity then
+        where = where .. " AND severity = ?"
+        params[#params + 1] = severity
+    end
+
+    local total = 0
+    local crow = fetch_one(db, "SELECT COUNT(*) AS c FROM deter_car_alerts" .. where, params)
+    total = tonumber(crow and (crow.c or crow["c"])) or 0
+
+    local offset = (page - 1) * page_size
+    local qparams = {}
+    for _, p in ipairs(params) do qparams[#qparams + 1] = p end
+    qparams[#qparams + 1] = page_size
+    qparams[#qparams + 1] = offset
+
+    local rows = fetch_all(db, [[
+        SELECT cod_imovel, classname, view_date, uf, municipio, area_afetada_ha,
+               fire_count, fire_dates, severity
+        FROM deter_car_alerts ]] .. where .. [[
+        ORDER BY view_date DESC,
+          CASE severity WHEN 'maximo' THEN 0 WHEN 'alto' THEN 1
+                        WHEN 'medio' THEN 2 ELSE 3 END
+        LIMIT ? OFFSET ?
+    ]], qparams)
+    pool_release(db)
+
+    local alerts = {}
+    for _, r in ipairs(rows) do
+        alerts[#alerts + 1] = {
+            cod_imovel = r.cod_imovel,
+            classname = r.classname,
+            view_date = r.view_date,
+            uf = r.uf,
+            municipio = r.municipio,
+            area_afetada_ha = r.area_afetada_ha,
+            fire_count = r.fire_count,
+            fire_dates = utils.decode_jsonb(r.fire_dates),
+            severity = r.severity,
+        }
+    end
+    return { alerts = alerts, total = total, page = page, page_size = page_size }
+end
+
+function _M.get_car_alert_stats(days)
+    days = days or 7
+    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    local db = pool_acquire()
+
+    local total = 0
+    local crow = fetch_one(db, "SELECT COUNT(*) AS c FROM deter_car_alerts WHERE view_date >= ?", {cutoff})
+    total = tonumber(crow and (crow.c or crow["c"])) or 0
+
+    local by_severity = {}
+    for _, r in ipairs(fetch_all(db, [[
+        SELECT severity, COUNT(*) AS cnt FROM deter_car_alerts
+        WHERE view_date >= ? AND severity IS NOT NULL GROUP BY severity
+    ]], {cutoff})) do
+        by_severity[#by_severity + 1] = { severity = r.severity, count = r.cnt }
+    end
+
+    local by_uf = {}
+    for _, r in ipairs(fetch_all(db, [[
+        SELECT uf, COUNT(*) AS cnt FROM deter_car_alerts
+        WHERE view_date >= ? AND uf IS NOT NULL GROUP BY uf ORDER BY cnt DESC
+    ]], {cutoff})) do
+        by_uf[#by_uf + 1] = { uf = r.uf, count = r.cnt }
+    end
+
+    pool_release(db)
+    return { total = total, by_severity = by_severity, by_uf = by_uf }
+end
+
+-- Alertas DETER×CAR de um imóvel específico (plan: terrabrasilis-integration,
+-- Inc 4 — enriquecimento FIRMS×DETER). Retorna as linhas recentes do imóvel.
+function _M.get_car_alerts_by_imovel(cod_imovel, days)    days = days or 7
+    if type(cod_imovel) ~= "string" or cod_imovel == "" then return {} end
+    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    local db = pool_acquire()
+    local rows = fetch_all(db, [[
+        SELECT classname, view_date, severity, fire_count
+        FROM deter_car_alerts
+        WHERE cod_imovel = ? AND view_date >= ?
+        ORDER BY view_date DESC
+    ]], {cod_imovel:upper(), cutoff})
+    pool_release(db)
+
+    local result = {}
+    for _, r in ipairs(rows) do
+        result[#result + 1] = {
+            classname = r.classname,
+            view_date = r.view_date,
+            severity = r.severity,
+            fire_count = r.fire_count,
+        }
+    end
+    return result
+end
+
+-- ── AMS (plan: terrabrasilis-integration, Inc 11) ─────────────────────────
+
+-- Camadas AMS (fire-spreading-risk polígonos / active-fire-today pontos) num
+-- bbox + janela de dias. geom decodificada (JSON TEXT/JSONB → tabela).
+function _M.get_ams_risk(sw_lat, ne_lat, sw_lng, ne_lng, days)
+    days = days or 7
+    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    local db = pool_acquire()
+    local rows = fetch_all(db, [[
+        SELECT id, view_date, viewed_at, satelite, municipio, biome, geocode,
+               layer, risk_level, min_lat, min_lon, max_lat, max_lon, json(geom) AS geom_json
+        FROM ams_risk
+        WHERE min_lat <= ? AND max_lat >= ? AND min_lon <= ? AND max_lon >= ?
+          AND view_date >= ?
+        ORDER BY view_date DESC
+    ]], {ne_lat, sw_lat, ne_lng, sw_lng, cutoff})
+    pool_release(db)
+
+    local result = {}
+    for _, r in ipairs(rows) do
+        result[#result + 1] = {
+            id = r.id,
+            view_date = r.view_date,
+            viewed_at = r.viewed_at,
+            satelite = r.satelite,
+            municipio = r.municipio,
+            biome = r.biome,
+            geocode = r.geocode,
+            layer = r.layer,
+            risk_level = r.risk_level,
+            geom = utils.decode_jsonb(r.geom_json or r["geom_json"]),
+        }
+    end
+    return result
+end
+
+-- Nível de risco mais próximo de um ponto (fogo): procura um polígono
+-- fire-spreading-risk num raio pequeno (≈1 bbox de busca). Retorna
+-- {risk_level, view_date, biome, municipio} ou nil.
+function _M.get_ams_risk_at(lat, lon)
+    local R = 0.1  -- ~11km de busca (polígonos AMS são regionais)
+    local db = pool_acquire()
+    local rows = fetch_all(db, [[
+        SELECT risk_level, view_date, biome, municipio
+        FROM ams_risk
+        WHERE min_lat <= ? AND max_lat >= ? AND min_lon <= ? AND max_lon >= ?
+          AND layer = 'fire-spreading-risk' AND risk_level IS NOT NULL
+        ORDER BY view_date DESC
+        LIMIT 1
+    ]], {lat + R, lat - R, lon + R, lon - R})
+    pool_release(db)
+    local r = rows[1]
+    if not r then return nil end
+    return {
+        risk_level = r.risk_level,
+        view_date = r.view_date,
+        biome = r.biome,
+        municipio = r.municipio,
+    }
 end
 
 return _M

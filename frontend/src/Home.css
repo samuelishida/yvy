@@ -96,6 +96,90 @@
   letter-spacing: 0.08em;
 }
 
+/* ── Verificação PRODES por recibo CAR (Inc 12) ────────── */
+.prodes-check {
+  position: absolute;
+  top: 60px;
+  left: 16px;
+  z-index: 490;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+.prodes-check-form {
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+.prodes-check-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 9999px;
+  border: 1px solid rgba(42, 53, 48, 1);
+  background: rgba(10, 15, 13, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #E8F0EC;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+}
+.prodes-check-input::placeholder { color: rgba(232, 240, 236, 0.35); }
+.prodes-check-input:focus { border-color: rgba(0, 201, 122, 0.4); }
+.prodes-check-btn {
+  padding: 8px 14px;
+  border-radius: 9999px;
+  border: 1px solid rgba(0, 201, 122, 0.35);
+  background: rgba(0, 201, 122, 0.12);
+  color: #00C97A;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.prodes-check-btn:hover { background: rgba(0, 201, 122, 0.2); }
+.prodes-check-btn:disabled { opacity: 0.5; cursor: default; }
+.prodes-result {
+  padding: 10px 12px;
+  background: rgba(13, 19, 16, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(42, 53, 48, 1);
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: rgba(232, 240, 236, 0.85);
+  pointer-events: auto;
+}
+.prodes-result-title {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  margin-bottom: 4px;
+}
+.prodes-result-code { font-size: 12px; margin-bottom: 4px; }
+.prodes-result-yes { color: #00C97A; font-weight: 600; margin-bottom: 4px; }
+.prodes-result-no { color: #f97316; font-weight: 600; margin-bottom: 4px; }
+.prodes-result-meta { font-size: 11px; opacity: 0.65; margin-top: 2px; }
+.prodes-error {
+  padding: 8px 12px;
+  background: rgba(80, 20, 12, 0.9);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #fca5a5;
+  pointer-events: auto;
+}
+
 /* ── Nature legend ────────────────────────────────────── */
 .nature-legend {
   position: absolute;

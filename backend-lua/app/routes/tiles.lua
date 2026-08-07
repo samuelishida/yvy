@@ -57,14 +57,25 @@ local function open_tiles_db(path)
     return db
 end
 -- Look up one tile row in a cached connection. Returns data blob or nil.
--- If the cached connection has gone stale (e.g. the offline warmer
--- checkpointed the WAL mid-request), drop it, reopen fresh and retry once —
--- never surface a 500 for a transient WAL staleness.
-local function lookup_tile(path, db, z, x, y)
+-- `layer` is optional (tiles_terraclass.db has a (z,x,y,layer) key — car/prodes
+-- DBs have (z,x,y)). If the cached connection has gone stale (e.g. the offline
+-- warmer checkpointed the WAL mid-request), drop it, reopen fresh and retry
+-- once — never surface a 500 for a transient WAL staleness.
+local function lookup_tile(path, db, z, x, y, layer)
     local function query(conn)
-        local stmt = conn:prepare("SELECT data FROM tiles WHERE z=? AND x=? AND y=?")
-        if not stmt then return nil end
-        stmt:bind(1, z); stmt:bind(2, x); stmt:bind(3, y)
+        local sql
+        local stmt
+        if layer then
+            sql = "SELECT data FROM tiles WHERE z=? AND x=? AND y=? AND layer=?"
+            stmt = conn:prepare(sql)
+            if not stmt then return nil end
+            stmt:bind(1, z); stmt:bind(2, x); stmt:bind(3, y); stmt:bind(4, layer)
+        else
+            sql = "SELECT data FROM tiles WHERE z=? AND x=? AND y=?"
+            stmt = conn:prepare(sql)
+            if not stmt then return nil end
+            stmt:bind(1, z); stmt:bind(2, x); stmt:bind(3, y)
+        end
         local d
         for row in stmt:nrows() do
             d = row.data
@@ -97,14 +108,14 @@ end
 -- costs at most MAX_FALLBACK_DEPTH cheap SELECTs. Returns data or nil.
 local MAX_FALLBACK_DEPTH = 6
 
-local function lookup_ancestor(path, db, z, x, y)
+local function lookup_ancestor(path, db, z, x, y, layer)
     local az, ax, ay = z, x, y
     for _ = 1, MAX_FALLBACK_DEPTH do
         if az <= 3 then break end -- never go below z3 (coarse but complete)
         az = az - 1
         ax = math.floor(ax / 2)
         ay = math.floor(ay / 2)
-        local data = lookup_tile(path, db, az, ax, ay)
+        local data = lookup_tile(path, db, az, ax, ay, layer)
         if data then return data end
     end
     return nil
@@ -229,6 +240,78 @@ function _M.get_tile_car(ctx)
     -- Cache miss: no upstream to backfill — transparent PNG (graceful).
     ctx:set_header("Cache-Control", "public, max-age=300")
     ctx:send(200, EMPTY_PNG, "image/png")
+end
+
+-- ── TerraClass / Cerrado vegetation tiles (plan: terrabrasilis-integration, Inc 9)
+--
+-- Same cold-cache invariant as PRODES/CAR: DBs pre-warmed offline by a single
+-- Python writer (scripts/download_terraclass.py, download_cerrado_veg.py);
+-- runtime is read-only (query_only=ON via open_tiles_db). Env override per DB
+-- (TerraClass_TILES_DB, CERRADO_VEG_TILES_DB) lets ops/tests point elsewhere.
+
+-- Resolve um tiles DB genérico: override de env → candidatos existentes → default.
+local function resolve_generic_db(env_override, default_name)
+    local override = env.get(env_override) or ""
+    if override ~= "" then
+        local f = io.open(override, "r")
+        if f then f:close(); return override, open_tiles_db(override) end
+    end
+    local script_dir = debug.getinfo(1, "S").source:match("@(.*[/\\])") or ""
+    local candidates = {
+        script_dir .. "../../data/" .. default_name,
+        script_dir .. "../data/" .. default_name,
+        "data/" .. default_name,
+        "/opt/yvy/backend-lua/data/" .. default_name,
+    }
+    for _, p in ipairs(candidates) do
+        local f = io.open(p, "r")
+        if f then f:close(); return p, open_tiles_db(p) end
+    end
+    return nil, nil
+end
+
+-- Servidor genérico de tile com filtro opcional de `layer`.
+local function serve_layer_tile(ctx, env_override, default_name, layer)
+    local z = tonumber(ctx.req.args.z)
+    local x = tonumber(ctx.req.args.x)
+    local y = tonumber(ctx.req.args.y)
+    if not z or not x or not y then
+        ctx:error(400, "Missing z/x/y params")
+        return
+    end
+
+    local path, db = resolve_generic_db(env_override, default_name)
+    if db then
+        local data = lookup_tile(path, db, z, x, y, layer)
+        if data then
+            serve_png(ctx, data)
+            return
+        end
+        local anc = lookup_ancestor(path, db, z, x, y, layer)
+        if anc then
+            ctx:set_header("Cache-Control", "public, max-age=60")
+            ctx:send(200, anc, "image/png")
+            return
+        end
+    end
+    ctx:set_header("Cache-Control", "public, max-age=300")
+    ctx:send(200, EMPTY_PNG, "image/png")
+end
+
+-- /api/tiles/terraclass?z=&x=&y=&layer=terraclass|veg_secundaria
+-- tiles_terraclass.db chave (z,x,y,layer) — um DB, dois datasets.
+function _M.get_tile_terraclass(ctx)
+    local layer = ctx.req.args.layer or "terraclass"
+    if layer ~= "terraclass" and layer ~= "veg_secundaria" then
+        ctx:error(400, "invalid layer (terraclass|veg_secundaria)")
+        return
+    end
+    serve_layer_tile(ctx, "TerraClass_TILES_DB", "tiles_terraclass.db", layer)
+end
+
+-- /api/tiles/cerrado-veg?z=&x=&y= — tiles_cerrado_veg.db chave (z,x,y).
+function _M.get_tile_cerrado_veg(ctx)
+    serve_layer_tile(ctx, "CERRADO_VEG_TILES_DB", "tiles_cerrado_veg.db", nil)
 end
 
 return _M

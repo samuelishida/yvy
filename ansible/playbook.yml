@@ -377,6 +377,22 @@
         group: root
         mode: '0644'
 
+    - name: Criar unidade systemd do check PRODES (Inc 5)
+      ansible.builtin.template:
+        src: yvy-prodes-check.service.j2
+        dest: /etc/systemd/system/yvy-prodes-check.service
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Criar timer systemd do check PRODES (Inc 5)
+      ansible.builtin.template:
+        src: yvy-prodes-check.timer.j2
+        dest: /etc/systemd/system/yvy-prodes-check.timer
+        owner: root
+        group: root
+        mode: '0644'
+
     - name: Recarregar systemd
       ansible.builtin.systemd:
         daemon_reload: true
@@ -391,6 +407,12 @@
       ansible.builtin.systemd:
         name: yvy-frontend
         state: restarted
+        enabled: true
+
+    - name: Ativar timer do check PRODES (Inc 5)
+      ansible.builtin.systemd:
+        name: yvy-prodes-check.timer
+        state: started
         enabled: true
 
     - name: Aguardar backend ficar saudável

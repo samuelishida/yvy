@@ -1,5 +1,6 @@
 local env    = require("app.env")
 local db     = require("app.db")
+local sqlite3 = require("lsqlite3")
 local utils  = require("app.utils")
 local logger = require("app.logger")
 
@@ -84,28 +85,81 @@ function _M.ingest_prodes(csv_path, qml_path)
     return line_count
 end
 
+-- PRODES_FORCE_UPDATE: safety backup (sqlite3 .backup) + truncate antes de
+-- re-ingestir uma versão nova. Retorna true ou (false, motivo). Só executa com
+-- PRODES_FORCE_UPDATE=1 (plan: terrabrasilis-integration, Inc 5).
+function _M.prepare_force_update()
+    local db_path = db.path()
+
+    -- 1. Checkpoint (retry 2×)
+    local ok = false
+    for _ = 1, 2 do
+        local cdb = sqlite3.open(db_path)
+        cdb:exec("PRAGMA busy_timeout=15000")
+        local rc = cdb:exec("PRAGMA wal_checkpoint(TRUNCATE)")
+        cdb:close()
+        if rc == sqlite3.OK then
+            ok = true
+            break
+        end
+    end
+    if not ok then
+        return false, "wal_checkpoint failed"
+    end
+
+    -- 2. Backup binário — VACUUM INTO cria um snapshot standalone do DB
+    --    (equivalente ao `sqlite3 .backup`; NUNCA `sqlite3 db < backup` que só
+    --    lê .dump texto). VACUUM INTO recusa arquivo existente → remove antes.
+    local backup_path = db_path .. ".preprodes"
+    os.remove(backup_path)
+    local bdb = sqlite3.open(db_path)
+    bdb:exec("PRAGMA busy_timeout=15000")
+    local brc = bdb:exec("VACUUM INTO '" .. backup_path .. "'")
+    bdb:close()
+    if brc ~= sqlite3.OK then
+        return false, "VACUUM INTO backup failed"
+    end
+
+    -- 3. Truncate (retry 3× via db.truncate_deforestation)
+    if not db.truncate_deforestation() then
+        return false, "DELETE deforestation_data failed (DB locked)"
+    end
+    return true
+end
+
 function _M.run()
-    -- Skip if deforestation data already in DB
+    -- Skip if deforestation data already in DB (unless PRODES_FORCE_UPDATE=1)
+    local force = os.getenv("PRODES_FORCE_UPDATE") == "1"
+    local version = os.getenv("PRODES_VERSION") or "prodes_brasil_2024_v20260407"
     local existing = db.count_deforestation()
-    if existing > 0 then
+    if existing > 0 and not force then
         logger.info("PRODES: ", existing, " rows already in DB — skipping ingestion")
         return 0
     end
 
     local csv_path = env.first_existing({
-        (os.getenv("DATA_DIR") or "") .. "/prodes_brasil_2024_v20260407.csv",
-        "data/prodes_brasil_2024_v20260407/prodes_brasil_2024_v20260407.csv",
-        "/opt/yvy/backend-lua/data/prodes_brasil_2024_v20260407/prodes_brasil_2024_v20260407.csv",
+        (os.getenv("DATA_DIR") or "") .. "/" .. version .. ".csv",
+        "data/" .. version .. "/" .. version .. ".csv",
+        "/opt/yvy/backend-lua/data/" .. version .. "/" .. version .. ".csv",
     })
     local qml_path = env.first_existing({
-        (os.getenv("DATA_DIR") or "") .. "/prodes_brasil_2024_v20260407.qml",
-        "data/prodes_brasil_2024_v20260407/prodes_brasil_2024_v20260407.qml",
-        "/opt/yvy/backend-lua/data/prodes_brasil_2024_v20260407/prodes_brasil_2024_v20260407.qml",
+        (os.getenv("DATA_DIR") or "") .. "/" .. version .. ".qml",
+        "data/" .. version .. "/" .. version .. ".qml",
+        "/opt/yvy/backend-lua/data/" .. version .. "/" .. version .. ".qml",
     })
 
     if not csv_path or not qml_path then
         logger.info("PRODES source files not found - skipping ingestion")
         return 0
+    end
+
+    if force and existing > 0 then
+        logger.warn("PRODES_FORCE_UPDATE: truncating deforestation_data and re-ingesting ", version)
+        local ok, err = _M.prepare_force_update()
+        if not ok then
+            logger.error("PRODES_FORCE_UPDATE aborted: ", tostring(err))
+            return 0
+        end
     end
 
     return _M.ingest_prodes(csv_path, qml_path)

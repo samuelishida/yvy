@@ -58,5 +58,9 @@ if [ "$INSTALL_TEST_DEPS" = "1" ]; then
     install_rock busted
 fi
 
+# ── Python batch environment (TerraBrasilis spatial joins / raster tools) ──
+echo "Setting up Python batch environment..."
+bash "$SCRIPT_DIR/setup-python-env.sh"
+
 echo "=== Setup complete ==="
 echo "Run: cd backend-lua && lua main.lua"
