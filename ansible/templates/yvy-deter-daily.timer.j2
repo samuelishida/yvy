@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily DETER pipeline for Yvy (Inc 6)
+
+[Timer]
+# Staggered from the PRODES check (~03:10) so downloads don't collide.
+OnCalendar=*-*-* 04:30:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

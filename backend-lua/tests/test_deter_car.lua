@@ -17,6 +17,8 @@ package.loaded["app.routes.deter"] = nil
 local db_mod = require("app.db")
 local deter_routes = require("app.routes.deter")
 
+dofile("tests/helpers.lua")
+
 local function fake_ctx(args)
     return {
         req = { args = args or {}, remote_addr = "127.0.0.1", headers = {} },
@@ -40,16 +42,16 @@ describe("deter car alerts", function()
         ]])
         local rows = {
             -- Pass 1: DETER + fogo → maximo
-            { "RO-1", "DESMATAMENTO_VEG", "2026-08-06", "RO", "Vilhena", 12.5, 3,
-              '["2026-08-01","2026-08-05"]', "maximo", "2026-08-07T00:00:00Z" },
+            { "RO-1", "DESMATAMENTO_VEG", days_ago(1), "RO", "Vilhena", 12.5, 3,
+              '["' .. days_ago(6) .. '","' .. days_ago(2) .. '"]', "maximo", os.date("!%Y-%m-%dT00:00:00Z", os.time()) },
             -- Pass 1: DETER sem fogo → alto
-            { "MT-1", "MINERACAO", "2026-08-05", "MT", "Cuiabá", 4.0, 0, "[]", "alto", "2026-08-07T00:00:00Z" },
+            { "MT-1", "MINERACAO", days_ago(2), "MT", "Cuiabá", 4.0, 0, "[]", "alto", os.date("!%Y-%m-%dT00:00:00Z", os.time()) },
             -- Pass 2: fogo sem DETER em área desmatada → medio
-            { "PA-7", "FIRMS", "2026-08-04", "PA", "Altamira", 0.0, 2, '["2026-08-03","2026-08-04"]', "medio", "2026-08-07T00:00:00Z" },
+            { "PA-7", "FIRMS", days_ago(3), "PA", "Altamira", 0.0, 2, '["' .. days_ago(4) .. '","' .. days_ago(3) .. '"]', "medio", os.date("!%Y-%m-%dT00:00:00Z", os.time()) },
             -- Pass 2: fogo sem DETER em vegetação nativa → baixo
-            { "AM-3", "FIRMS", "2026-08-03", "AM", "Manaus", 0.0, 1, '["2026-08-03"]', "baixo", "2026-08-07T00:00:00Z" },
+            { "AM-3", "FIRMS", days_ago(4), "AM", "Manaus", 0.0, 1, '["' .. days_ago(4) .. '"]', "baixo", os.date("!%Y-%m-%dT00:00:00Z", os.time()) },
             -- fora da janela (7d)
-            { "RO-9", "DEGRADACAO", "2026-06-01", "RO", "Velho", 1.0, 0, "[]", "alto", "2026-06-02T00:00:00Z" },
+            { "RO-9", "DEGRADACAO", days_ago(120), "RO", "Velho", 1.0, 0, "[]", "alto", days_ago(120) .. "T00:00:00Z" },
         }
         for _, r in ipairs(rows) do
             stmt:reset()
@@ -92,7 +94,7 @@ describe("deter car alerts", function()
             local res = db_mod.get_car_alerts(nil, nil, "maximo", 7, 1, 20)
             local dates = res.alerts[1].fire_dates
             assert.are_equal(2, #dates)
-            assert.are_equal("2026-08-01", dates[1])
+            assert.are_equal(days_ago(6), dates[1])
         end)
 
         it("orders by severity (maximo first)", function()

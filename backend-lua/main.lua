@@ -194,9 +194,6 @@ server.route("GET", "/api/tiles/prodes", tiles.get_tile)
 -- CAR tiles (precomputed raster overlay — Inc 2, .plans/car-overlay)
 server.route("GET", "/api/tiles/car", tiles.get_tile_car)
 
--- TerraClass + Vegetação Secundária tiles (plan: terrabrasilis-integration, Inc 9)
-server.route("GET", "/api/tiles/terraclass", tiles.get_tile_terraclass)
-
 -- Cerrado vegetation tiles (Inc 9)
 server.route("GET", "/api/tiles/cerrado-veg", tiles.get_tile_cerrado_veg)
 

@@ -29,13 +29,21 @@ local car_conn = nil
 local RTree_SQL = "SELECT id FROM car_rtree WHERE minLon<=? AND maxLon>=? AND minLat<=? AND maxLat>=?"
 local GET_PREFIX = "SELECT cod_imovel, uf, municipio, area, json(geom) AS g FROM car_data WHERE id IN ("
 
--- Decodifica a geometria JSONB (via json(geom) já em texto) e testa o ponto.
--- GeoJSON usa [lon, lat]; geo.point_in_polygon espera {lon, lat} por vértice.
--- Exposto como _M.point_in_geojson (plan: terrabrasilis-integration, Inc 12)
--- para reuso na verificação PRODES por recibo (routes/car.lua).
-local function point_in_geojson(lon, lat, geojson_text)
+-- Decodifica a geometria JSONB (via json(geom) já em texto) UMA vez.
+-- Exposto como _M.decode_geometry (plan: terrabrasilis-integration, Inc 9) para
+-- a verificação PRODES por recibo (routes/car.lua) decodificar a geometria do
+-- imóvel uma única vez em vez de re-decodificar por candidato (até 50k×).
+function _M.decode_geometry(geojson_text)
+    if type(geojson_text) ~= "string" or geojson_text == "" then return nil end
     local ok, geom = pcall(cjson.decode, geojson_text)
-    if not ok or type(geom) ~= "table" or not geom.coordinates then return false end
+    if not ok or type(geom) ~= "table" or not geom.coordinates then return nil end
+    return geom
+end
+
+-- Testa um ponto contra uma geometria JÁ decodificada (Polygon/MultiPolygon).
+-- GeoJSON usa [lon, lat]; geo.point_in_polygon espera {lon, lat} por vértice.
+local function point_in_geom(lon, lat, geom)
+    if type(geom) ~= "table" or type(geom.coordinates) ~= "table" then return false end
 
     local polys
     if geom.type == "Polygon" then
@@ -61,7 +69,12 @@ local function point_in_geojson(lon, lat, geojson_text)
     end
     return false
 end
+_M.point_in_geom = point_in_geom
 
+-- Decodifica + testa (backward-compat: classify_point e os testes usam isto).
+local function point_in_geojson(lon, lat, geojson_text)
+    return point_in_geom(lon, lat, _M.decode_geometry(geojson_text))
+end
 _M.point_in_geojson = point_in_geojson
 
 -- Bbox (min_lon/min_lat/max_lon/max_lat) de uma geometria GeoJSON decodificada
@@ -98,6 +111,27 @@ local function geom_bbox(geom)
     return { min_lon = min_lon, min_lat = min_lat, max_lon = max_lon, max_lat = max_lat }
 end
 
+local RTREE_BBOX_SQL = "SELECT minLon, minLat, maxLon, maxLat FROM car_rtree WHERE id = ? LIMIT 1"
+local rtree_missing_logged = false
+
+-- Bbox do imóvel via car_rtree (consulta indexada por id) — evita varrer todas
+-- as coordenadas da geometria (geom_bbox) a cada verificação PRODES.
+local function rtree_bbox_for(conn, id)
+    local stmt = conn:prepare(RTREE_BBOX_SQL)
+    if not stmt then return nil end
+    stmt:bind(1, id)
+    local row
+    for r in stmt:nrows() do row = r end
+    stmt:finalize()
+    if not row then return nil end
+    return {
+        min_lon = tonumber(row.minLon or row["minLon"]),
+        min_lat = tonumber(row.minLat or row["minLat"]),
+        max_lon = tonumber(row.maxLon or row["maxLon"]),
+        max_lat = tonumber(row.maxLat or row["maxLat"]),
+    }
+end
+
 -- Lookup de um imóvel pelo número do recibo CAR (cod_imovel UNIQUE).
 -- car_import armazena cod_imovel verbatim do SICAR — normalizamos apenas para
 -- UPPERCASE (stripping agressivo quebraria o match). Retorna
@@ -108,7 +142,7 @@ function _M.get_by_cod_imovel(cod_imovel)
     local code = cod_imovel:upper()
 
     local stmt = car_conn:prepare(
-        "SELECT cod_imovel, uf, municipio, area, json(geom) AS g FROM car_data WHERE cod_imovel = ? LIMIT 1"
+        "SELECT id, cod_imovel, uf, municipio, area, json(geom) AS g FROM car_data WHERE cod_imovel = ? LIMIT 1"
     )
     if not stmt then return nil end
     stmt:bind(1, code)
@@ -118,10 +152,19 @@ function _M.get_by_cod_imovel(cod_imovel)
     if not row or not (row.g or row["g"]) then return nil end
 
     local g = row.g or row["g"]
-    local ok, geom = pcall(cjson.decode, g)
-    if not ok then return nil end
-    local bbox = geom_bbox(geom)
-    if not bbox then return nil end
+    -- Bbox via car_rtree (consulta indexada por id). Se o rtree faltar/estiver
+    -- vazio (db antigo), cai na varredura das coordenadas (geom_bbox) — log once.
+    local bbox = rtree_bbox_for(car_conn, row.id)
+    if not bbox then
+        if not rtree_missing_logged then
+            rtree_missing_logged = true
+            logger.warn("car_rtree unavailable — falling back to geometry walk for CAR bbox")
+        end
+        local ok, geom = pcall(cjson.decode, g)
+        if not ok then return nil end
+        bbox = geom_bbox(geom)
+        if not bbox then return nil end
+    end
 
     return {
         id = row.cod_imovel,
@@ -133,8 +176,21 @@ function _M.get_by_cod_imovel(cod_imovel)
     }
 end
 
+local loaded_at = 0
+local loaded_val = false
+
+-- Memoizado com TTL curto (60s): evita um COUNT(*) por request. car.db é um
+-- cold cache cujo estado não muda no meio do run — o TTL curto cobre o caso
+-- de um ingest offline que conclui logo após a primeira checagem.
 function _M.is_loaded()
-    return car_conn ~= nil and _M.count() > 0
+    if not car_conn then return false end
+    local now = os.time()
+    if now - loaded_at < 60 then
+        return loaded_val
+    end
+    loaded_at = now
+    loaded_val = _M.count() > 0
+    return loaded_val
 end
 
 function _M.load_car()

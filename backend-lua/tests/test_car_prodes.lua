@@ -25,6 +25,8 @@ local car_routes = require("app.routes.car")
 local db_mod = require("app.db")
 local redis = require("app.redis")
 
+local empty_car_routes = nil
+
 -- Fake ctx espelhando a API de ctx (server.lua:290-315).
 local function fake_ctx(args)
     return {
@@ -70,6 +72,10 @@ describe("car prodes", function()
     end)
 
     teardown(function()
+        -- Inc 12: limpa as chaves Redis também em falha (não vaza car:prodes:*).
+        redis.delete("car:prodes:RO-1")
+        redis.delete("car:prodes:RO-2")
+        redis.delete("car:prodes:MT-1")
         db_mod.close_db()
         os.remove(tmp_car_db)
         os.remove(tmp_car_db .. "-wal")
@@ -135,11 +141,23 @@ describe("car prodes", function()
             assert.is_false(ctx.body.data.has_prodes)
         end)
 
-        it("returns 404 for unknown receipt", function()
+        it("unknown receipt → 200 + found:false + reason:not_found", function()
             local ctx = fake_ctx({ cod_imovel = "RO-999" })
             car_routes.get_prodes_status(ctx)
-            assert.are_equal(404, ctx.status)
+            assert.are_equal(200, ctx.status)
             assert.is_false(ctx.body.found)
+            assert.are_equal("not_found", ctx.body.reason)
+        end)
+
+        it("corrupt cached payload → fresh query (no 500)", function()
+            redis.set("car:prodes:RO-1", "not-json{{{")
+            local ctx = fake_ctx({ cod_imovel = "RO-1" })
+            car_routes.get_prodes_status(ctx)
+            assert.are_equal(200, ctx.status)
+            assert.is_true(ctx.body.ok)
+            assert.is_false(ctx.body.cached)  -- payload corrompido tratado como miss
+            assert.is_true(ctx.body.data.found)
+            assert.is_true(math.abs(ctx.body.data.prodes_area_ha - 0.18) < 0.001)
         end)
 
         it("returns 400 when cod_imovel missing", function()
@@ -147,5 +165,49 @@ describe("car prodes", function()
             car_routes.get_prodes_status(ctx)
             assert.are_equal(400, ctx.status)
         end)
+    end)
+end)
+
+-- MUST-FIX 2 (plan terrabrasilis-fixes): CAR não ingerido ≠ recibo inexistente.
+-- Com car.db vazio, is_loaded() == false → 200 + reason:car_unavailable + note
+-- (não é um 404, e o reason não é "not_found"). Roda depois do describe principal
+-- para não atrapalhar o car.db da fixture (re-require aponta p/ o db vazio).
+describe("car prodes: CAR não ingerido (car.db vazio)", function()
+    local empty_car_db = "./yvy_car_empty_" .. tostring(os.time()) .. ".db"
+
+    setup(function()
+        -- car.db VAZIO (schema sem imóveis) → is_loaded() false
+        local conn = sqlite3.open(empty_car_db)
+        conn:exec("PRAGMA journal_mode=WAL")
+        car_import.create_schema(conn)
+        conn:close()
+
+        env.set("CAR_DB_PATH", empty_car_db)
+        package.loaded["app.lookups.car_lookup"] = nil
+        package.loaded["app.routes.car"] = nil
+        empty_car_routes = require("app.routes.car")
+        require("app.lookups.car_lookup").load_car()
+
+        -- Redis é compartilhado/live neste arquivo: o describe principal já
+        -- cacheou RO-1/RO-2/MT-1 — sem flush, a rota serviria o cache e nunca
+        -- chegaria no ramo car_unavailable.
+        redis.delete("car:prodes:RO-1")
+        redis.delete("car:prodes:RO-2")
+        redis.delete("car:prodes:MT-1")
+    end)
+
+    teardown(function()
+        os.remove(empty_car_db)
+        os.remove(empty_car_db .. "-wal")
+        os.remove(empty_car_db .. "-shm")
+    end)
+
+    it("receipt com CAR não ingerido → 200 + reason:car_unavailable + note", function()
+        local ctx = fake_ctx({ cod_imovel = "RO-1" })
+        empty_car_routes.get_prodes_status(ctx)
+        assert.are_equal(200, ctx.status)
+        assert.is_false(ctx.body.found)
+        assert.are_equal("car_unavailable", ctx.body.reason)
+        assert.are_equal("CAR unavailable", ctx.body.note)
     end)
 end)

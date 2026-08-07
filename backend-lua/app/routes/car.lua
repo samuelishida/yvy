@@ -54,22 +54,26 @@ function _M.get_prodes_status(ctx)
     local cache_key = "car:prodes:" .. cod:upper()
     local cached = redis.get(cache_key)
     if cached then
-        local data = cjson.decode(cached)
-        data.cached = true
-        ctx:json(200, { ok = true, cached = true, data = data })
-        return
+        -- (b) decode-guard: payload corrompido no cache → trata como miss
+        -- (recomputa e sobrescreve; nunca 500).
+        local ok, data = pcall(cjson.decode, cached)
+        if ok and type(data) == "table" then
+            data.cached = true
+            ctx:json(200, { ok = true, cached = true, data = data })
+            return
+        end
     end
 
     local car = require("app.lookups.car_lookup")
     car.load_car()
     if not car.is_loaded() then
-        ctx:json(200, { cod_imovel = cod, found = false, note = "CAR unavailable" })
+        ctx:json(200, { cod_imovel = cod, found = false, reason = "car_unavailable", note = "CAR unavailable" })
         return
     end
 
     local prop = car.get_by_cod_imovel(cod)
     if not prop then
-        ctx:json(404, { cod_imovel = cod, found = false })
+        ctx:json(200, { cod_imovel = cod, found = false, reason = "not_found" })
         return
     end
 
@@ -82,32 +86,37 @@ function _M.get_prodes_status(ctx)
     )
 
     local sampled = #points >= CANDIDATE_LIMIT
-    local inside = 0
     local regrowth = false
     local def_count = 0
     local years = {}
     local year_set = {}
     local classes = {}
     local class_key = {}
+    local class_idx = {}
+
+    -- (c) Decodifica a geometria do imóvel UMA vez e reusa em todos os pontos
+    -- (antes: point_in_geojson re-decodificava o JSON por candidato — até 50k×).
+    local prop_geom = car.decode_geometry(prop.geom)
 
     for _, p in ipairs(points) do
-        if car.point_in_geojson(p.lon, p.lat, prop.geom) then
-            inside = inside + 1
+        -- (d) bbox-prefilter: descarta pontos fora do bbox exato do imóvel
+        -- antes do ray-cast (caro). O scan já vem limitado ao bbox + padding.
+        if prop_geom
+           and p.lat >= bbox.min_lat and p.lat <= bbox.max_lat
+           and p.lon >= bbox.min_lon and p.lon <= bbox.max_lon
+           and car.point_in_geom(p.lon, p.lat, prop_geom) then
             local ck = (p.class_name or "unknown") .. ":" .. (p.type or "")
             if not class_key[ck] then
                 class_key[ck] = true
-                classes[#classes + 1] = {
+                class_idx[ck] = #classes + 1
+                classes[class_idx[ck]] = {
                     class_name = p.class_name,
                     year = p.year,
                     type = p.type,
                     count = 0,
                 }
             end
-            for _, c in ipairs(classes) do
-                if (c.class_name or "unknown") .. ":" .. (c.type or "") == ck then
-                    c.count = c.count + 1
-                end
-            end
+            classes[class_idx[ck]].count = classes[class_idx[ck]].count + 1
             if p.type == "deforestation" then
                 def_count = def_count + 1
                 if p.year and not year_set[p.year] then
@@ -167,13 +176,13 @@ function _M.get_summary(ctx)
     local car = require("app.lookups.car_lookup")
     car.load_car()
     if not car.is_loaded() then
-        ctx:json(200, { cod_imovel = cod, found = false, note = "CAR unavailable" })
+        ctx:json(200, { cod_imovel = cod, found = false, reason = "car_unavailable", note = "CAR unavailable" })
         return
     end
 
     local prop = car.get_by_cod_imovel(cod)
     if not prop then
-        ctx:json(404, { cod_imovel = cod, found = false })
+        ctx:json(200, { cod_imovel = cod, found = false, reason = "not_found" })
         return
     end
 

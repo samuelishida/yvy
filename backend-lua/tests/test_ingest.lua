@@ -56,6 +56,7 @@ describe("ingest", function()
         os.remove(tmp_yvy_db .. "-wal")
         os.remove(tmp_yvy_db .. "-shm")
         os.remove(tmp_yvy_db .. ".preprodes")
+        os.remove(tmp_yvy_db .. ".preprodes.new")
         os.remove(csv_path)
         os.remove(qml_path)
         os.execute('rmdir "' .. tmp_data .. '" 2>/dev/null || true')
@@ -77,6 +78,24 @@ describe("ingest", function()
         local f = io.open(tmp_yvy_db .. ".preprodes", "rb")
         assert.is_not_nil(f)
         f:close()
+        env.set("PRODES_FORCE_UPDATE", "0")
+    end)
+
+    it("restores deforestation_data when force-update ingest fails", function()
+        env.set("PRODES_FORCE_UPDATE", "1")
+
+        -- Força a falha do ingest DEPOIS do truncate (monkey-patch)
+        local original = ingest.ingest_prodes
+        ingest.ingest_prodes = function() error("simulated ingest failure") end
+
+        local ok, err = pcall(ingest.run)
+        assert.is_false(ok)
+        assert.is_not_nil(string.match(tostring(err), "restored from backup"))
+
+        -- deforestation_data restaurada para o conteúdo pré-run (2 linhas)
+        assert.are_equal(2, def_count())
+
+        ingest.ingest_prodes = original
         env.set("PRODES_FORCE_UPDATE", "0")
     end)
 end)

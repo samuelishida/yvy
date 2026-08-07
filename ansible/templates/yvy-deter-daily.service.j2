@@ -1,0 +1,15 @@
+[Unit]
+Description=Yvy DETER daily pipeline (Inc 6)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ yvy_user }}
+Group={{ yvy_group }}
+WorkingDirectory={{ app_dir }}
+Environment=HOME=/home/{{ yvy_user }}
+Environment=YVY_LOCAL_DEV=0
+ExecStart=/usr/bin/bash {{ app_dir }}/scripts/data/deter_daily.sh
+StandardOutput=journal
+StandardError=journal

@@ -1,8 +1,15 @@
 -- test_alerts.lua — Tests for alerts.lua
+--
+-- REQUER Redis em execução (app/redis.lua conecta de verdade; CI fornece
+-- redis:7). Escreve `alerts:deter_protected` e limpa via after_each (sucesso
+-- E falha) para não vazar chaves de 24h (Inc 12).
 
 local alerts = require("app.routes.alerts")
 local redis = require("app.redis")
 local cjson = require("cjson")
+
+dofile("tests/helpers.lua")
+local D = days_ago(1)  -- fixture "ontem" (Inc 2/12: nada de datas absolutas)
 
 describe("alerts", function()
     describe("generate_all_alerts", function()
@@ -56,16 +63,21 @@ describe("alerts", function()
     end)
 
     describe("deter_protected (Inc 6)", function()
+        -- Inc 12: limpa a chave mesmo quando uma assertion falha (não vaza 24h).
+        after_each(function()
+            redis.delete("alerts:deter_protected")
+        end)
+
         it("includes deter_protected entries from Redis with tiered tick", function()
             redis.set("alerts:deter_protected", cjson.encode({
                 { id = "deter_protected_1", type = "deter_protected", territory_type = "uc",
                   territory_name = "UC Jamanxim", area_ha = 45.2, classname = "DESMATAMENTO_VEG",
-                  view_date = "2026-08-06", meta = "UC Jamanxim · 45.2 ha DETER",
-                  state = "DESMATAMENTO_VEG · 2026-08-06", center = { -8, -55 }, radius_km = 5, ts = "12:00" },
+                  view_date = D, meta = "UC Jamanxim · 45.2 ha DETER",
+                  state = "DESMATAMENTO_VEG · " .. D, center = { -8, -55 }, radius_km = 5, ts = "12:00" },
                 { id = "deter_protected_2", type = "deter_protected", territory_type = "ti",
                   territory_name = "TI X", area_ha = 5.0, classname = "CICATRIZ_DE_QUEIMADA",
-                  view_date = "2026-08-06", meta = "TI X · 5.0 ha DETER",
-                  state = "CICATRIZ_DE_QUEIMADA · 2026-08-06", center = { -9, -56 }, radius_km = 5, ts = "12:00" },
+                  view_date = D, meta = "TI X · 5.0 ha DETER",
+                  state = "CICATRIZ_DE_QUEIMADA · " .. D, center = { -9, -56 }, radius_km = 5, ts = "12:00" },
             }), 86400)
 
             local result = alerts.generate_all_alerts({}, nil, "demo")
@@ -87,16 +99,55 @@ describe("alerts", function()
             redis.set("alerts:deter_protected", cjson.encode({
                 { id = "deter_protected_3", type = "deter_protected", territory_type = "uc",
                   territory_name = "UC Y", area_ha = 80.0, classname = "DEGRADACAO",
-                  view_date = "2026-08-06", meta = "UC Y · 80.0 ha DETER",
-                  state = "DEGRADACAO · 2026-08-06", center = { -8, -55 }, radius_km = 5, ts = "12:00" },
+                  view_date = D, meta = "UC Y · 80.0 ha DETER",
+                  state = "DEGRADACAO · " .. D, center = { -8, -55 }, radius_km = 5, ts = "12:00" },
             }), 86400)
 
             local result = alerts.generate_all_alerts({}, nil, "demo")
+            local found
             for _, a in ipairs(result.alerts) do
-                if a.type == "deter_protected" and a.id == "deter_protected_3" then
-                    assert.are_equal("crit", a.tick)
-                end
+                if a.type == "deter_protected" and a.id == "deter_protected_3" then found = a end
             end
+            assert.is_not_nil(found)  -- Inc 12: falha alto e claro se a entrada sumiu (não-vacuoso)
+            assert.are_equal("crit", found.tick)
+        end)
+
+        it("ticks by the MAX severity class in the full classes list (Inc 10)", function()
+            redis.set("alerts:deter_protected", cjson.encode({
+                { id = "deter_protected_10", type = "deter_protected", territory_type = "uc",
+                  territory_name = "UC Z", area_ha = 10.0,
+                  classes = { "DEGRADACAO", "MINERACAO" },
+                  view_date = D, meta = "UC Z · 10.0 ha DETER",
+                  state = "DETER · " .. D, center = { -8, -55 }, radius_km = 5, ts = "12:00" },
+            }), 86400)
+
+            local result = alerts.generate_all_alerts({}, nil, "demo")
+            local found
+            for _, a in ipairs(result.alerts) do
+                if a.type == "deter_protected" and a.id == "deter_protected_10" then found = a end
+            end
+            assert.is_not_nil(found)
+            -- MINERACAO é a classe de maior severidade em {DEGRADACAO, MINERACAO} → crit
+            assert.are_equal("crit", found.tick)
+            redis.delete("alerts:deter_protected")
+        end)
+
+        it("legacy rows without classes still tick by classname (Inc 10)", function()
+            redis.set("alerts:deter_protected", cjson.encode({
+                { id = "deter_protected_11", type = "deter_protected", territory_type = "uc",
+                  territory_name = "UC W", area_ha = 10.0, classname = "DEGRADACAO",
+                  view_date = D, meta = "UC W · 10.0 ha DETER",
+                  state = "DEGRADACAO · " .. D, center = { -8, -55 }, radius_km = 5, ts = "12:00" },
+            }), 86400)
+
+            local result = alerts.generate_all_alerts({}, nil, "demo")
+            local found
+            for _, a in ipairs(result.alerts) do
+                if a.type == "deter_protected" and a.id == "deter_protected_11" then found = a end
+            end
+            assert.is_not_nil(found)
+            -- sem `classes` → fallback `classname` (DEGRADACAO, não-crit) → warn
+            assert.are_equal("warn", found.tick)
             redis.delete("alerts:deter_protected")
         end)
     end)

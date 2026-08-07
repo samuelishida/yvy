@@ -5,31 +5,29 @@
 -- /api/deter/car-alerts  — (Inc 3) alertas DETER por propriedade CAR
 
 require("app.env")
-local auth = require("app.middleware.auth")
-local rl   = require("app.middleware.rate_limit")
+local auth  = require("app.middleware.auth")
+local rl    = require("app.middleware.rate_limit")
+local utils = require("app.utils")
 local cjson = require("cjson")
 
 local _M = {}
 
-local function parse_bbox(args)
-    local sw_lat = tonumber(args.sw_lat)
-    local ne_lat = tonumber(args.ne_lat)
-    local sw_lng = tonumber(args.sw_lng)
-    local ne_lng = tonumber(args.ne_lng)
-    if not (sw_lat and ne_lat and sw_lng and ne_lng) then
-        return nil, "Missing bbox (sw_lat, ne_lat, sw_lng, ne_lng)"
+-- Parse + valida o `limit` (Inc 10): <1 (incl. -1) → 400 invalid; >5000 → cap
+-- (R2). Retorna um limit válido ou nil+err.
+local function parse_limit(v)
+    local limit = tonumber(v) or 500
+    if limit < 1 then
+        return nil, "invalid limit"
     end
-    if sw_lat > ne_lat or sw_lng > ne_lng then
-        return nil, "Invalid bbox (sw must be <= ne)"
-    end
-    return { sw_lat = sw_lat, ne_lat = ne_lat, sw_lng = sw_lng, ne_lng = ne_lng }
+    if limit > 5000 then limit = 5000 end
+    return limit
 end
 
 function _M.get_polygons(ctx)
     if not auth.enforce(ctx) then return end
     if not rl.enforce(ctx) then return end
 
-    local bbox, err = parse_bbox(ctx.req.args)
+    local bbox, err = utils.parse_bbox(ctx.req.args)
     if not bbox then
         ctx:error(400, err)
         return
@@ -38,8 +36,11 @@ function _M.get_polygons(ctx)
     local days = tonumber(ctx.req.args.days) or 7
     if days < 1 then days = 1 end
     if days > 120 then days = 120 end  -- retenção de polígonos (~90 dias, R2)
-    local limit = tonumber(ctx.req.args.limit) or 500
-    if limit > 5000 then limit = 5000 end
+    local limit, limit_err = parse_limit(ctx.req.args.limit)
+    if not limit then
+        ctx:error(400, limit_err)
+        return
+    end
 
     local db = require("app.db")
     local polygons = db.get_deter_polygons(bbox.sw_lat, bbox.ne_lat, bbox.sw_lng, bbox.ne_lng, days, limit)

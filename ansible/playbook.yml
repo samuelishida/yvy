@@ -27,6 +27,9 @@
         name:
           - git
           - python3
+          # python3-venv needed so `python3 -m venv` works on fresh VMs
+          # (setup-python-env.sh in setup-lua.sh otherwise fails).
+          - python3-venv
           - build-essential
           - pkg-config
           - wget
@@ -393,6 +396,22 @@
         group: root
         mode: '0644'
 
+    - name: Criar unidade systemd do DETER daily (Inc 6)
+      ansible.builtin.template:
+        src: yvy-deter-daily.service.j2
+        dest: /etc/systemd/system/yvy-deter-daily.service
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Criar timer systemd do DETER daily (Inc 6)
+      ansible.builtin.template:
+        src: yvy-deter-daily.timer.j2
+        dest: /etc/systemd/system/yvy-deter-daily.timer
+        owner: root
+        group: root
+        mode: '0644'
+
     - name: Recarregar systemd
       ansible.builtin.systemd:
         daemon_reload: true
@@ -412,6 +431,12 @@
     - name: Ativar timer do check PRODES (Inc 5)
       ansible.builtin.systemd:
         name: yvy-prodes-check.timer
+        state: started
+        enabled: true
+
+    - name: Ativar timer do DETER daily (Inc 6)
+      ansible.builtin.systemd:
+        name: yvy-deter-daily.timer
         state: started
         enabled: true
 

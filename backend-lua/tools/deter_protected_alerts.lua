@@ -56,6 +56,28 @@ local function bbox_center(polygon)
     return (polygon.min_lat + polygon.max_lat) / 2, (polygon.min_lon + polygon.max_lon) / 2
 end
 
+-- Classes DETER por severidade decrescente (Inc 8). As três primeiras são as
+-- classes crit do routes/alerts.lua (R6: MINERACAO, DESMATAMENTO_CR,
+-- DESMATAMENTO_VEG → crit); as demais em ordem decrescente de impacto.
+-- O `classname` do alerta = classe de maior severidade presente no agregado.
+local CLASS_SEVERITY = {
+    "MINERACAO", "DESMATAMENTO_CR", "DESMATAMENTO_VEG",
+    "CS_GEOMETRICO", "CS_DESORDENADO", "CORTE_SELETIVO", "DEGRADACAO",
+    "CICATRIZ_DE_QUEIMADA",
+}
+
+local function max_severity_class(classes)
+    local best, best_rank = nil, #CLASS_SEVERITY + 1
+    for _, c in ipairs(classes or {}) do
+        local rank = #CLASS_SEVERITY + 1  -- desconhecida → menor prioridade
+        for i, known in ipairs(CLASS_SEVERITY) do
+            if c == known then rank = i; break end
+        end
+        if rank < best_rank then best, best_rank = c, rank end
+    end
+    return best
+end
+
 -- Detecta UCs/TIs de um polígono DETER. Retorna lista de hits
 -- { type="uc"|"ti", name=..., info=... }.
 local function detect_territory(polygon)
@@ -99,6 +121,18 @@ local function run()
     local last_id = 0
     local BATCH = 1000
     local total = 0
+    local started_at = os.time()
+
+    -- Inc 8: sentinel last_run "running" no início (TTL ~36h). Se o run falhar
+    -- (o pcall externo faz os.exit(1) sem limpar), o marker fica stale/running
+    -- até expirar — timers downstream avisam sobre scan não-terminado.
+    -- Operador inspeciona com: redis-cli GET alerts:deter_protected:last_run
+    redis.set("alerts:deter_protected:last_run", cjson.encode({
+        status = "running",
+        started_at = started_at,
+        days = days,
+        ts = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    }), 36 * 3600)
 
     while true do
         local batch = db.iter_deter_recent(days, BATCH, last_id)
@@ -124,12 +158,20 @@ local function run()
                     }
                     by_key[key] = entry
                 end
-                entry.area_ha = entry.area_ha + ((poly.area_km2 or 0) * 100)
+                -- Inc 8: area_ha = área de sobreposição com a área protegida,
+                -- NÃO a área total do polígono DETER (que inflava e fabricava
+                -- crit). UC usa o atributo nativo areauckm (km² dentro da UC);
+                -- TI não tem atributo nativo → 0 (sem área fabricada).
+                local overlap_km2 = 0
+                if hit.type == "uc" then
+                    overlap_km2 = tonumber(poly.areauckm) or 0
+                end
+                entry.area_ha = entry.area_ha + (overlap_km2 * 100)
                 if poly.classname and not entry.class_set[poly.classname] then
                     entry.class_set[poly.classname] = true
                     entry.classes[#entry.classes + 1] = poly.classname
                 end
-                entry.classname = entry.classes[1]
+                entry.classname = max_severity_class(entry.classes)
                 entry.view_date = poly.view_date
                 entry.meta = (hit.type == "uc" and "UC " or "TI ") .. hit.name
                     .. " · " .. string.format("%.1f", entry.area_ha) .. " ha DETER"
@@ -142,16 +184,30 @@ local function run()
         last_id = batch[#batch].id
     end
 
-    -- Materializa + ordena por área (maiores primeiro)
+    -- Materializa + ordena por área (maiores primeiro). `classes` (lista cheia)
+    -- vai no payload (Inc 8 — um incremento posterior faz o alerts.lua tickar
+    -- pela lista toda); `class_set` é só dedup interno → não serializa.
     local alerts = {}
     for key, e in pairs(by_key) do
         e.radius_km = math.max(5.0, math.sqrt(e.area_ha / 100) * 1.5)
         e.ts = os.date("!%H:%M", e.generated_at)
+        e.class_set = nil
         alerts[#alerts + 1] = e
     end
     table.sort(alerts, function(a, b) return a.area_ha > b.area_ha end)
 
     redis.set("alerts:deter_protected", cjson.encode(alerts), 86400)
+
+    -- Inc 8: refresh do sentinel com estado final de sucesso (TTL ~36h).
+    redis.set("alerts:deter_protected:last_run", cjson.encode({
+        status = "ok",
+        started_at = started_at,
+        finished_at = os.time(),
+        count = #alerts,
+        days = days,
+        ts = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    }), 36 * 3600)
+
     logger.info("DETER protected-area alerts: " .. #alerts .. " entries (" .. total .. " polygons scanned, " .. days .. "d)")
 end
 

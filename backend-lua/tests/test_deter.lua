@@ -17,6 +17,8 @@ package.loaded["app.routes.deter"] = nil
 local db_mod = require("app.db")
 local deter_routes = require("app.routes.deter")
 
+dofile("tests/helpers.lua")
+
 local function fake_ctx(args)
     return {
         req = { args = args or {}, remote_addr = "127.0.0.1", headers = {} },
@@ -50,13 +52,13 @@ describe("deter", function()
         local stmt = db:prepare(sql)
         local rows = {
             -- dentro do bbox de teste (lat -20..0, lon -60..-40)
-            { "DESMATAMENTO_VEG", "2026-08-06", "RO", "Vilhena", "1100304", 5.0, "UC A", 1.0, 3.0, "2026-08", "VIIRS", "S-NPP",
-              -11.0, -61.0, -10.0, -60.0, poly_geojson(-61, -11, -60, -10), "2026-08-07T00:00:00Z" },
-            { "MINERACAO", "2026-08-06", "RO", "Vilhena", "1100304", 3.0, nil, nil, nil, "2026-08", "VIIRS", "S-NPP",
-              -12.0, -60.0, -11.0, -59.0, poly_geojson(-60, -12, -59, -11), "2026-08-07T00:00:00Z" },
+            { "DESMATAMENTO_VEG", days_ago(1), "RO", "Vilhena", "1100304", 5.0, "UC A", 1.0, 3.0, string.sub(days_ago(1), 1, 7), "VIIRS", "S-NPP",
+              -11.0, -61.0, -10.0, -60.0, poly_geojson(-61, -11, -60, -10), os.date("!%Y-%m-%dT00:00:00Z", os.time()) },
+            { "MINERACAO", days_ago(1), "RO", "Vilhena", "1100304", 3.0, nil, nil, nil, string.sub(days_ago(1), 1, 7), "VIIRS", "S-NPP",
+              -12.0, -60.0, -11.0, -59.0, poly_geojson(-60, -12, -59, -11), os.date("!%Y-%m-%dT00:00:00Z", os.time()) },
             -- fora do bbox (lat/south bem abaixo)
-            { "DEGRADACAO", "2026-08-05", "MT", "Cuiabá", "5103403", 2.0, nil, nil, nil, "2026-08", "VIIRS", "S-NPP",
-              -25.0, -60.0, -24.0, -59.0, poly_geojson(-60, -25, -59, -24), "2026-08-07T00:00:00Z" },
+            { "DEGRADACAO", days_ago(2), "MT", "Cuiabá", "5103403", 2.0, nil, nil, nil, string.sub(days_ago(2), 1, 7), "VIIRS", "S-NPP",
+              -25.0, -60.0, -24.0, -59.0, poly_geojson(-60, -25, -59, -24), os.date("!%Y-%m-%dT00:00:00Z", os.time()) },
         }
         for _, r in ipairs(rows) do
             for i = 1, #r do
@@ -76,9 +78,9 @@ describe("deter", function()
             VALUES (?, ?, ?, ?, ?, ?, ?)
         ]])
         local alerts = {
-            { "1100304", "Vilhena", "DESMATAMENTO_VEG", "2026-08-06", 8.0, "RO", "2026-08-07T00:00:00Z" },
-            { "1100304", "Vilhena", "MINERACAO", "2026-08-06", 3.0, "RO", "2026-08-07T00:00:00Z" },
-            { "5103403", "Cuiabá", "DEGRADACAO", "2025-01-01", 42.0, "MT", "2025-01-02T00:00:00Z" }, -- fora da janela de 30d
+            { "1100304", "Vilhena", "DESMATAMENTO_VEG", days_ago(1), 8.0, "RO", os.date("!%Y-%m-%dT00:00:00Z", os.time()) },
+            { "1100304", "Vilhena", "MINERACAO", days_ago(1), 3.0, "RO", os.date("!%Y-%m-%dT00:00:00Z", os.time()) },
+            { "5103403", "Cuiabá", "DEGRADACAO", days_ago(120), 42.0, "MT", days_ago(120) .. "T00:00:00Z" }, -- fora da janela de 30d
         }
         for _, a in ipairs(alerts) do
             ins:reset()
@@ -116,10 +118,10 @@ describe("deter", function()
         end)
 
         it("applies the days filter", function()
-            -- janela de 1 dia inclui 2026-08-06 mas não 2026-08-05
+            -- janela de 1 dia inclui days_ago(1) mas não days_ago(2)
             local polys = db_mod.get_deter_polygons(-20, 0, -60, -40, 1, 100)
             for _, p in ipairs(polys) do
-                assert.are_equal("2026-08-06", p.view_date)
+                assert.are_equal(days_ago(1), p.view_date)
             end
         end)
     end)
@@ -142,7 +144,7 @@ describe("deter", function()
     describe("db.get_deter_alerts", function()
         it("filters by days window", function()
             local rows = db_mod.get_deter_alerts(nil, nil, 30)
-            assert.are_equal(2, #rows)  -- a de 2025-01-01 fica fora
+            assert.are_equal(2, #rows)  -- a de days_ago(120) fica fora
         end)
 
         it("filters by classname", function()
@@ -164,6 +166,13 @@ describe("deter", function()
             local ctx = fake_ctx({ sw_lat = 0, ne_lat = -20, sw_lng = -60, ne_lng = -40 })
             deter_routes.get_polygons(ctx)
             assert.are_equal(400, ctx.status)
+        end)
+
+        it("GET /api/deter/polygons rejects invalid limit (Inc 10)", function()
+            local ctx = fake_ctx({ sw_lat = -20, ne_lat = 0, sw_lng = -60, ne_lng = -40, limit = -1 })
+            deter_routes.get_polygons(ctx)
+            assert.are_equal(400, ctx.status)
+            assert.are_equal("invalid limit", ctx.body.error)
         end)
 
         it("GET /api/deter/stats returns aggregate", function()

@@ -507,6 +507,38 @@ end
 -- cruas em Redis `alerts:deter_protected`; aqui só lemos + aplicamos o tick
 -- tiered (R6 — evita alert fatigue): crit para MINERACAO/DESMATAMENTO_CR/
 -- DESMATAMENTO_VEG ou >50 ha; warn para o resto.
+
+-- Classes DETER por severidade decrescente — espelha
+-- tools/deter_protected_alerts.lua (Inc 8). As três primeiras são crit (R6);
+-- as demais em ordem decrescente de impacto. O tick (Inc 10) usa a classe de
+-- MAIOR severidade do array `classes` (payload cheio, Inc 8).
+local DETER_CLASS_SEVERITY = {
+    "MINERACAO", "DESMATAMENTO_CR", "DESMATAMENTO_VEG",
+    "CS_GEOMETRICO", "CS_DESORDENADO", "CORTE_SELETIVO", "DEGRADACAO",
+    "CICATRIZ_DE_QUEIMADA",
+}
+local DETER_CRIT_CLASSES = {
+    MINERACAO = true, DESMATAMENTO_CR = true, DESMATAMENTO_VEG = true,
+}
+
+-- Classe de maior severidade de um alerta: prefere o array `classes` (cheio);
+-- legado sem `classes` cai no `classname` (classe única).
+local function deter_max_severity_class(e)
+    local classes = e.classes
+    if type(classes) == "table" and #classes > 0 then
+        local best, best_rank = nil, #DETER_CLASS_SEVERITY + 1
+        for _, c in ipairs(classes) do
+            local rank = #DETER_CLASS_SEVERITY + 1  -- desconhecida → menor prioridade
+            for i, known in ipairs(DETER_CLASS_SEVERITY) do
+                if c == known then rank = i; break end
+            end
+            if rank < best_rank then best, best_rank = c, rank end
+        end
+        if best then return best end
+    end
+    return e.classname or ""
+end
+
 local function deter_protected_alerts()
     local redis = require("app.redis")
     local body = redis.get("alerts:deter_protected")
@@ -516,11 +548,10 @@ local function deter_protected_alerts()
 
     local alerts = {}
     for _, e in ipairs(entries) do
-        local cls = e.classname or ""
+        local cls = deter_max_severity_class(e)
         local area_ha = tonumber(e.area_ha) or 0
         local tick = "warn"
-        if cls == "MINERACAO" or cls == "DESMATAMENTO_CR" or cls == "DESMATAMENTO_VEG"
-           or area_ha > 50 then
+        if DETER_CRIT_CLASSES[cls] or area_ha > 50 then
             tick = "crit"
         end
         e.tick = tick

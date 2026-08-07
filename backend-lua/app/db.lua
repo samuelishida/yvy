@@ -257,6 +257,14 @@ local function exec_write(db, sql, params)
     return true
 end
 
+-- ── Date helpers ────────────────────────────────────────────────────────
+
+-- Data ISO (UTC) de `days` dias atrás — um único lugar para a semântica de
+-- cutoff em UTC (Inc 7). Substitui os 11 `os.date("!%Y-%m-%d", ...)` inline.
+function _M.days_ago_iso(days)
+    return os.date("!%Y-%m-%d", os.time() - (days or 0) * 86400)
+end
+
 -- ── Version check ────────────────────────────────────────────────────────
 
 local function check_sqlite_version(db)
@@ -353,6 +361,11 @@ function _M.init_db()
         logger.info("Adding municipality column to deter_alerts (additive migration)")
         db:exec("ALTER TABLE deter_alerts ADD COLUMN municipality TEXT")
     end
+
+    -- View_date indexes for the alert/AMS windowed queries (Inc 7).
+    db:exec("CREATE INDEX IF NOT EXISTS idx_deter_alerts_view_date ON deter_alerts(view_date)")
+    db:exec("CREATE INDEX IF NOT EXISTS idx_deter_car_alerts_view_date ON deter_car_alerts(view_date)")
+    db:exec("CREATE INDEX IF NOT EXISTS idx_ams_risk_view_date ON ams_risk(view_date)")
 
     db:close()
 
@@ -545,7 +558,7 @@ end
 -- instead of up to 50k historical ones.
 function _M.find_fires_since(days, sw_lat, ne_lat, sw_lng, ne_lng, limit, brazil_only)
     limit = limit or 50000
-    local cutoff = os.date("!%Y-%m-%d", os.time() - (days or 7) * 86400)
+    local cutoff = _M.days_ago_iso(days or 7)
     local db = pool_acquire()
 
     local sql = [[
@@ -827,7 +840,7 @@ function _M.iter_fires_recent(days, batch_size, min_id)
     days = days or 7
     batch_size = batch_size or 500
     min_id = tonumber(min_id) or 0
-    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    local cutoff = _M.days_ago_iso(days)
     local db = pool_acquire()
     local sql = [[
         SELECT id, lat, lon, acq_date,
@@ -871,7 +884,7 @@ end
 -- Retorna (classes, total) — classes inclui 'unclassified' p/ nature NULL.
 function _M.count_fires_by_nature(days, state)
     days = days or 7
-    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    local cutoff = _M.days_ago_iso(days)
     local params = {cutoff}
     local sql = [[
         SELECT COALESCE(nature, 'unclassified') AS nature, COUNT(*) AS cnt
@@ -902,7 +915,7 @@ end
 -- Distribuição por estado × natureza (ordenada por total desc).
 function _M.count_fires_by_nature_by_state(days)
     days = days or 7
-    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    local cutoff = _M.days_ago_iso(days)
     local db = pool_acquire()
     local sql = [[
         SELECT COALESCE(json_extract(data, '$.state'), '') AS st,
@@ -974,6 +987,7 @@ function _M.find_deforestation(sw_lat, ne_lat, sw_lng, ne_lng, limit)
         SELECT lat, lon, json(data) AS data_json
         FROM deforestation_data
         WHERE lat >= ? AND lat <= ? AND lon >= ? AND lon <= ?
+        ORDER BY rowid
         LIMIT ?
     ]]
 
@@ -997,6 +1011,19 @@ function _M.find_deforestation(sw_lat, ne_lat, sw_lng, ne_lng, limit)
     return result
 end
 
+-- Parseia o rótulo PRODES do campo `data.name` (legenda QML). Rótulos reais
+-- têm prefixo de contagem (`"7 d2007"`, `"64 r2024"`); aceita também rótulo
+-- sem prefixo (`"d2007"`). Casa `[dr]` + 4 dígitos em QUALQUER posição do
+-- rótulo — não ancorado em início/fim (Inc 1: o regex âncora
+-- `^([dr])(%d%d%d%d)$` nunca casava com labels com prefixo → type/year nil).
+-- Retorna `type` ("d"|"r") e `year` (string), ou `nil` se não houver match.
+local function parse_prodes_label(name)
+    if type(name) ~= "string" then return nil end
+    local t, yyyy = name:match("([dr])(%d%d%d%d)")
+    if not t then return nil end
+    return t, yyyy
+end
+
 -- PRODES points dentro de um bbox, com class/year decodificados do campo
 -- `data.name` (rótulo da legenda QML, ex. `d2020`/`r2014` — não há coluna
 -- estruturada de ano/classe). Usado pela verificação PRODES por recibo CAR
@@ -1010,6 +1037,7 @@ function _M.get_deforestation_in_bbox(sw_lat, ne_lat, sw_lng, ne_lng, limit)
         SELECT lat, lon, json(data) AS data_json
         FROM deforestation_data
         WHERE lat >= ? AND lat <= ? AND lon >= ? AND lon <= ?
+        ORDER BY rowid
         LIMIT ?
     ]]
 
@@ -1021,11 +1049,11 @@ function _M.get_deforestation_in_bbox(sw_lat, ne_lat, sw_lng, ne_lng, limit)
         local d = utils.decode_jsonb(r.data_json or r["data_json"])
         local class_name, year, kind = nil, nil, nil
         if type(d.name) == "string" then
-            local prefix, yyyy = d.name:match("^([dr])(%d%d%d%d)$")
-            if prefix then
+            local t, yyyy = parse_prodes_label(d.name)
+            if t then
                 class_name = d.name
                 year = tonumber(yyyy)
-                kind = (prefix == "d") and "deforestation" or "regrowth"
+                kind = (t == "d") and "deforestation" or "regrowth"
             end
         end
         result[#result + 1] = {
@@ -1089,6 +1117,12 @@ local function vegetation_at(lat, lon, grid)
         return { status = "native" }
     end
     local p = best.p
+    -- Rótulo PRODES não parseado (fora do padrão [dr]+4 dígitos): sem
+    -- type/year, retorna contexto desconhecido em vez de concatenar year nil
+    -- no status (ex. `"deforested_nil"` → 500 no /api/fires?vegetation=true).
+    if not p.type or not p.year then
+        return { status = "unknown" }
+    end
     if p.type == "regrowth" then
         return { status = "regrowth_" .. p.year, year = p.year, class_name = p.class_name }
     end
@@ -1608,7 +1642,7 @@ function _M.get_deter_polygons(sw_lat, ne_lat, sw_lng, ne_lng, days, limit)
     ]]
     local params = {ne_lat, sw_lat, ne_lng, sw_lng}
     if days then
-        local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+        local cutoff = _M.days_ago_iso(days)
         sql = sql .. " AND view_date >= ?"
         params[#params + 1] = cutoff
     end
@@ -1645,7 +1679,7 @@ function _M.iter_deter_recent(days, batch_size, min_id)
     days = days or 30
     batch_size = batch_size or 1000
     min_id = tonumber(min_id) or 0
-    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    local cutoff = _M.days_ago_iso(days)
     local db = pool_acquire()
     local rows = fetch_all(db, [[
         SELECT id, classname, view_date, area_km2, uc, areauckm,
@@ -1679,7 +1713,7 @@ end
 -- polígonos (`deter_polygons`, retenção ~90 dias — R2).
 function _M.get_deter_stats(days)
     days = days or 30
-    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    local cutoff = _M.days_ago_iso(days)
     local db = pool_acquire()
 
     local total = 0
@@ -1732,9 +1766,10 @@ function _M.get_deter_stats(days)
 end
 
 -- Linhas de `deter_alerts` (agregado geocod×classe×data), filtros opcionais.
-function _M.get_deter_alerts(mun_geocod, classname, days)
+function _M.get_deter_alerts(mun_geocod, classname, days, limit)
     days = days or 90
-    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    limit = limit or 10000  -- bounded (Inc 7): routes pass an explicit limit
+    local cutoff = _M.days_ago_iso(days)
     local db = pool_acquire()
     local sql = [[
         SELECT mun_geocod, classname, view_date, area_km2, uf
@@ -1749,7 +1784,8 @@ function _M.get_deter_alerts(mun_geocod, classname, days)
         sql = sql .. " AND classname = ?"
         params[#params + 1] = classname
     end
-    sql = sql .. " ORDER BY view_date DESC"
+    sql = sql .. " ORDER BY view_date DESC LIMIT ?"
+    params[#params + 1] = limit
 
     local rows = fetch_all(db, sql, params)
     pool_release(db)
@@ -1775,7 +1811,7 @@ function _M.get_car_alerts(uf, municipio, severity, days, page, page_size)
     days = days or 7
     page = page or 1
     page_size = page_size or 20
-    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    local cutoff = _M.days_ago_iso(days)
 
     local db = pool_acquire()
     local where = " WHERE view_date >= ?"
@@ -1833,7 +1869,7 @@ end
 
 function _M.get_car_alert_stats(days)
     days = days or 7
-    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    local cutoff = _M.days_ago_iso(days)
     local db = pool_acquire()
 
     local total = 0
@@ -1864,7 +1900,7 @@ end
 -- Inc 4 — enriquecimento FIRMS×DETER). Retorna as linhas recentes do imóvel.
 function _M.get_car_alerts_by_imovel(cod_imovel, days)    days = days or 7
     if type(cod_imovel) ~= "string" or cod_imovel == "" then return {} end
-    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    local cutoff = _M.days_ago_iso(days)
     local db = pool_acquire()
     local rows = fetch_all(db, [[
         SELECT classname, view_date, severity, fire_count
@@ -1890,9 +1926,10 @@ end
 
 -- Camadas AMS (fire-spreading-risk polígonos / active-fire-today pontos) num
 -- bbox + janela de dias. geom decodificada (JSON TEXT/JSONB → tabela).
-function _M.get_ams_risk(sw_lat, ne_lat, sw_lng, ne_lng, days)
+function _M.get_ams_risk(sw_lat, ne_lat, sw_lng, ne_lng, days, limit)
     days = days or 7
-    local cutoff = os.date("!%Y-%m-%d", os.time() - days * 86400)
+    limit = limit or 5000  -- bounded (Inc 7): serves fire-spreading-risk polygons
+    local cutoff = _M.days_ago_iso(days)
     local db = pool_acquire()
     local rows = fetch_all(db, [[
         SELECT id, view_date, viewed_at, satelite, municipio, biome, geocode,
@@ -1901,7 +1938,8 @@ function _M.get_ams_risk(sw_lat, ne_lat, sw_lng, ne_lng, days)
         WHERE min_lat <= ? AND max_lat >= ? AND min_lon <= ? AND max_lon >= ?
           AND view_date >= ?
         ORDER BY view_date DESC
-    ]], {ne_lat, sw_lat, ne_lng, sw_lng, cutoff})
+        LIMIT ?
+    ]], {ne_lat, sw_lat, ne_lng, sw_lng, cutoff, limit})
     pool_release(db)
 
     local result = {}
@@ -1919,6 +1957,80 @@ function _M.get_ams_risk(sw_lat, ne_lat, sw_lng, ne_lng, days)
             geom = utils.decode_jsonb(r.geom_json or r["geom_json"]),
         }
     end
+    return result
+end
+
+-- Nível de risco em lote para N focos (Inc 7): elimina o N+1 do loop
+-- per-foco de get_ams_risk_at em bboxes grandes (ex. ?ams=true, até 10k focos).
+-- Estratégia bounded-batch: agrupa focos em buckets de ~2°; UMA query espacial
+-- por bucket (bbox-pre-filter em SQL, ORDER BY view_date DESC); por foco,
+-- seleciona o primeiro candidato cujo bbox (expandido pelo raio R) contém o
+-- ponto — mesma semântica de get_ams_risk_at. Se um bucket exceder
+-- MAX_CANDIDATES_PER_BUCKET, cai para queries per-foco (idênticas a
+-- get_ams_risk_at). Retorna {id={risk_level, view_date}}.
+function _M.get_ams_risk_batch(fires)
+    local result = {}
+    if not fires or #fires == 0 then return result end
+
+    local BUCKET = 2.0          -- ~2° de span espacial por query
+    local MAX_CANDIDATES_PER_BUCKET = 2000
+    local R = 0.1               -- mesmo raio de busca de get_ams_risk_at (~11km)
+
+    -- Agrupa focos por bucket (canto inferior-esquerdo do quadrado ~2°).
+    local buckets, order = {}, {}
+    for _, f in ipairs(fires) do
+        local bk = string.format("%.0f,%.0f", math.floor((f.lat or 0) / BUCKET), math.floor((f.lon or 0) / BUCKET))
+        if not buckets[bk] then
+            buckets[bk] = {}
+            order[#order + 1] = bk
+        end
+        buckets[bk][#buckets[bk] + 1] = f
+    end
+
+    local db = pool_acquire()
+    for _, bk in ipairs(order) do
+        local bls, bbs = bk:match("^([^,]+),(.+)$")
+        local bl, bb = tonumber(bls) * BUCKET, tonumber(bbs) * BUCKET
+        local ne_lat, sw_lat = bl + BUCKET, bl
+        local ne_lng, sw_lng = bb + BUCKET, bb
+
+        local rows = fetch_all(db, [[
+            SELECT risk_level, view_date, min_lat, min_lon, max_lat, max_lon
+            FROM ams_risk
+            WHERE min_lat <= ? AND max_lat >= ? AND min_lon <= ? AND max_lon >= ?
+              AND layer = 'fire-spreading-risk' AND risk_level IS NOT NULL
+            ORDER BY view_date DESC
+            LIMIT ?
+        ]], {ne_lat, sw_lat, ne_lng, sw_lng, MAX_CANDIDATES_PER_BUCKET + 1})
+
+        if #rows > MAX_CANDIDATES_PER_BUCKET then
+            -- Bucket com candidatos demais: fallback per-foco (raro — os
+            -- polígonos AMS são regionais, buckets pequenos raramente estouram).
+            for _, f in ipairs(buckets[bk]) do
+                local rr = fetch_all(db, [[
+                    SELECT risk_level, view_date FROM ams_risk
+                    WHERE min_lat <= ? AND max_lat >= ? AND min_lon <= ? AND max_lon >= ?
+                      AND layer = 'fire-spreading-risk' AND risk_level IS NOT NULL
+                    ORDER BY view_date DESC LIMIT 1
+                ]], {f.lat + R, f.lat - R, f.lon + R, f.lon - R})
+                if rr[1] then
+                    result[f.id] = { risk_level = rr[1].risk_level, view_date = rr[1].view_date }
+                end
+            end
+        else
+            -- Point-in-bbox apenas nos candidatos do bucket (mais recente primeiro).
+            for _, f in ipairs(buckets[bk]) do
+                for _, p in ipairs(rows) do
+                    if f.lat >= (p.min_lat or -90) - R and f.lat <= (p.max_lat or 90) + R
+                       and f.lon >= (p.min_lon or -180) - R and f.lon <= (p.max_lon or 180) + R then
+                        result[f.id] = { risk_level = p.risk_level, view_date = p.view_date }
+                        break
+                    end
+                end
+            end
+        end
+    end
+    pool_release(db)
     return result
 end
 

@@ -52,7 +52,6 @@
 #include <sys/stat.h>
 #include <stdint.h>
 #include <errno.h>
-#include <sys/mman.h>
 #include <stdarg.h>
 #include <time.h>
 #include <sys/wait.h>
@@ -110,70 +109,6 @@ static volatile sig_atomic_t g_running = 1;
 static int g_server_fd = -1;
 static int g_backend_port = BACKEND_PORT_DEFAULT;
 static volatile sig_atomic_t g_active_children = 0;
-
-/* ── Rate limiter (parent-side, per-IP token bucket) ────────────────────── */
-
-#define RATE_BUCKETS  4096
-#define RATE_LIMIT    120     /* requests per window */
-#define RATE_WINDOW   60      /* seconds */
-
-typedef struct {
-    uint32_t ip;            /* IPv4 in network byte order; 0 = empty/free slot */
-    time_t   window_start;
-    int      count;
-} rate_bucket;
-
-static rate_bucket *g_rate = NULL;  /* mmap shared memory — shared across forked children */
-
-/* Murmur-style 32-bit hash mix. Good distribution for IPv4 addresses. */
-static uint32_t hash_ip(uint32_t ip) {
-    uint32_t h = ip;
-    h ^= h >> 16;
-    h *= 0x7feb352dU;
-    h ^= h >> 15;
-    h *= 0x846ca68bU;
-    h ^= h >> 16;
-    return h;
-}
-
-/* Returns 1 if allowed, 0 if denied. Sets *retry_out (seconds) when denied. */
-static int rate_check(uint32_t ip, time_t now, int *retry_out) {
-    uint32_t idx = hash_ip(ip) & (RATE_BUCKETS - 1);
-    rate_bucket *b = &g_rate[idx];
-
-    if (b->ip != ip || (now - b->window_start) >= RATE_WINDOW) {
-        /* Empty slot, hash collision (different IP), or expired window: reset */
-        b->ip = ip;
-        b->window_start = now;
-        __atomic_store_n(&b->count, 1, __ATOMIC_RELAXED);
-        return 1;
-    }
-
-    if (__atomic_load_n(&b->count, __ATOMIC_RELAXED) >= RATE_LIMIT) {
-        int retry = (int)(RATE_WINDOW - (now - b->window_start));
-        if (retry < 1) retry = 1;
-        *retry_out = retry;
-        return 0;
-    }
-
-    __atomic_add_fetch(&b->count, 1, __ATOMIC_RELAXED);
-    return 1;
-}
-
-static void send_429(int fd, int retry_after) {
-    static const char body[] = "{\"error\":\"Too Many Requests\"}";
-    char hdr[512];
-    int hlen = snprintf(hdr, sizeof(hdr),
-        "HTTP/1.1 429 Too Many Requests\r\n"
-        "Content-Type: application/json\r\n"
-        "Content-Length: %zu\r\n"
-        "Connection: close\r\n"
-        "Retry-After: %d\r\n"
-        "\r\n",
-        sizeof(body) - 1, retry_after);
-    if (hlen > 0) send(fd, hdr, (size_t)hlen, MSG_NOSIGNAL);
-    send(fd, body, sizeof(body) - 1, MSG_NOSIGNAL);
-}
 
 /* ── MIME types ─────────────────────────────────────────────────────────── */
 
@@ -409,7 +344,7 @@ static size_t parse_content_length(const char *headers_buf, size_t headers_size)
 
 static void proxy_to_backend(int client, const char *method, const char *path,
                               char headers[][2][MAX_HEADER_VAL], int num_headers,
-                              const char *body, size_t body_len) {
+                              const char *body, size_t body_len, const char *client_ip) {
     /* Connect to backend */
     int backend_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (backend_fd < 0) {
@@ -455,7 +390,9 @@ static void proxy_to_backend(int client, const char *method, const char *path,
             strcasecmp(name, "connection") == 0 ||
             strcasecmp(name, "proxy-connection") == 0 ||
             strcasecmp(name, "content-length") == 0 ||
-            strcasecmp(name, "x-api-key") == 0) {
+            strcasecmp(name, "x-api-key") == 0 ||
+            strcasecmp(name, "x-real-ip") == 0 ||
+            strcasecmp(name, "x-forwarded-for") == 0) {
             continue;
         }
         if (dynbuf_appendf(&req_dyn, MAX_REQUEST_SIZE, "%s: %s\r\n", name, value) < 0) {
@@ -465,6 +402,19 @@ static void proxy_to_backend(int client, const char *method, const char *path,
 
     if (build_ok && dynbuf_appendf(&req_dyn, MAX_REQUEST_SIZE,
                                    "X-API-Key: %s\r\n", API_KEY) < 0) {
+        build_ok = 0;
+    }
+    /* Forward the real client IP like nginx: the Lua middleware (rate limit,
+     * logging) keys off X-Real-IP / X-Forwarded-For. Client-supplied values of
+     * those headers are skipped above, so what we inject here can't be spoofed. */
+    if (build_ok && client_ip && client_ip[0] &&
+        dynbuf_appendf(&req_dyn, MAX_REQUEST_SIZE,
+                       "X-Real-IP: %s\r\n", client_ip) < 0) {
+        build_ok = 0;
+    }
+    if (build_ok && client_ip && client_ip[0] &&
+        dynbuf_appendf(&req_dyn, MAX_REQUEST_SIZE,
+                       "X-Forwarded-For: %s\r\n", client_ip) < 0) {
         build_ok = 0;
     }
 
@@ -717,7 +667,7 @@ static size_t parse_content_length(const char *headers_buf, size_t headers_size)
     return 0;
 }
 
-static void handle_client(int client, uint32_t client_ip) {
+static void handle_client(int client, const char *client_ip) {
     set_socket_timeout(client, CLIENT_TIMEOUT);
 
     dynbuf reqbuf;
@@ -807,18 +757,9 @@ static void handle_client(int client, uint32_t client_ip) {
         return;
     }
 
-    /* Rate-limit /api paths in child process (shared mmap counters).
-     * Tile requests are exempt: maps generate bursty visual traffic on
-     * pan/zoom that is not an abuse vector, and dropping tiles degrades UX. */
-    if (strncmp(path, "/api", 4) == 0 && strncmp(path, "/api/tiles/", 11) != 0) {
-        int retry = 0;
-        if (!rate_check(client_ip, time(NULL), &retry)) {
-            send_429(client, retry);
-            dynbuf_free(&reqbuf);
-            CLOSESOCK(client);
-            return;
-        }
-    }
+    /* Rate limiting is done by the Lua backend middleware (same as nginx
+     * in prod): the C server is a compact nginx for local static serving and
+     * does not enforce its own limits. */
 
     /* Body span lives inside reqbuf; safe until dynbuf_free below */
     const char *body = reqbuf.data + headers_size;
@@ -828,7 +769,7 @@ static void handle_client(int client, uint32_t client_ip) {
      * Lua backend can answer CORS with origin-specific headers).
      * OPTIONS on static paths returns 204 with no CORS headers. */
     if (strncmp(path, "/api", 4) == 0) {
-        proxy_to_backend(client, method, path, headers, num_headers, body, body_len);
+        proxy_to_backend(client, method, path, headers, num_headers, body, body_len, client_ip);
     } else if (strcmp(method, "OPTIONS") == 0) {
         send_response(client, 204, "No Content", "text/plain", "", 0);
     } else {
@@ -901,16 +842,6 @@ int main(int argc, char *argv[]) {
             }
         }
     }
-
-    /* Allocate rate-limit table in shared memory so forked children
-     * can update per-IP counters independently of the parent. */
-    g_rate = mmap(NULL, sizeof(rate_bucket) * RATE_BUCKETS,
-                  PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    if (g_rate == MAP_FAILED) {
-        perror("mmap g_rate");
-        return 1;
-    }
-    memset(g_rate, 0, sizeof(rate_bucket) * RATE_BUCKETS);
 
     /* Setup signal handlers */
     signal(SIGINT, handle_signal);
@@ -1022,7 +953,7 @@ int main(int argc, char *argv[]) {
             /* Close inherited listen socket so the child doesn't keep it
              * alive past parent shutdown. */
             if (g_server_fd >= 0) close(g_server_fd);
-            handle_client(client, client_addr.sin_addr.s_addr);
+            handle_client(client, inet_ntoa(client_addr.sin_addr));
             _exit(0);
         } else {
             /* Parent — unblock SIGCHLD now that the slot is reserved */

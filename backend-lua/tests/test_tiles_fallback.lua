@@ -48,7 +48,7 @@ local build_ok, build_err = pcall(function()
     local function put(z, x, y, blob)
         ins:bind(1, z); ins:bind(2, x); ins:bind(3, y)
         ins:bind_blob(4, blob)
-        ins:bind(5, "image/png"); ins:bind(6, "2026-08-06T00:00:00Z")
+        ins:bind(5, "image/png"); ins:bind(6, os.date("!%Y-%m-%dT00:00:00Z", os.time()))
         ins:step(); ins:reset()
     end
     put(3, 0, 0, Z3)

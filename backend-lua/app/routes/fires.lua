@@ -42,7 +42,27 @@ function _M.get_fires(ctx)
     local sw_lat = args.sw_lat
     local sw_lng = args.sw_lng
 
-    local cache_key = "firescache:" .. (ne_lat or "global") .. ":" .. (ne_lng or "") .. ":" .. (sw_lat or "") .. ":" .. (sw_lng or "") .. (args.vegetation == "true" and ":veg" or "") .. (args.source and (":" .. args.source) or "") .. (args.ams == "true" and ":ams" or "")
+    -- (a) Whitelist de source + parser explícito de ams, ANTES do cache:
+    -- o cache key embute apenas params canônicos, então ?source=ams (inválido)
+    -- não pode colidir com ?ams=true (antes ambos viravam "…:ams" e o cache
+    -- servia a resposta errada). Nunca usamos tonumber em ams — a flag é
+    -- booleana e o frontend sempre envia "true" (tonumber("true") é nil, o que
+    -- silenciosamente desligaria o AMS ou recriaria a colisão).
+    local source = args.source or ""
+    if source ~= "" and source ~= "firms" and source ~= "bdqueimadas" then
+        ctx:error(400, "invalid source"); return
+    end
+
+    local ams_enabled
+    if args.ams == "true" or args.ams == "1" then
+        ams_enabled = 1
+    elseif args.ams == nil or args.ams == "false" or args.ams == "0" then
+        ams_enabled = nil
+    else
+        ctx:error(400, "invalid ams"); return
+    end
+
+    local cache_key = "firescache:" .. (ne_lat or "global") .. ":" .. (ne_lng or "") .. ":" .. (sw_lat or "") .. ":" .. (sw_lng or "") .. (args.vegetation == "true" and ":veg" or "") .. (source ~= "" and (":" .. source) or "") .. (ams_enabled and ":ams" or "")
 
     local cached = redis.get(cache_key)
     if cached then
@@ -57,6 +77,12 @@ function _M.get_fires(ctx)
         if not ne_lat or not ne_lng or not sw_lat or not sw_lng then
             ctx:error(400, "Invalid coordinates."); return
         end
+        -- (c) range-clamp: lat/lon fora dos limites geográficos são limitados,
+        -- não rejeitados (viewports/zoom extremos não viram 400).
+        ne_lat = math.max(-90, math.min(90, ne_lat))
+        sw_lat = math.max(-90, math.min(90, sw_lat))
+        ne_lng = math.max(-180, math.min(180, ne_lng))
+        sw_lng = math.max(-180, math.min(180, sw_lng))
         if ne_lat <= sw_lat or ne_lng <= sw_lng then
             ctx:error(400, "Invalid bbox."); return
         end
@@ -68,9 +94,9 @@ function _M.get_fires(ctx)
     -- Pontos em países vizinhos (dentro do bbox) são excluídos.
     -- Filtro opcional de fonte (Inc 10): ?source=bdqueimadas|firms|all
     local source_filter
-    if args.source == "bdqueimadas" then
+    if source == "bdqueimadas" then
         source_filter = "%BDQ%"
-    elseif args.source == "firms" then
+    elseif source == "firms" then
         source_filter = "NASA_FIRMS%"
     end
     local data = db.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, MAX_RESULTS, true, source_filter)
@@ -80,14 +106,21 @@ function _M.get_fires(ctx)
     if args.vegetation == "true" then
         local veg_map = db.get_vegetation_context_batch(sw_lat, ne_lat, sw_lng, ne_lng, data)
         for i, f in ipairs(data) do
-            f.vegetation = veg_map[i] or { status = "unknown" }
+            f.vegetation = veg_map[i]  -- (d) batch sempre devolve o mapa completo
         end
     end
 
     -- Inc 11: ?ams=true adiciona o risco de propagação AMS a cada foco.
-    if args.ams == "true" then
+    -- (b) N+1 fix: UMA chamada get_ams_risk_batch (bounded ~2° buckets, Inc 7)
+    -- em vez do loop per-foco get_ams_risk_at. A batch keya por f.id; find_fires
+    -- não expõe id, então sintetizamos ids estáveis para o lote e os removemos
+    -- antes de codificar (o id interno do banco não vaza para o JSON).
+    if ams_enabled then
+        for i, f in ipairs(data) do f.id = i end
+        local batch = db.get_ams_risk_batch(data)
         for _, f in ipairs(data) do
-            f.ams = db.get_ams_risk_at(f.lat, f.lon)
+            f.ams = batch[f.id]  -- nil se ausente (mesma semântica de antes)
+            f.id = nil
         end
     end
 

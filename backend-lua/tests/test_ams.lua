@@ -16,6 +16,8 @@ package.loaded["app.routes.ams"] = nil
 local db_mod = require("app.db")
 local ams_routes = require("app.routes.ams")
 
+dofile("tests/helpers.lua")
+
 local function fake_ctx(args)
     return {
         req = { args = args or {}, remote_addr = "127.0.0.1", headers = {} },
@@ -39,15 +41,15 @@ describe("ams", function()
         ]])
         local rows = {
             -- polígono de risco em (-11..-10, -61..-60), nível ALTO
-            { "2026-08-06", "2026-08-06T12:00:00Z", "GOES-16", "Vilhena", "Amazônia", "1100304",
+            { days_ago(1), days_ago(1) .. "T12:00:00Z", "GOES-16", "Vilhena", "Amazônia", "1100304",
               "fire-spreading-risk", "ALTO", -11.0, -61.0, -10.0, -60.0,
               cjson.encode({ type = "MultiPolygon", coordinates = { { { { -61, -11 }, { -60, -11 }, { -60, -10 }, { -61, -10 }, { -61, -11 } } } } }),
-              "2026-08-07T00:00:00Z" },
+              os.date("!%Y-%m-%dT00:00:00Z", os.time()) },
             -- ponto ativo em (-10.5, -60.5)
-            { "2026-08-06", "2026-08-06T14:00:00Z", "GOES-16", "Vilhena", "Amazônia", "1100304",
+            { days_ago(1), days_ago(1) .. "T14:00:00Z", "GOES-16", "Vilhena", "Amazônia", "1100304",
               "active-fire-today", nil, -10.5, -60.5, -10.5, -60.5,
               cjson.encode({ type = "Point", coordinates = { -60.5, -10.5 } }),
-              "2026-08-07T00:00:00Z" },
+              os.date("!%Y-%m-%dT00:00:00Z", os.time()) },
         }
         for _, r in ipairs(rows) do
             stmt:reset()
@@ -81,12 +83,29 @@ describe("ams", function()
             local risk = db_mod.get_ams_risk_at(-10.5, -60.5)
             assert.is_not_nil(risk)
             assert.are_equal("ALTO", risk.risk_level)
-            assert.are_equal("2026-08-06", risk.view_date)
+            assert.are_equal(days_ago(1), risk.view_date)
         end)
 
         it("returns nil far from any risk polygon", function()
             local risk = db_mod.get_ams_risk_at(-30.0, -50.0)
             assert.is_nil(risk)
+        end)
+    end)
+
+    describe("db.get_ams_risk_batch", function()
+        it("returns risk per fire id via one bucket query", function()
+            local batch = db_mod.get_ams_risk_batch({
+                { id = 1, lat = -10.5, lon = -60.5 },
+                { id = 2, lat = -30.0, lon = -50.0 },  -- fora de qualquer polígono
+            })
+            assert.are_equal("ALTO", batch[1].risk_level)
+            assert.are_equal(days_ago(1), batch[1].view_date)
+            assert.is_nil(batch[2])
+        end)
+
+        it("returns empty map for empty input", function()
+            assert.are_equal(0, #db_mod.get_ams_risk_batch({}))
+            assert.are_equal(0, #db_mod.get_ams_risk_batch(nil))
         end)
     end)
 

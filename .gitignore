@@ -191,8 +191,12 @@ backend/__pycache__/
 backend-lua/data/*.db
 backend-lua/data/*.db-shm
 backend-lua/data/*.db-wal
-backend-lua/data/prodes_brasil_2024_v20260407/
+# Any PRODES version dir (auto-downloaded by check_prodes_update.sh) + the
+# version marker written after a successful ingest.
+backend-lua/data/prodes_*/
+backend-lua/data/.prodes_version
 backend-lua/data/tiles_prodes.db
+backend-lua/data/tiles_cerrado_veg.db
 
 # Yvy — dados locais / tooling (não versionar)
 # Dumps CAR (GeoJSON por UF, vários GB) — importar no servidor

@@ -46,6 +46,13 @@ const FIRE_NATURE_COLORS = {
 
 const asArray = value => Array.isArray(value) ? value : [];
 
+// Escapes HTML metacharacters before interpolating feature properties into
+// Leaflet popup HTML (bindPopup builds HTML strings from source/user data —
+// TI names, municipios, risk levels — which must not break out of the markup).
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+
 const DEFAULT_BIOMES = [
   { name: 'Cerrado' },
   { name: 'Mata Atlântica' },
@@ -745,8 +752,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
   // CAR overlay (Inc 3): showCar toggle (padrão OFF) + carInspect popup state (local ao card).
   const [showCar, setShowCar] = useState(false);
   const [carInspect, setCarInspect] = useState(null);
-  // TerraClass / Cerrado vegetation overlays (Inc 9): opcionais, padrão OFF.
-  const [showTerraClass, setShowTerraClass] = useState(false);
+  // Cerrado vegetation overlay (Inc 9): opcional, padrão OFF.
   const [showCerradoVeg, setShowCerradoVeg] = useState(false);
   // AMS fire-spreading-risk overlay (Inc 11): opcional, padrão OFF.
   const [showAms, setShowAms] = useState(false);
@@ -785,7 +791,9 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
       const d = await cachedFetch(`/api/car/prodes?cod_imovel=${encodeURIComponent(cod)}`, { ttl: 60_000 });
       setProdesResult(d);
     } catch (err) {
-      setProdesError(String((err && err.message) || err));
+      // Sem texto cru de erro (ex. string de exceção do fetch/404 antigo) —
+      // mensagem traduzida genérica; o caso "não encontrado" vem como 200 + reason.
+      setProdesError(t('home.error'));
       setProdesResult(null);
     } finally {
       setProdesLoading(false);
@@ -917,12 +925,6 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             <span className="lt-dot" style={{ background: CAR_COLOR }} /> {t('home.layerCar')}<span className="lt-sub">CAR</span>
           </button>
           <button
-            className={`layer-toggle${showTerraClass ? ' active' : ''}`}
-            onClick={() => setShowTerraClass(!showTerraClass)}
-          >
-            <span className="lt-dot" style={{ background: '#2dd4bf' }} /> {t('home.layerTerraClass')}
-          </button>
-          <button
             className={`layer-toggle${showCerradoVeg ? ' active' : ''}`}
             onClick={() => setShowCerradoVeg(!showCerradoVeg)}
           >
@@ -982,9 +984,9 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               </>
             ) : (
               <div className="prodes-result-no">
-                {prodesResult.note === 'CAR unavailable'
+                {prodesResult.reason === 'car_unavailable'
                   ? t('home.carUnavailable')
-                  : prodesResult.found === false
+                  : prodesResult.reason === 'not_found'
                     ? t('home.propertyNotFound')
                     : t('home.prodesNotAvailable')}
               </div>
@@ -1044,26 +1046,12 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             zIndex={90}
           />
           <TileLayer
-            key="terraclass-tiles"
-            url="/api/tiles/terraclass?z={z}&x={x}&y={y}&layer=terraclass"
-            opacity={showTerraClass ? 0.5 : 0}
-            tileSize={256}
-            maxNativeZoom={12}
-            minZoom={2}
-            keepBuffer={4}
-            updateWhenZooming={false}
-            updateWhenIdle={false}
-            fadeIn={150}
-            attribution="&copy; INPE TerraClass"
-            zIndex={80}
-          />
-          <TileLayer
             key="cerrado-veg-tiles"
             url="/api/tiles/cerrado-veg?z={z}&x={x}&y={y}"
             opacity={showCerradoVeg ? 0.5 : 0}
             tileSize={256}
-            maxNativeZoom={12}
-            minZoom={2}
+            maxNativeZoom={9}
+            minZoom={6}
             keepBuffer={4}
             updateWhenZooming={false}
             updateWhenIdle={false}
@@ -1085,7 +1073,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               style={INDIGENOUS_STYLE}
               onEachFeature={(feature, layer) => {
                 const p = feature.properties;
-                layer.bindPopup(`<strong>🏕 ${p.name}</strong><br/>Terra Indígena · ${p.state_abbr || ''}<br/><small>${p.municipality || ''}</small>`);
+                layer.bindPopup(`<strong>🏕 ${esc(p.name)}</strong><br/>Terra Indígena · ${esc(p.state_abbr)}<br/><small>${esc(p.municipality)}</small>`);
               }}
             />
           )}
@@ -1096,7 +1084,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               style={CONSERVATION_STYLE}
               onEachFeature={(feature, layer) => {
                 const p = feature.properties;
-                layer.bindPopup(`<strong>🌿 ${p.name}</strong><br/>${p.category || 'UC'} · ${p.state_abbr || ''}`);
+                layer.bindPopup(`<strong>🌿 ${esc(p.name)}</strong><br/>${esc(p.category) || 'UC'} · ${esc(p.state_abbr)}`);
               }}
             />
           )}
@@ -1115,7 +1103,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               })}
               onEachFeature={(feature, layer) => {
                 const p = feature.properties;
-                layer.bindPopup(`🔥 ${t('home.amsRisk')}: ${p.risk_level || '?'} (AMS ${p.view_date || ''})`);
+                layer.bindPopup(`🔥 ${t('home.amsRisk')}: ${esc(p.risk_level) || '?'} (AMS ${esc(p.view_date)})`);
               }}
             />
           )}

@@ -17,7 +17,6 @@ geoespaciais dos programas oficiais de monitoramento ambiental:
 | **DETER** | Alertas de alteração de cobertura em tempo quase real | Diário (2016 → hoje) |
 | **BdQueimadas / Fires** | Focos de queimada ativos | Diário / últimas 48h |
 | **AMS** | Alerta e Monitoramento Sinótico (fogo + risco de propagação) | Hoje / horário |
-| **TerraClass / Vegetação Secundária** | Uso e cobertura da terra (pós-desmatamento) | Anual (Amazônia) |
 | **Vegetação (Cerrado)** | Tipos de vegetação e ecorregiões | Estático |
 | **Auxiliares** | Estados, municípios, UCs, TIs, biomas, hidrografia | Estático |
 
@@ -63,8 +62,7 @@ Padrão: os dashboards são Angular/DC.js e carregam JSONs estáticos:
 - Rasters PRODES por versão:
   `https://terrabrasilis.dpi.inpe.br/download/dataset/brasil-prodes/raster/prodes_brasil_2024_v20260407.zip`
   (verificar ano/versão — PRODES 2025 ainda **não publicado**, 404)
-- Vetores por bioma: desmatamento (PRODES), alertas (DETER, shapefile),
-  TerraClass, Vegetação Secundária, auxiliares
+- Vetores por bioma: desmatamento (PRODES), alertas (DETER, shapefile), auxiliares
 - Rasters agregados do dashboard de fogo (cruzamento fogo × território):
   - `/download/fires-dashboard/car/raster/car_categories_amz_cerrado.zip`
   - `/download/fires-dashboard/deter/raster/deter_agregado_amz_cerrado.zip`
@@ -142,7 +140,6 @@ UF, nome do município.
   cod_classe, area_km`
 - `vegetation-cerrado:ecoregions`: `name`
 - ~20 camadas por ecorregião + `srtm_relief_shading` (relevo SRTM)
-- TerraClass e Vegetação Secundária: download por bioma
 
 ---
 
@@ -195,7 +192,6 @@ As camadas já têm atributos que permitem cruzar sem join espacial explícito:
 - [ ] **Risco de propagação de fogo** (AMS) sobreposto aos focos
 
 ### P3 — visão de longo prazo
-- [ ] TerraClass / Vegetação Secundária (uso da terra pós-desmatamento)
 - [ ] Vegetação do Cerrado (`vegetation_types`) para o mapa de biomas
 - [ ] Integrar focos do **BdQueimadas** (INPE) como fonte complementar ao FIRMS
 
