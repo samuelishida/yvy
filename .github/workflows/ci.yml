@@ -80,6 +80,12 @@ jobs:
                    scripts/verify-gzip.sh; do
             [ -f "$f" ] && sh -n "$f" || echo "SKIP $f (not found)"
           done
+          # bash-only scripts (arrays, [[ ]]) — must use bash -n
+          for f in scripts/prod-backup.sh \
+                   scripts/pull-prod-backups.sh \
+                   scripts/install-backup-cron.sh; do
+            [ -f "$f" ] && bash -n "$f" || echo "SKIP $f (not found)"
+          done
 
       - name: Lint shell scripts (shellcheck)
         run: |
@@ -92,6 +98,8 @@ jobs:
             scripts/kill-rogue-yvy.sh scripts/generate-secrets.sh \
             scripts/deploy-local.sh scripts/deploy-nginx.sh \
             scripts/verify-gzip.sh \
+            scripts/prod-backup.sh scripts/pull-prod-backups.sh \
+            scripts/install-backup-cron.sh \
           || true
 
       - name: Guard nginx gzip config (template)

@@ -7,6 +7,7 @@ mongo_data/
 .runtime/
 backend-lua/nul
 backend-lua/yvy-server
+.merge-work/
 
 # Infraestrutura / Secrets
 infra/terraform.tfvars

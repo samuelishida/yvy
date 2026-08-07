@@ -13,16 +13,29 @@
 
 ## Backups
 
-- Run `./backup.sh`
-- Store the resulting archive from `sqlite_backups/` in offsite storage
-- Test restores regularly in a disposable environment before relying on the backup set
+### Local (dev machine)
+- Run `./backup.sh` → `sqlite_backups/yvy_*.sqlite3.gz`
 
-## Restore procedure
+### Prod → desktop (automated, recommended)
+- Desktop puller: `scripts/pull-prod-backups.sh` — SSHes into the prod VM,
+  snapshots the DB consistently (`sqlite3 .backup`, WAL-safe), pulls it to
+  `~/yvy-backups/weekly/`.
+- Installed as a weekly cron (Sunday 03:17) via `scripts/install-backup-cron.sh`.
+- Retention: keeps the last 2 backups (~2 weeks); nothing older is kept.
+  Logs: `~/yvy-backups/backup.log`.
+- Overrides (env): `PROD_VM_IP`, `SSH_KEY`, `LOCAL_BACKUP_DIR`,
+  `WEEKLY_RETENTION`, `VERIFY_INTEGRITY`.
+- Test restores regularly in a disposable environment before relying on the backup set.
 
-1. Stop writers to the database.
-2. Pick the backup archive to restore.
-3. Run `gunzip -c sqlite_backups/<backup>.sqlite3.gz > backend-lua/data/yvy.db`
-4. Validate with `sqlite3 backend-lua/data/yvy.db "SELECT COUNT(*) FROM deforestation_data;"`
+## Restore procedure (from a prod backup)
+
+1. Stop writers: `sudo systemctl stop yvy-backend` (prod) or the local backend.
+2. Pick the archive: `ls -t ~/yvy-backups/weekly/ | head -1`
+3. Restore locally:
+   `gunzip -c ~/yvy-backups/daily/<backup>.sqlite3.gz > backend-lua/data/yvy.db`
+   Or push to prod:
+   `gunzip -c ~/yvy-backups/daily/<backup>.sqlite3.gz | ssh -i ~/.ssh/oci_yvy ubuntu@<IP> "cat > /opt/yvy/backend-lua/data/yvy.db"`
+4. Validate: `sqlite3 backend-lua/data/yvy.db "SELECT COUNT(*) FROM fire_data;"`
 
 ## Deploy / rollback
 
