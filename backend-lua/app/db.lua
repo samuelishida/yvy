@@ -801,9 +801,12 @@ end
 
 -- ── News ─────────────────────────────────────────────────────────────────
 
-local function canonical_url(u)
+-- Canonical form of an article URL for duplicate detection: strips any
+-- fragment and trailing slashes (keeps root "/"). Shared by the write path
+-- (upsert conflict key), the read path (feed dedupe) and the sync's in-batch
+-- dedupe so every layer agrees on what counts as "the same URL".
+function _M.canonical_url(u)
     if type(u) ~= "string" or u == "" then return u end
-    -- Strip trailing slash (but keep root /). Strip fragment. Lowercase host portion only.
     u = u:gsub("#[^#]*$", "")
     if #u > 1 then u = u:gsub("/+$", "") end
     return u
@@ -832,7 +835,7 @@ function _M.bulk_upsert_news(articles)
             source_name = a.source
         end
 
-        local canon = canonical_url(a.url)
+        local canon = _M.canonical_url(a.url)
         local ingested = a.ingested_at or utils.now_iso()
         local published_at = utils.normalize_news_date(a.publishedAt, ingested)
         local data_json = utils.encode_jsonb({
@@ -872,35 +875,67 @@ function _M.get_news_page(page, page_size, lang)
     local rows = fetch_all(db, sql, {page_size, skip})
     pool_release(db)
 
+    -- Defensive read-path dedupe: never serve two rows that canonicalize to
+    -- the same URL (e.g. legacy trailing-slash duplicates). Rows are ordered
+    -- newest-first, so the first occurrence per canonical URL is kept.
+    local seen_canon = {}
     local result = {}
     for _, r in ipairs(rows) do
-        local d = utils.decode_jsonb(r.data_json or r["data_json"])
-        local article = {
-            url = r.url or r["url"],
-            title = d.title,
-            description = d.description,
-            title_en = d.title_en,
-            description_en = d.description_en,
-            publishedAt = utils.normalize_news_date(r.publishedAt or r["publishedAt"], r.ingested_at or r["ingested_at"]),
-            source = d.source_name and {name = d.source_name} or {},
-            urlToImage = d.urlToImage,
-            content = d.content,
-            ingested_at = r.ingested_at or r["ingested_at"],
-        }
-
-        -- Apply language preference
-        if lang == "en" then
-            if article.title_en and article.title_en ~= "" then
-                article.title = article.title_en
-            end
-            if article.description_en and article.description_en ~= "" then
-                article.description = article.description_en
-            end
+        local canon = _M.canonical_url(r.url or r["url"])
+        local is_dup = canon ~= "" and seen_canon[canon]
+        if not is_dup then
+            seen_canon[canon] = true
         end
 
-        result[#result + 1] = article
+        if not is_dup then
+            local d = utils.decode_jsonb(r.data_json or r["data_json"])
+            local article = {
+                url = r.url or r["url"],
+                title = d.title,
+                description = d.description,
+                title_en = d.title_en,
+                description_en = d.description_en,
+                publishedAt = utils.normalize_news_date(r.publishedAt or r["publishedAt"], r.ingested_at or r["ingested_at"]),
+                source = d.source_name and {name = d.source_name} or {},
+                urlToImage = d.urlToImage,
+                content = d.content,
+                ingested_at = r.ingested_at or r["ingested_at"],
+            }
+
+            -- Apply language preference
+            if lang == "en" then
+                if article.title_en and article.title_en ~= "" then
+                    article.title = article.title_en
+                end
+                if article.description_en and article.description_en ~= "" then
+                    article.description = article.description_en
+                end
+            end
+
+            result[#result + 1] = article
+        end
     end
     return result
+end
+
+-- Map of normalized title -> existing URL for every news row. Used by the
+-- sync to skip articles whose story is already indexed under a DIFFERENT URL
+-- (same story published by multiple sources, e.g. syndication), which the
+-- URL-based ON CONFLICT can never catch. Table is small (~1k rows), so this
+-- is cheap enough to run every sync cycle.
+function _M.get_news_title_map()
+    local db = pool_acquire()
+    local rows = fetch_all(db, "SELECT url, json_extract(data, '$.title') AS title FROM news")
+    pool_release(db)
+
+    local map = {}
+    for _, r in ipairs(rows) do
+        local nt = utils.normalize_title(r.title)
+        if nt ~= "" and not map[nt] then
+            map[nt] = r.url
+        end
+    end
+    return map
 end
 
 function _M.has_recent_news(minutes)

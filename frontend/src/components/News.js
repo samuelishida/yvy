@@ -5,6 +5,17 @@ import './News.css';
 
 const PAGE_SIZE = 5;
 
+/**
+ * Canonical article URL for dedupe: strip fragment + trailing slashes so the
+ * same story served with/without a trailing "/" doesn't show up twice.
+ * Mirrors app/db.lua canonical_url().
+ */
+const canonUrl = (u) => {
+  if (!u) return u;
+  const base = u.split('#')[0];
+  return base.length > 1 ? base.replace(/\/+$/, '') : base;
+};
+
 const normalizeArticles = (payload) => {
   if (Array.isArray(payload)) {
     return payload;
@@ -16,6 +27,20 @@ const normalizeArticles = (payload) => {
     return payload.data;
   }
   return [];
+};
+
+/** Dedupe an article list by canonical URL (first occurrence wins). */
+const dedupeByCanonUrl = (articles) => {
+  const seen = new Set();
+  const out = [];
+  for (const a of articles) {
+    const c = canonUrl(a.url);
+    if (c && !seen.has(c)) {
+      seen.add(c);
+      out.push(a);
+    }
+  }
+  return out;
 };
 
 /**
@@ -151,12 +176,12 @@ const News = () => {
         }
 
         if (page === 1) {
-          setArticles(data);
+          setArticles(dedupeByCanonUrl(data));
           setCacheSync(cacheKey, data);  // sync write — small payload, no need to defer
         } else {
           setArticles((prevArticles) => {
-            const seen = new Set(prevArticles.map(a => a.url));
-            return [...prevArticles, ...data.filter(a => !seen.has(a.url))];
+            const seen = new Set(prevArticles.map(a => canonUrl(a.url)));
+            return [...prevArticles, ...data.filter(a => !seen.has(canonUrl(a.url)))];
           });
         }
 

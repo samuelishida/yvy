@@ -246,19 +246,13 @@ function _M.fetch_and_save_news(opts)
         return db.get_news_page(1, 20, "pt")
     end
 
-    local function norm_title(s)
-        if type(s) ~= "string" then return "" end
-        return s:lower():gsub("[%p%s]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-    end
-
     local deduped = {}
     local seen_urls = {}
     local seen_titles = {}
     for _, article in ipairs(fetched) do
-        local url = article.url or ""
-        url = url:gsub("/$", "")  -- strip trailing slash
+        local url = db.canonical_url(article.url or "")
         if url ~= "" and not seen_urls[url] then
-            local nt = norm_title(article.title)
+            local nt = utils.normalize_title(article.title)
             if nt == "" or not seen_titles[nt] then
                 seen_urls[url] = true
                 if nt ~= "" then seen_titles[nt] = true end
@@ -268,6 +262,23 @@ function _M.fetch_and_save_news(opts)
             end
         end
     end
+
+    -- Cross-batch dedupe: skip stories already indexed under a DIFFERENT URL
+    -- (the same article syndicated by another source, ingested in an earlier
+    -- sync). The in-batch pass above only sees this sync's articles; this one
+    -- checks the whole DB, which URL-based ON CONFLICT can never catch.
+    local db_titles = db.get_news_title_map()
+    local filtered = {}
+    for _, article in ipairs(deduped) do
+        local nt = utils.normalize_title(article.title)
+        local existing_url = nt ~= "" and db_titles[nt] or nil
+        if existing_url and existing_url ~= article.url then
+            logger.info("Skipping cross-source duplicate (title already indexed): " .. tostring(article.title))
+        else
+            filtered[#filtered + 1] = article
+        end
+    end
+    deduped = filtered
 
     -- Enrich missing images via og:image fetch (bounded internally)
     pcall(scrapers.enrich_missing_images, deduped)

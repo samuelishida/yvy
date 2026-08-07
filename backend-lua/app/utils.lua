@@ -32,6 +32,14 @@ function _M.decode_jsonb(blob)
     return {}
 end
 
+-- Normalize an article title for duplicate detection: lowercase, collapse
+-- punctuation/whitespace runs into single spaces, trim edges. Shared by the
+-- news sync (in-batch + cross-batch dedupe) and cleanup tools.
+function _M.normalize_title(s)
+    if type(s) ~= "string" then return "" end
+    return s:lower():gsub("[%p%s]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
 function _M.parse_csv(text)
     if not text or text == "" then
         return {}
