@@ -38,7 +38,7 @@ server {
     # Gzip (the C server doesn't compress; do it here)
     # This file is the SOURCE OF TRUTH for the full-Brazil /api/fires gzip behavior.
     # Do NOT remove `application/json` / `application/javascript` from gzip_types —
-    # `scripts/verify-gzip.sh` in CI asserts they are present. See README.en.md
+    # `scripts/dev/verify-gzip.sh` in CI asserts they are present. See README.en.md
     # "Full-Brazil fire payload (gzip)".
     gzip on;
     gzip_vary on;

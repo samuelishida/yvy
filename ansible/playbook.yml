@@ -206,7 +206,7 @@
 
     - name: Gerar secrets se .env não existir
       ansible.builtin.command:
-        cmd: bash scripts/generate-secrets.sh
+        cmd: bash scripts/deploy/generate-secrets.sh
         chdir: "{{ app_dir }}"
       become_user: "{{ yvy_user }}"
       args:
@@ -222,7 +222,7 @@
 
     - name: Rodar setup Lua
       ansible.builtin.command:
-        cmd: bash scripts/setup-lua.sh
+        cmd: bash scripts/dev/setup-lua.sh
         chdir: "{{ app_dir }}"
       environment:
         YVY_INSTALL_TEST_DEPS: "{{ yvy_install_test_deps }}"

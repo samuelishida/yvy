@@ -161,7 +161,7 @@ The C HTTP server (`yvy-server.c`) is now in `backend-lua/` because:
 All modules tested and working:
 ```bash
 # Start full stack
-cd scripts
+cd scripts\dev
 .\start-lua-stack.ps1
 
 # Test endpoints
@@ -190,7 +190,7 @@ Invoke-WebRequest http://localhost:5001/        # Frontend
 - `main.lua` - Updated all require paths
 - `app/init.lua` - Updated lookup and route imports
 - All route files - Updated middleware and lookup imports
-- `scripts/run-c-frontend.ps1` - Updated build paths
+- `scripts/dev/run-c-frontend.ps1` - Updated build paths
 - `backend-lua/yvy-server.c` - Updated STATIC_DIR path
 
 **Status:** ✅ All modules loading correctly, full stack operational.

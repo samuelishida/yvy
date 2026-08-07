@@ -316,7 +316,7 @@ jobs:
       - name: Validate shell scripts
         run: |
           sh -n backup.sh
-          sh -n scripts/*.sh
+          find ../scripts -name '*.sh' -exec sh -n {} +
 
       - name: Validate nginx config
         run: |

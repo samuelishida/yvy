@@ -97,9 +97,11 @@ yvy/
 │   └── data/                 ← JSON polygon data
 │
 ├── scripts/
-│   ├── start-lua-stack.ps1   ← Starts C frontend + Lua backend
-│   ├── run-c-frontend.ps1    ← Build & run C server
-│   └── run-lua-backend.ps1   ← Run Lua backend
+│   ├── dev/
+│   │   ├── start-lua-stack.ps1   ← Starts C frontend + Lua backend
+│   │   ├── run-c-frontend.ps1    ← Build & run C server
+│   │   └── run-lua-backend.ps1   ← Run Lua backend
+│   └── ...
 │
 └── .env                      ← Configuration
 ```
@@ -136,7 +138,7 @@ yvy-server.exe --port 5001 --backend 127.0.0.1 --static ../frontend/build --api-
 ### Start Full Stack
 
 ```powershell
-cd scripts
+cd scripts\dev
 .\start-lua-stack.ps1
 ```
 
@@ -153,16 +155,16 @@ Frontend PID: 24628
 
 ```powershell
 # Backend only
-.\run-lua-backend.ps1
+.\scripts\dev\run-lua-backend.ps1
 
 # Frontend only
-.\run-c-frontend.ps1
+.\scripts\dev\run-c-frontend.ps1
 ```
 
 ### Stop Stack
 
 ```powershell
-.\stop-lua-stack.ps1
+.\scripts\dev\stop-lua-stack.ps1
 ```
 
 ---
@@ -246,7 +248,7 @@ Invoke-WebRequest -Uri "http://localhost:5001/api/health"
 
 2. **Start stack:**
    ```powershell
-   cd scripts
+   cd scripts\dev
    .\start-lua-stack.ps1
    ```
 
@@ -260,7 +262,7 @@ Invoke-WebRequest -Uri "http://localhost:5001/api/health"
 
 2. **Start stack:**
    ```bash
-   ./scripts/start-lua-stack.sh
+   ./scripts/dev/start-lua-stack.sh
    ```
 
 ### Production (OCI VM / Render)
@@ -299,8 +301,8 @@ npm run build
 ```bash
 # Edit backend-lua/app/*.lua
 # Restart backend:
-.\stop-lua-stack.ps1
-.\start-lua-stack.ps1
+.\scripts\dev\stop-lua-stack.ps1
+.\scripts\dev\start-lua-stack.ps1
 ```
 
 ### Modify C Server
@@ -308,7 +310,7 @@ npm run build
 # Edit frontend/yvy-server.c
 gcc -Wall -O2 -o yvy-server.exe yvy-server.c -lws2_32
 # Restart frontend:
-.\run-c-frontend.ps1
+.\scripts\dev\run-c-frontend.ps1
 ```
 
 ---

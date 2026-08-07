@@ -148,12 +148,12 @@ $SSH "if [ -d /opt/yvy ]; then cd /opt/yvy && git pull; \
   && git clone https://github.com/samuelishida/yvy.git /opt/yvy; fi"
 
 # 3e. Generate .env (only if missing)
-$SSH "cd /opt/yvy && bash scripts/generate-secrets.sh"
+$SSH "cd /opt/yvy && bash scripts/deploy/generate-secrets.sh"
 # Then fix CORS_ORIGINS with your public IP:
 $SSH "sed -i 's|CORS_ORIGINS=.*|CORS_ORIGINS=http://$VM_IP:5001,http://localhost:5001|' /opt/yvy/.env"
 
 # 3f. Setup backend (Lua deps)
-$SSH "cd /opt/yvy && bash scripts/setup-lua.sh"
+$SSH "cd /opt/yvy && bash scripts/dev/setup-lua.sh"
 
 # 3g. Install/build frontend
 $SSH 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
@@ -173,7 +173,7 @@ Group=ubuntu
 WorkingDirectory=/opt/yvy
 Environment=HOME=/home/ubuntu
 Environment=YVY_LOCAL_DEV=0
-ExecStart=/usr/bin/bash /opt/yvy/scripts/run-lua.sh
+ExecStart=/usr/bin/bash /opt/yvy/scripts/dev/run-lua.sh
 Restart=always
 RestartSec=5
 
@@ -197,7 +197,7 @@ Environment=YVY_LOCAL_DEV=0
 Environment=PORT=5001
 Environment=STATIC_DIR=/opt/yvy/frontend/build
 Environment=BACKEND_URL=http://127.0.0.1:5000
-ExecStart=/usr/bin/bash /opt/yvy/scripts/run-frontend.sh
+ExecStart=/opt/yvy/backend-lua/yvy-server --port 5001 --backend 127.0.0.1 --static /opt/yvy/frontend/build --api-key ${API_KEY}
 Restart=always
 RestartSec=10
 
@@ -220,7 +220,7 @@ curl -s -o /dev/null -w '%{http_code}' http://$VM_IP:5001/  # frontend (200 = OK
 Baremetal via **Terraform + Ansible** (no Docker).
 - `infra/` — Terraform config for OCI VM.
 - `ansible/` — Ansible playbook, systemd service templates.
-- `scripts/deploy-local.sh` — orchestrates Terraform + Ansible.
+- `scripts/deploy/deploy-local.sh` — orchestrates Terraform + Ansible.
 
 Production services: `yvy-backend` (systemd), `yvy-frontend` (systemd).
 

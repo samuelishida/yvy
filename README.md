@@ -40,7 +40,7 @@ make setup
 Subir tudo:
 
 ```bash
-cd scripts
+cd scripts\dev
 .\start-lua-stack.ps1
 ```
 
@@ -69,11 +69,11 @@ URLs:
 |---------|-----------|
 | `make setup` | Instala dependências locais |
 | `make run` | Sobe backend + frontend |
-| `make backend` | Sobe só o backend |
-| `make frontend` | Sobe só o frontend |
-| `make stop` | Mata processos locais em background + portas 5000/5001 |
-| `make test` | Roda `test_sqlite_manual.py` (valida schema + queries) |
-| `make migrate` | Migra banco de flat-column para JSONB schema |
+| `make setup-lua` | Instala dependências Lua |
+| `make run-lua` | Sobe só o backend |
+| `make stop` | Para processos locais em background + portas 5000/5001 |
+| `make test-lua` | Roda a suíte de testes Lua (busted) |
+| `make migrate-lua` | Migra banco de flat-column para JSONB schema |
 | `make sqlite-access` | Abre `.tables` do banco SQLite |
 
 ## Ingestão de dados
@@ -201,15 +201,14 @@ Teste rápido:
 
 ```bash
 cd backend-lua
-lua scripts/test_db.lua
+busted --verbose tests/*.lua
 ```
 
 Suite Lua:
 
 ```bash
 cd backend-lua
-lua scripts/test_alerts.lua
-lua scripts/test_geo.lua
+busted --verbose tests/test_db.lua tests/test_geo.lua
 ```
 
 CI:
@@ -247,11 +246,11 @@ $SSH "if [ -d /opt/yvy ]; then cd /opt/yvy && sudo git pull; \
   && git clone https://github.com/samuelishida/yvy.git /opt/yvy; fi"
 
 # 3. Gere .env e configure CORS
-$SSH "cd /opt/yvy && bash scripts/generate-secrets.sh"
+$SSH "cd /opt/yvy && bash scripts/deploy/generate-secrets.sh"
 $SSH "sed -i 's|CORS_ORIGINS=.*|CORS_ORIGINS=http://$VM_IP:5001,http://localhost:5001|' /opt/yvy/.env"
 
 # 4. Setup Lua backend
-$SSH "cd /opt/yvy && bash scripts/setup-lua.sh"
+$SSH "cd /opt/yvy && bash scripts/dev/setup-lua.sh"
 
 # 5. Instale/build frontend
 $SSH 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" \
@@ -272,7 +271,7 @@ Environment=HOME=/home/ubuntu
 Environment=PORT=5000
 Environment=SQLITE_PATH=/opt/yvy/backend-lua/data/yvy.db
 Environment=REDIS_URL=redis://localhost:6379/0
-ExecStart=/usr/bin/bash /opt/yvy/scripts/run-lua.sh
+ExecStart=/usr/bin/bash /opt/yvy/scripts/dev/run-lua.sh
 Restart=always
 RestartSec=5
 [Install]
@@ -306,7 +305,7 @@ $SSH "sudo systemctl daemon-reload && sudo systemctl enable yvy-backend yvy-fron
 # 7. Instale e configure nginx + SSL
 $SSH 'sudo apt-get update && sudo apt-get install -y nginx certbot python3-certbot-nginx'
 $SSH 'sudo mkdir -p /var/www/certbot && sudo chown -R www-data:www-data /var/www/certbot'
-$SSH "sudo bash /opt/yvy/scripts/deploy-nginx.sh"
+$SSH "sudo bash /opt/yvy/scripts/deploy/deploy-nginx.sh"
 
 # 8. Verifique
 curl -s http://$VM_IP:5000/health

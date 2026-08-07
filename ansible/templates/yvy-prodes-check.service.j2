@@ -10,6 +10,6 @@ Group={{ yvy_group }}
 WorkingDirectory={{ app_dir }}
 Environment=HOME=/home/{{ yvy_user }}
 Environment=YVY_LOCAL_DEV=0
-ExecStart=/usr/bin/bash {{ app_dir }}/scripts/check_prodes_update.sh
+ExecStart=/usr/bin/bash {{ app_dir }}/scripts/data/check_prodes_update.sh
 StandardOutput=journal
 StandardError=journal

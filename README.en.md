@@ -40,7 +40,7 @@ make setup
 Start everything:
 
 ```bash
-cd scripts
+cd scripts\dev
 .\start-lua-stack.ps1
 ```
 
@@ -69,11 +69,11 @@ URLs:
 |---------|-------------|
 | `make setup` | Install local dependencies |
 | `make run` | Start backend + frontend |
-| `make backend` | Start backend only |
-| `make frontend` | Start frontend only |
-| `make stop` | Kill background processes + ports 5000/5001 |
-| `make test` | Run `test_sqlite_manual.py` (validates schema + queries) |
-| `make migrate` | Migrate database from flat-column to JSONB schema |
+| `make setup-lua` | Install Lua dependencies |
+| `make run-lua` | Start backend only |
+| `make stop` | Stop background processes + ports 5000/5001 |
+| `make test-lua` | Run the Lua test suite (busted) |
+| `make migrate-lua` | Migrate database from flat-column to JSONB schema |
 | `make sqlite-access` | Open SQLite `.tables` |
 
 ## Data ingestion
@@ -113,7 +113,7 @@ deliberate product decision (all of Brazil on load). It stays acceptable because
   `ansible/templates/yvy-nginx.conf.j2`), reducing the ~1.28 MB raw payload to ~176 KB
   over the wire.
 
-`scripts/verify-gzip.sh` (wired into CI) guards this: it asserts the nginx template
+`scripts/dev/verify-gzip.sh` (wired into CI) guards this: it asserts the nginx template
 still enables gzip for `application/json`/`application/javascript`, and — when given a
 URL — that a live endpoint returns `Content-Encoding: gzip`.
 
@@ -197,7 +197,7 @@ The migration script:
 
 The app also auto-migrates on startup if a legacy schema is detected.
 
-**Note on older SQLite:** `scripts/setup-lua.sh` builds SQLite 3.45+ from source when the system SQLite is too old for JSONB.
+**Note on older SQLite:** `scripts/dev/setup-lua.sh` builds SQLite 3.45+ from source when the system SQLite is too old for JSONB.
 
 ## Security
 
@@ -213,7 +213,7 @@ The app also auto-migrates on startup if a legacy schema is detected.
 Quick test via Make:
 
 ```bash
-make test
+make test-lua
 ```
 
 Lua test suite:
@@ -260,11 +260,11 @@ $SSH "if [ -d /opt/yvy ]; then cd /opt/yvy && sudo git pull; \
   && git clone https://github.com/samuelishida/yvy.git /opt/yvy; fi"
 
 # 3. Generate .env and configure CORS
-$SSH "cd /opt/yvy && bash scripts/generate-secrets.sh"
+$SSH "cd /opt/yvy && bash scripts/deploy/generate-secrets.sh"
 $SSH "sed -i 's|CORS_ORIGINS=.*|CORS_ORIGINS=http://$VM_IP:5001,http://localhost:5001|' /opt/yvy/.env"
 
 # 4. Setup Lua backend
-$SSH "cd /opt/yvy && bash scripts/setup-lua.sh"
+$SSH "cd /opt/yvy && bash scripts/dev/setup-lua.sh"
 
 # 5. Install/build frontend
 $SSH 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" \
@@ -284,7 +284,7 @@ Group=ubuntu
 WorkingDirectory=/opt/yvy
 Environment=HOME=/home/ubuntu
 Environment=YVY_LOCAL_DEV=0
-ExecStart=/usr/bin/bash /opt/yvy/scripts/run-lua.sh
+ExecStart=/usr/bin/bash /opt/yvy/scripts/dev/run-lua.sh
 Restart=always
 RestartSec=5
 
@@ -298,7 +298,7 @@ $SSH "sudo systemctl daemon-reload && sudo systemctl enable yvy-backend \
 # 7. Install and configure nginx + SSL
 $SSH 'sudo apt-get update && sudo apt-get install -y nginx certbot python3-certbot-nginx'
 $SSH 'sudo mkdir -p /var/www/certbot && sudo chown -R www-data:www-data /var/www/certbot'
-$SSH "sudo bash /opt/yvy/scripts/deploy-nginx.sh"
+$SSH "sudo bash /opt/yvy/scripts/deploy/deploy-nginx.sh"
 
 # 8. Verify
 curl -s http://$VM_IP:5000/health

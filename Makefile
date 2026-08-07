@@ -5,20 +5,20 @@
 # ── Setup ──────────────────────────────────────────────────────────────────────
 
 setup:
-	bash scripts/setup-local.sh
+	bash scripts/dev/setup-local.sh
 
 # ── Run ────────────────────────────────────────────────────────────────────────
 
 run:
-	bash scripts/start-lua-stack.sh
+	bash scripts/dev/start-lua-stack.sh
 
 # ── Lua backend targets ───────────────────────────────────────────────────────
 
 setup-lua:
-	bash scripts/setup-lua.sh
+	bash scripts/dev/setup-lua.sh
 
 run-lua:
-	bash scripts/run-lua.sh
+	bash scripts/dev/run-lua.sh
 
 test-lua:
 	cd backend-lua && busted --verbose tests/*.lua
@@ -30,16 +30,6 @@ sqlite-access:
 	@sqlite3 backend-lua/data/yvy.db ".tables"
 
 stop:
-	@echo "Killing Yvy processes..."
-	@pkill -f "lua main.lua" 2>/dev/null || true
-	@pkill -f "yvy-server" 2>/dev/null || true
-	@if command -v lsof >/dev/null 2>&1; then \
-		pids=$$(lsof -tiTCP:5000 -sTCP:LISTEN 2>/dev/null || true); \
-		[ -z "$$pids" ] || kill $$pids 2>/dev/null || true; \
-		pids=$$(lsof -tiTCP:5001 -sTCP:LISTEN 2>/dev/null || true); \
-		[ -z "$$pids" ] || kill $$pids 2>/dev/null || true; \
-	fi
-	@pkill -f "[r]eact-scripts start" 2>/dev/null || true
-	@pkill -f "[n]ode.*react-scripts" 2>/dev/null || true
-	@pkill -f "[n]ode server.js" 2>/dev/null || true
+	@echo "Stopping Yvy processes..."
+	@bash scripts/dev/stop-lua-stack.sh
 	@echo "Local processes stopped."

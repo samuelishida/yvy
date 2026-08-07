@@ -30,7 +30,7 @@ lua-tests:
     # Validate C server compiles
     - gcc -o yvy-server.exe yvy-server.c -lws2_32 2>/dev/null || echo "C compile skipped (Windows-only)"
     # Validate shell scripts
-    - sh -n ../scripts/*.sh 2>/dev/null || true
+    - find ../scripts -name '*.sh' -exec sh -n {} \; 2>/dev/null || true
     # Validate nginx config
     - openresty -t -c nginx.conf 2>&1 || true
 
@@ -40,11 +40,11 @@ shell-and-js-validation:
   image: node:20
   script:
     - sh -n backup.sh
-    - sh -n scripts/setup-local.sh
-    - sh -n scripts/run-backend.sh
-    - sh -n scripts/run-frontend.sh
-    - sh -n scripts/deploy-local.sh
-    - sh -n scripts/deploy-nginx.sh
+    - sh -n scripts/dev/setup-local.sh
+    - sh -n scripts/dev/run-lua.sh
+    - sh -n scripts/dev/run-c-frontend.sh
+    - sh -n scripts/deploy/deploy-local.sh
+    - sh -n scripts/deploy/deploy-nginx.sh
 
 # ── PRODES data pre-processing ───────────────────────────────────────────
 prodes-preprocess:

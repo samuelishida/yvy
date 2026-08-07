@@ -17,10 +17,10 @@
 - Run `./backup.sh` → `sqlite_backups/yvy_*.sqlite3.gz`
 
 ### Prod → desktop (automated, recommended)
-- Desktop puller: `scripts/pull-prod-backups.sh` — SSHes into the prod VM,
+- Desktop puller: `scripts/backup/pull-prod-backups.sh` — SSHes into the prod VM,
   snapshots the DB consistently (`sqlite3 .backup`, WAL-safe), pulls it to
   `~/yvy-backups/weekly/`.
-- Installed as a weekly cron (Sunday 03:17) via `scripts/install-backup-cron.sh`.
+- Installed as a weekly cron (Sunday 03:17) via `scripts/backup/install-backup-cron.sh`.
 - Retention: keeps the last 2 backups (~2 weeks); nothing older is kept.
   Logs: `~/yvy-backups/backup.log`.
 - Overrides (env): `PROD_VM_IP`, `SSH_KEY`, `LOCAL_BACKUP_DIR`,
@@ -41,6 +41,6 @@
 
 1. Run the CI checks locally or via GitHub Actions.
 2. Update `.env` with the target environment values.
-3. Deploy with Terraform + Ansible (`bash scripts/deploy-local.sh`) or restart services (`sudo systemctl restart yvy-backend yvy-frontend`).
+3. Deploy with Terraform + Ansible (`bash scripts/deploy/deploy-local.sh`) or restart services (`sudo systemctl restart yvy-backend yvy-frontend`).
 4. Verify `/health` on frontend and backend.
-5. Roll back by checking out the previous git revision, rerunning `scripts/setup-local.sh`, and restarting os serviços.
+5. Roll back by checking out the previous git revision, rerunning `scripts/dev/setup-local.sh`, and restarting os serviços.

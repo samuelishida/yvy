@@ -23,8 +23,10 @@ ansible/
     └── yvy-frontend.service.j2
 
 scripts/
-├── generate-secrets.sh      # Gera .env com secrets aleatórios
-└── deploy-local.sh          # Deploy manual local (Terraform + Ansible)
+├── deploy/
+│   ├── generate-secrets.sh  # Gera .env com secrets aleatórios
+│   └── deploy-local.sh      # Deploy manual local (Terraform + Ansible)
+└── dev/                     # Scripts de dev local
 ```
 
 ---
@@ -130,12 +132,12 @@ $SSH "if [ -d /opt/yvy ]; then cd /opt/yvy && git pull; \
   && git clone https://github.com/samuelishida/yvy.git /opt/yvy; fi"
 
 # 5. Gerar .env (apenas se não existir)
-$SSH "cd /opt/yvy && bash scripts/generate-secrets.sh"
+$SSH "cd /opt/yvy && bash scripts/deploy/generate-secrets.sh"
 # Corrigir CORS_ORIGINS com IP público:
 $SSH "sed -i 's|CORS_ORIGINS=.*|CORS_ORIGINS=http://<IP_DA_VM>:5001,http://localhost:5001|' /opt/yvy/.env"
 
 # 6. Setup backend Lua
-$SSH "cd /opt/yvy && bash scripts/setup-lua.sh"
+$SSH "cd /opt/yvy && bash scripts/dev/setup-lua.sh"
 
 # 7. Instalar/build frontend com Node 18
 $SSH 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" \
@@ -155,7 +157,7 @@ Group=ubuntu
 WorkingDirectory=/opt/yvy
 Environment=HOME=/home/ubuntu
 Environment=YVY_LOCAL_DEV=0
-ExecStart=/usr/bin/bash /opt/yvy/scripts/run-lua.sh
+ExecStart=/usr/bin/bash /opt/yvy/scripts/dev/run-lua.sh
 Restart=always
 RestartSec=5
 
@@ -179,7 +181,7 @@ Environment=YVY_LOCAL_DEV=0
 Environment=PORT=5001
 Environment=BROWSER=none
 Environment=PATH=/home/ubuntu/.nvm/versions/node/v18.20.8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/usr/bin/bash /opt/yvy/scripts/run-frontend.sh
+ExecStart=/usr/bin/bash /opt/yvy/scripts/dev/run-c-frontend.sh
 Restart=always
 RestartSec=10
 
@@ -228,12 +230,12 @@ $SSH "if [ -d /opt/yvy ]; then cd /opt/yvy && git pull; \
   && git clone https://github.com/samuelishida/yvy.git /opt/yvy; fi"
 
 # 5. Gerar .env (apenas se não existir)
-$SSH "cd /opt/yvy && bash scripts/generate-secrets.sh"
+$SSH "cd /opt/yvy && bash scripts/deploy/generate-secrets.sh"
 # Corrigir CORS_ORIGINS com IP público:
 $SSH "sed -i 's|CORS_ORIGINS=.*|CORS_ORIGINS=http://<IP_DA_VM>:5001,http://localhost:5001|' /opt/yvy/.env"
 
 # 6. Setup backend Lua
-$SSH "cd /opt/yvy && bash scripts/setup-lua.sh"
+$SSH "cd /opt/yvy && bash scripts/dev/setup-lua.sh"
 
 # 7. Instalar/build frontend com Node 18
 $SSH 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" \
@@ -253,7 +255,7 @@ Group=ubuntu
 WorkingDirectory=/opt/yvy
 Environment=HOME=/home/ubuntu
 Environment=YVY_LOCAL_DEV=0
-ExecStart=/usr/bin/bash /opt/yvy/scripts/run-lua.sh
+ExecStart=/usr/bin/bash /opt/yvy/scripts/dev/run-lua.sh
 Restart=always
 RestartSec=5
 
@@ -277,7 +279,7 @@ Environment=YVY_LOCAL_DEV=0
 Environment=PORT=5001
 Environment=BROWSER=none
 Environment=PATH=/home/ubuntu/.nvm/versions/node/v18.20.8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/usr/bin/bash /opt/yvy/scripts/run-frontend.sh
+ExecStart=/usr/bin/bash /opt/yvy/scripts/dev/run-c-frontend.sh
 Restart=always
 RestartSec=10
 
@@ -298,7 +300,7 @@ curl -s -o /dev/null -w '%{http_code}' http://<IP_DA_VM>:5001/  # frontend (200 
 ### Opção B: Terraform + Ansible
 
 ```bash
-cd scripts
+cd scripts/deploy
 bash deploy-local.sh
 ```
 
@@ -393,7 +395,7 @@ cd /opt/yvy && bash backup.sh
 ```bash
 cd /opt/yvy
 git pull
-bash scripts/setup-lua.sh
+bash scripts/dev/setup-lua.sh
 # Reinstalar deps do frontend se necessário:
 export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 cd frontend && npm ci && npm run build

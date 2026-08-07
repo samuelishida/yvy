@@ -67,24 +67,28 @@ jobs:
       - name: Validate shell scripts
         run: |
           for f in backup.sh stop.sh \
-                   scripts/setup-local.sh \
-                   scripts/setup-lua.sh \
-                   scripts/run-lua.sh \
-                   scripts/run-c-frontend.sh \
-                   scripts/start-lua-stack.sh \
-                   scripts/stop-lua-stack.sh \
-                   scripts/kill-rogue-yvy.sh \
-                   scripts/generate-secrets.sh \
-                   scripts/deploy-local.sh \
-                   scripts/deploy-nginx.sh \
-                   scripts/verify-gzip.sh; do
-            [ -f "$f" ] && sh -n "$f" || echo "SKIP $f (not found)"
+                   scripts/dev/setup-local.sh \
+                   scripts/dev/setup-lua.sh \
+                   scripts/dev/run-lua.sh \
+                   scripts/dev/run-c-frontend.sh \
+                   scripts/dev/start-lua-stack.sh \
+                   scripts/deploy/generate-secrets.sh \
+                   scripts/deploy/deploy-local.sh \
+                   scripts/deploy/deploy-nginx.sh \
+                   scripts/dev/verify-gzip.sh; do
+            # Fail on real syntax errors; a missing (optional) file is OK.
+            if [ -f "$f" ]; then sh -n "$f" || exit 1; else echo "skip $f (not found)"; fi
           done
           # bash-only scripts (arrays, [[ ]]) — must use bash -n
-          for f in scripts/prod-backup.sh \
-                   scripts/pull-prod-backups.sh \
-                   scripts/install-backup-cron.sh; do
-            [ -f "$f" ] && bash -n "$f" || echo "SKIP $f (not found)"
+          for f in scripts/dev/stop-lua-stack.sh \
+                   scripts/dev/kill-rogue-yvy.sh \
+                   scripts/backup/prod-backup.sh \
+                   scripts/backup/pull-prod-backups.sh \
+                   scripts/backup/install-backup-cron.sh \
+                   scripts/data/check_prodes_update.sh \
+                   scripts/data/deter_daily.sh \
+                   scripts/dev/setup-python-env.sh; do
+            if [ -f "$f" ]; then bash -n "$f" || exit 1; else echo "skip $f (not found)"; fi
           done
 
       - name: Lint shell scripts (shellcheck)
@@ -92,19 +96,21 @@ jobs:
           sudo apt-get install -y shellcheck
           shellcheck -S warning \
             backup.sh stop.sh \
-            scripts/setup-local.sh scripts/setup-lua.sh \
-            scripts/run-lua.sh scripts/run-c-frontend.sh \
-            scripts/start-lua-stack.sh scripts/stop-lua-stack.sh \
-            scripts/kill-rogue-yvy.sh scripts/generate-secrets.sh \
-            scripts/deploy-local.sh scripts/deploy-nginx.sh \
-            scripts/verify-gzip.sh \
-            scripts/prod-backup.sh scripts/pull-prod-backups.sh \
-            scripts/install-backup-cron.sh \
+            scripts/dev/setup-local.sh scripts/dev/setup-lua.sh \
+            scripts/dev/run-lua.sh scripts/dev/run-c-frontend.sh \
+            scripts/dev/start-lua-stack.sh scripts/dev/stop-lua-stack.sh \
+            scripts/dev/kill-rogue-yvy.sh scripts/deploy/generate-secrets.sh \
+            scripts/deploy/deploy-local.sh scripts/deploy/deploy-nginx.sh \
+            scripts/dev/verify-gzip.sh \
+            scripts/backup/prod-backup.sh scripts/backup/pull-prod-backups.sh \
+            scripts/backup/install-backup-cron.sh \
+            scripts/data/check_prodes_update.sh scripts/data/deter_daily.sh \
+            scripts/dev/setup-python-env.sh \
           || true
 
       - name: Guard nginx gzip config (template)
         run: |
-          bash scripts/verify-gzip.sh
+          bash scripts/dev/verify-gzip.sh
 
       - name: Validate Ansible playbook syntax
         run: |
@@ -126,7 +132,8 @@ jobs:
       # New TerraBrasilis batch scripts must compile before they can run.
       - name: Validate Python syntax
         run: |
-          python3 -m py_compile scripts/*.py
+          export PYTHONPYCACHEPREFIX="$RUNNER_TEMP/pycache"
+          find scripts -name '*.py' -print0 | xargs -0 -n1 python3 -m py_compile
 
   frontend-build:
     runs-on: ubuntu-latest

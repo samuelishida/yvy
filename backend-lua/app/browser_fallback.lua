@@ -9,8 +9,8 @@ end
 
 local function resolve_script_path()
     local candidates = {
-        "scripts/browser_fallback.py",
-        "../scripts/browser_fallback.py",
+        "scripts/lib/browser_fallback.py",
+        "../scripts/lib/browser_fallback.py",
     }
 
     for _, path in ipairs(candidates) do
@@ -21,7 +21,7 @@ local function resolve_script_path()
         end
     end
 
-    return "scripts/browser_fallback.py"
+    return "scripts/lib/browser_fallback.py"
 end
 
 local function detect_python()
