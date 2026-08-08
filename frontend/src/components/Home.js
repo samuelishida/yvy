@@ -32,7 +32,7 @@ const BIOME_HIGHLIGHT_COLORS = {
 const FIRE_STYLES = {
   nominal: { color: '#EF5350', fillColor: '#EF5350', fillOpacity: 0.88, radius: 2.5, weight: 0 },
   high:    { color: '#f97316', fillColor: '#f97316', fillOpacity: 0.72, radius: 2,   weight: 0 },
-  low:     { color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 0.55, radius: 1.5, weight: 0 },
+  low:     { color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 0.38, radius: 1.5, weight: 0 },
 };
 
 // Nature classes (Inc 7): crime = vermelho, suspeito = laranja, permitido =
@@ -41,7 +41,7 @@ const FIRE_STYLES = {
 const FIRE_NATURE_COLORS = {
   crime:     { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.9,  radius: 3,   weight: 0 },
   suspeito:  { color: '#f97316', fillColor: '#f97316', fillOpacity: 0.82, radius: 2.5, weight: 0 },
-  permitido: { color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.78, radius: 2.5, weight: 0 },
+  permitido: { color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.5,  radius: 2.5, weight: 0 },
   natural:   { color: '#38bdf8', fillColor: '#38bdf8', fillOpacity: 0.72, radius: 2.5, weight: 0 },
 };
 
@@ -696,8 +696,8 @@ const ALERT_TYPE_KEYS = {
   deter_protected: 'alertDeterProtected',
 };
 
-const INDIGENOUS_STYLE = { color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.22, weight: 2.5, opacity: 0.9, dashArray: '6 4' };
-const CONSERVATION_STYLE = { color: '#4ade80', fillColor: '#4ade80', fillOpacity: 0.2, weight: 2.5, opacity: 0.9, dashArray: '6 4' };
+const INDIGENOUS_STYLE = { color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.14, weight: 2.5, opacity: 0.9, dashArray: '6 4' };
+const CONSERVATION_STYLE = { color: '#4ade80', fillColor: '#4ade80', fillOpacity: 0.12, weight: 2.5, opacity: 0.9, dashArray: '6 4' };
 
 // CAR overlay: tiles são PNGs opacos pré-renderizados em lime (#a3e635, ver
 // scripts/data/render_car_tiles.py). O TileLayer .car-tiles aplica um filtro
@@ -1333,7 +1333,6 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               position={carPos}
               autoClose
               closeOnClick={false}
-              className="car-popup-root"
             >
               {carInspect.imovel ? (
                 <div className="car-popup">

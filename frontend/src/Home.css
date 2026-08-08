@@ -204,10 +204,10 @@
 .prodes-check-btn:active { transform: translateY(1px); }
 .prodes-check-btn:disabled { opacity: 0.5; cursor: default; }
 
-/* ── Popup CAR ────────────────────────────────────────── */
-/* Leaflet's default popup is white; theme the whole card dark so the
-   light-on-dark font (below) is readable and matches the app chrome. */
-.car-popup-root .leaflet-popup-content-wrapper {
+/* ── Leaflet popups — Yvy dark theme (CAR, fogo, TI, UC, AMS) ──
+   Leaflet's default popup is white; theme every map card dark so the
+   light-on-dark font is readable and matches the app chrome. */
+.map-stage .leaflet-popup-content-wrapper {
   background: rgba(13, 19, 16, 0.96);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -216,18 +216,20 @@
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
   color: #E8F0EC;
 }
-.car-popup-root .leaflet-popup-tip {
+.map-stage .leaflet-popup-tip {
   background: rgba(13, 19, 16, 0.96);
   border: 1px solid rgba(42, 53, 48, 1);
 }
-.car-popup-root .leaflet-popup-content {
+.map-stage .leaflet-popup-content {
   margin: 12px 14px;
   line-height: 1.45;
 }
-.car-popup-root .leaflet-popup-close-button {
+.map-stage .leaflet-popup-content a { color: #00C97A; }
+.map-stage .leaflet-popup-content small { color: rgba(232, 240, 236, 0.7); }
+.map-stage .leaflet-popup-close-button {
   color: rgba(232, 240, 236, 0.65);
 }
-.car-popup-root .leaflet-popup-close-button:hover {
+.map-stage .leaflet-popup-close-button:hover {
   color: #E8F0EC;
 }
 .car-popup {
