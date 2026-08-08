@@ -696,8 +696,8 @@ const ALERT_TYPE_KEYS = {
   deter_protected: 'alertDeterProtected',
 };
 
-const INDIGENOUS_STYLE = { color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.14, weight: 2.5, opacity: 0.9, dashArray: '6 4' };
-const CONSERVATION_STYLE = { color: '#4ade80', fillColor: '#4ade80', fillOpacity: 0.12, weight: 2.5, opacity: 0.9, dashArray: '6 4' };
+const INDIGENOUS_STYLE = { color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.08, weight: 2.5, opacity: 0.9, dashArray: '6 4' };
+const CONSERVATION_STYLE = { color: '#4ade80', fillColor: '#4ade80', fillOpacity: 0.07, weight: 2.5, opacity: 0.9, dashArray: '6 4' };
 
 // CAR overlay: tiles são PNGs opacos pré-renderizados em lime (#a3e635, ver
 // scripts/data/render_car_tiles.py). O TileLayer .car-tiles aplica um filtro
