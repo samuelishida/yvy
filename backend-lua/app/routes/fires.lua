@@ -59,7 +59,16 @@ function _M.get_fires(ctx)
         if days > 365 then days = 365 end
     end
 
-    local cache_key = "firescache:" .. (ne_lat or "global") .. ":" .. (ne_lng or "") .. ":" .. (sw_lat or "") .. ":" .. (sw_lng or "") .. (args.vegetation == "true" and ":veg" or "") .. (source ~= "" and (":" .. source) or "") .. (days and (":days" .. days) or "")
+    -- ?limit=N opcional (500..50000): cap de resultados para o frontend não
+    -- travar com 50k CircleMarkers. Sem limit, usa o default de cada query.
+    local limit = nil
+    if args.limit ~= nil and args.limit ~= "" then
+        limit = tonumber(args.limit)
+        if not limit or limit < 500 then limit = 500 end
+        if limit > 50000 then limit = 50000 end
+    end
+
+    local cache_key = "firescache:" .. (ne_lat or "global") .. ":" .. (ne_lng or "") .. ":" .. (sw_lat or "") .. ":" .. (sw_lng or "") .. (args.vegetation == "true" and ":veg" or "") .. (source ~= "" and (":" .. source) or "") .. (days and (":days" .. days) or "") .. (limit and (":lim" .. limit) or "")
 
     local cached = redis.get(cache_key)
     if cached then
@@ -98,11 +107,13 @@ function _M.get_fires(ctx)
     end
     local data
     if days then
-        -- Janela de datas (find_fires_since): limite alto (50k) para janelas
-        -- longas não truncarem os focos antigos que queremos ver.
-        data = db.find_fires_since(days, sw_lat, ne_lat, sw_lng, ne_lng, 50000, true)
+        -- Janela de datas (find_fires_since): default 50000 — durante a
+        -- moratória (jul-out) os mais recentes são todos 'crime', e um limite
+        -- baixo truncaria os 'permitido' (Abr-Jun). O frontend faz zoom-gate
+        -- (z<7 não renderiza) + viewport-clip para performance.
+        data = db.find_fires_since(days, sw_lat, ne_lat, sw_lng, ne_lng, limit or 50000, true)
     else
-        data = db.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, MAX_RESULTS, true, source_filter)
+        data = db.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit or MAX_RESULTS, true, source_filter)
     end
 
     -- Inc 8 (plan: terrabrasilis-integration): ?vegetation=true cruza cada foco

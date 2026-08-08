@@ -318,6 +318,13 @@ function ViewportFireFilter({ fires, onVisibleFiresChange }) {
         onVisibleFiresChange([]);
         return;
       }
+      // Zoom-gate: abaixo de zoom 7 o Brasil inteiro cabe na tela e pontos
+      // individuais são invisíveis — evita renderizar 15k CircleMarkers.
+      const zoom = map.getZoom();
+      if (zoom < 7) {
+        onVisibleFiresChange([]);
+        return;
+      }
       const b = map.getBounds();
       const latSpan = b.getNorth() - b.getSouth();
       const lonSpan = b.getEast() - b.getWest();
@@ -997,21 +1004,6 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           >
             <Flame size={10} /> {t('home.layerFires')}<span className="lt-sub">FIRMS</span>
           </button>
-          {/* Período dos focos (plan: sinaflor-fogo-permitido): ?days=N no
-              /api/fires. Padrão 'Atuais' (10k mais recentes); 90/365 revelam
-              focos antigos (ex: permitido fora da moratória). */}
-          <select
-            className="days-select"
-            value={fireDays ?? ''}
-            onChange={e => setFireDays(e.target.value ? Number(e.target.value) : null)}
-            title={t('home.firePeriod')}
-          >
-            <option value="">{t('home.firePeriodRecent')}</option>
-            <option value="7">7 {t('home.days')}</option>
-            <option value="30">30 {t('home.days')}</option>
-            <option value="90">90 {t('home.days')}</option>
-            <option value="365">365 {t('home.days')}</option>
-          </select>
           <button
             className={`layer-toggle${satellite ? ' active' : ''}`}
             onClick={() => setSatellite(!satellite)}
@@ -1346,6 +1338,21 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             <span>{t('home.confidenceHigh')}</span>
             <span>{t('home.confidenceLow')}</span>
           </span>
+          <span className="nature-legend-sep" />
+          <label className="nature-legend-period">
+            <span className="nature-legend-title">{t('home.firePeriod')}</span>
+            <select
+              className="days-select"
+              value={fireDays ?? ''}
+              onChange={e => setFireDays(e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">{t('home.firePeriodRecent')}</option>
+              <option value="7">7 {t('home.days')}</option>
+              <option value="30">30 {t('home.days')}</option>
+              <option value="90">90 {t('home.days')}</option>
+              <option value="365">365 {t('home.days')}</option>
+            </select>
+          </label>
         </div>
       )}
 
@@ -1372,7 +1379,10 @@ export default function Home() {
   const [fires,          setFires]          = useState(null);
   // Período dos focos (plan: sinaflor-fogo-permitido): null = 10k mais recentes;
   // 7/30/90/365 = janela ?days=N (revela focos antigos, ex: permitido).
-  const [fireDays,       setFireDays]       = useState(null);
+  // Default 90 — durante a moratória (jul-out) os 10k mais recentes são todos
+  // 'crime' e escondem os 'permitido' (Abr–Jun); 90 dias é o mínimo para ver
+  // verdes sem carregar o ano todo.
+  const [fireDays,       setFireDays]       = useState(90);
   const [airQuality,     setAirQuality]     = useState(null);
   const [temperature,    setTemperature]    = useState(null);
   const [showDeforest,   setShowDeforest]   = useState(true);
@@ -1538,7 +1548,10 @@ export default function Home() {
     const cacheKey = 'fires' + (fireDays ? ':' + fireDays : '');
     const cached = getCache(cacheKey, 240);
     if (cached) setFires(asArray(cached.fires).filter(validFire));
-    const url = '/api/fires?vegetation=true' + (fireDays ? `&days=${fireDays}` : '');
+    // ?limit=15000: cap suficiente para ver permitido (162/90d) sem travar
+    // o frontend com 50k CircleMarkers. Sem days, o default já é 10k.
+    const limit = fireDays ? '&limit=15000' : '';
+    const url = '/api/fires?vegetation=true' + (fireDays ? `&days=${fireDays}` : '') + limit;
     fetch(url, { signal: ac.signal })
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(d => {

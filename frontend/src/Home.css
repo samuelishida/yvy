@@ -204,15 +204,23 @@
 .prodes-check-btn:active { transform: translateY(1px); }
 .prodes-check-btn:disabled { opacity: 0.5; cursor: default; }
 
-/* Período dos focos — seletor compacto na barra de camadas (plan: sinaflor-fogo-permitido) */
+/* Período dos focos — integrado à legenda de natureza (plan: sinaflor-fogo-permitido) */
+.nature-legend-period {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  pointer-events: auto;
+}
 .days-select {
-  background: rgba(13, 19, 16, 0.85);
+  background: rgba(13, 19, 16, 0.92);
   color: #e8f0ec;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(42, 53, 48, 1);
   border-radius: 6px;
   font-size: 11px;
+  font-family: var(--font-mono);
   padding: 3px 6px;
   height: 24px;
+  cursor: pointer;
 }
 .days-select:focus { outline: none; border-color: rgba(34, 197, 94, 0.6); }
 .days-select option { background: #0d1310; color: #e8f0ec; }

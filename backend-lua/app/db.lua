@@ -565,7 +565,7 @@ function _M.find_fires_since(days, sw_lat, ne_lat, sw_lng, ne_lng, limit, brazil
         sql = sql .. "\n          AND " .. is_brazil_filter_sql()
     end
     sql = sql .. [[
-        ORDER BY acq_date DESC, lat, lon
+        ORDER BY CASE WHEN nature = 'permitido' THEN 0 ELSE 1 END, acq_date DESC, lat, lon
         LIMIT ?
     ]]
     params[#params + 1] = limit
