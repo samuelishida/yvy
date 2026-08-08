@@ -90,7 +90,11 @@ function _M.get_fires(ctx)
         if limit > 50000 then limit = 50000 end
     end
 
-    local cache_key = "firescache:" .. (ne_lat or "global") .. ":" .. (ne_lng or "") .. ":" .. (sw_lat or "") .. ":" .. (sw_lng or "") .. (args.vegetation == "true" and ":veg" or "") .. (source ~= "" and (":" .. source) or "") .. (days and (":days" .. days) or "") .. (limit and (":lim" .. limit) or "")
+    -- Formato compacto reduz ~66% do payload JSON sem depender de zlib/gzip.
+    -- O frontend expande localmente; ideal para mobile/lento.
+    local compact = args.compact == "true"
+
+    local cache_key = "firescache:" .. (ne_lat or "global") .. ":" .. (ne_lng or "") .. ":" .. (sw_lat or "") .. ":" .. (sw_lng or "") .. (args.vegetation == "true" and ":veg" or "") .. (source ~= "" and (":" .. source) or "") .. (days and (":days" .. days) or "") .. (limit and (":lim" .. limit) or "") .. (compact and ":compact" or "")
 
     local cached = redis.get(cache_key)
     if cached then
@@ -133,14 +137,19 @@ function _M.get_fires(ctx)
         -- moratória (jul-out) os mais recentes são todos 'crime', e um limite
         -- baixo truncaria os 'permitido' (Abr-Jun). O frontend faz zoom-gate
         -- (z<7 não renderiza) + viewport-clip para performance.
-        data = db.find_fires_since(days, sw_lat, ne_lat, sw_lng, ne_lng, limit or 50000, true)
+        data = compact
+            and db.find_fires_since_compact(days, sw_lat, ne_lat, sw_lng, ne_lng, limit or 50000, true)
+            or db.find_fires_since(days, sw_lat, ne_lat, sw_lng, ne_lng, limit or 50000, true)
     else
-        data = db.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit or MAX_RESULTS, true, source_filter)
+        data = compact
+            and db.find_fires_compact(sw_lat, ne_lat, sw_lng, ne_lng, limit or MAX_RESULTS, true, source_filter)
+            or db.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit or MAX_RESULTS, true, source_filter)
     end
 
     -- Inc 8 (plan: terrabrasilis-integration): ?vegetation=true cruza cada foco
     -- com PRODES no local — UMA query de deforestation_data por bbox + atribuição.
-    if args.vegetation == "true" then
+    -- Não disponível no modo compacto (que já omite vegetation por design).
+    if args.vegetation == "true" and not compact then
         local veg_map = db.get_vegetation_context_batch(sw_lat, ne_lat, sw_lng, ne_lng, data)
         for i, f in ipairs(data) do
             f.vegetation = veg_map[i]  -- (d) batch sempre devolve o mapa completo

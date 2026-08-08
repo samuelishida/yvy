@@ -97,6 +97,18 @@ function alertForFire(fire, alerts) {
   return best;
 }
 
+const MOBILE_BREAKPOINT = 720;
+
+function useWindowSize() {
+  const [size, setSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+  useEffect(() => {
+    const onResize = () => setSize({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return size;
+}
+
 function fireStyle(fire) {
   const nature = fire?.nature;
   if (nature && FIRE_NATURE_COLORS[nature]) return FIRE_NATURE_COLORS[nature];
@@ -556,7 +568,7 @@ function GaugeRing({ value, max, color, size = 64 }) {
   );
 }
 
-const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAlertEnter, onAlertLeave, airQuality, temperature, onBiomeHover, loaded }) {
+const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAlertEnter, onAlertLeave, airQuality, temperature, onBiomeHover, loaded, isMobile }) {
   // Always collapsed on mount — the summary line already shows the live count
   // (crit/warn badges + total); the user expands on demand. Auto-opening would
   // defeat the collapse-by-default declutter.
@@ -579,9 +591,12 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
     });
   }, [alerts]);
 
+  const toggleOpen = () => setOpen(o => !o);
+  const handleTab = (t) => { setTab(t); if (t !== 'biomes') onBiomeHover?.(null); };
+
   return (
-    <div className={`float-panel${open ? ' float-panel--open' : ''}`}>
-      <button className="fp-summary" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+    <div className={`float-panel${open ? ' float-panel--open' : ''}${isMobile ? ' float-panel--mobile' : ''}`}>
+      <button className="fp-summary" onClick={toggleOpen} aria-expanded={open}>
         <div className="fp-hero">
           <span className="fp-count">{loaded ? alerts.length.toLocaleString('pt-BR') : '—'}</span>
           <span className="fp-unit">{t('home.panelAlertsUnit')}</span>
@@ -595,13 +610,13 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
       {open && (
         <div className="fp-body">
           <div className="fp-tabs">
-            <button className={`fp-tab${tab === 'alerts' ? ' fp-tab--active' : ''}`} onClick={() => setTab('alerts')}>
+            <button className={`fp-tab${tab === 'alerts' ? ' fp-tab--active' : ''}`} onClick={() => handleTab('alerts')}>
               {t('home.tabAlerts')} ({alerts.length})
             </button>
             <button className={`fp-tab${tab === 'biomes' ? ' fp-tab--active' : ''}`} onClick={() => { setTab('biomes'); onBiomeHover?.(null); }}>
               {t('home.tabBiomes')}
             </button>
-            <button className={`fp-tab${tab === 'clima' ? ' fp-tab--active' : ''}`} onClick={() => { setTab('clima'); onBiomeHover?.(null); }}>
+            <button className={`fp-tab${tab === 'clima' ? ' fp-tab--active' : ''}`} onClick={() => handleTab('clima')}>
               {t('home.tabClima')}
             </button>
           </div>
@@ -831,6 +846,8 @@ const ProdesFlyTo = React.memo(function ProdesFlyTo({ bbox }) {
 });
 
 const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, t, alerts, activeAlertId, flyToAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, airQuality, temperature, activeBiome, biomeGeoJSON, onBiomeHover, focus, fireDays, setFireDays, fireDataGeneration }) {
+  const { width: windowWidth } = useWindowSize();
+  const isMobile = windowWidth <= MOBILE_BREAKPOINT;
   const [satellite, setSatellite] = useState(true);
   // Unique per-mount key prevents "Map container already initialized" on remount
   const [mapKey] = useState(() => ++_mapMountCounter);
@@ -1042,10 +1059,13 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
     setCarInspect(null);
   }, []);
 
+  const [showMobileProdes, setShowMobileProdes] = useState(false);
+  const [showMobileLegend, setShowMobileLegend] = useState(!isMobile);
+
   return (
-    <div className="map-stage">
+    <div className={`map-stage${isMobile ? ' map-stage--mobile' : ''}`}>
       {/* Layer bar */}
-      <div className="layer-bar">
+      <div className={`layer-bar${isMobile ? ' layer-bar--mobile' : ''}`}>
         <div className="layer-toggles">
           <button
             className={`layer-toggle${showDeforest ? ' active' : ''}`}
@@ -1093,25 +1113,46 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
       </div>
 
       {/* Verificação PRODES por recibo CAR (plan: terrabrasilis-integration, Inc 12) */}
-      <div className="prodes-check">
-        <form className="prodes-check-form" onSubmit={prodesQuery}>
-          <label className="prodes-check-label" htmlFor="prodes-input">
+      <div className={`prodes-check${isMobile ? ' prodes-check--mobile' : ''}${showMobileProdes ? ' prodes-check--mobile-open' : ''}`}>
+        {isMobile && !showMobileProdes && (
+          <button
+            className="prodes-check-toggle"
+            onClick={() => setShowMobileProdes(true)}
+            aria-label={t('home.verifyProperty')}
+          >
             {t('home.verifyProperty')}
-          </label>
-          <div className="prodes-check-row">
-            <input
-              id="prodes-input"
-              className="prodes-check-input"
-              value={prodesInput}
-              onChange={(e) => setProdesInput(e.target.value)}
-              placeholder={t('home.receiptPlaceholder')}
-              aria-label={t('home.receiptPlaceholder')}
-            />
-            <button className="prodes-check-btn" type="submit" disabled={prodesLoading}>
-              {prodesLoading ? t('home.checkingProperty') : t('home.check')}
-            </button>
-          </div>
-        </form>
+          </button>
+        )}
+        {(!isMobile || showMobileProdes) && (
+          <form className="prodes-check-form" onSubmit={prodesQuery}>
+            <div className="prodes-check-header">
+              <label className="prodes-check-label" htmlFor="prodes-input">
+                {t('home.verifyProperty')}
+              </label>
+              {isMobile && (
+                <button
+                  className="prodes-result-close"
+                  type="button"
+                  onClick={() => setShowMobileProdes(false)}
+                  aria-label={t('home.close')}
+                >×</button>
+              )}
+            </div>
+            <div className="prodes-check-row">
+              <input
+                id="prodes-input"
+                className="prodes-check-input"
+                value={prodesInput}
+                onChange={(e) => setProdesInput(e.target.value)}
+                placeholder={t('home.receiptPlaceholder')}
+                aria-label={t('home.receiptPlaceholder')}
+              />
+              <button className="prodes-check-btn" type="submit" disabled={prodesLoading}>
+                {prodesLoading ? t('home.checkingProperty') : t('home.check')}
+              </button>
+            </div>
+          </form>
+        )}
         {prodesError && (
           <div className="prodes-error">
             <span>{prodesError}</span>
@@ -1373,29 +1414,49 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
 
       {/* Nature legend — bottom left, only meaningful while fires layer is on */}
       {showFires && (
-        <div className="nature-legend">
-          <span className="nature-legend-title">{t('home.natureLegend')}</span>
-          {['crime', 'suspeito', 'permitido', 'natural'].map(n => (
-            <span key={n} className="nature-legend-item">
-              <span className="nature-legend-dot" style={{ background: FIRE_NATURE_COLORS[n].color }} />
-              {t(`home.nature_${n}`)}
-            </span>
-          ))}
-          <span className="nature-legend-sep" />
-          <span className="nature-legend-title">{t('home.confidenceLegend')}</span>
-          <span className="nature-legend-gradient">
-            <span style={{ background: FIRE_STYLES.nominal.color }} />
-            <span style={{ background: FIRE_STYLES.high.color }} />
-            <span style={{ background: FIRE_STYLES.low.color }} />
-          </span>
-          <span className="nature-legend-item nature-legend-item--confidence">
-            <span>{t('home.confidenceNominal')}</span>
-            <span>{t('home.confidenceHigh')}</span>
-            <span>{t('home.confidenceLow')}</span>
-          </span>
-          <span className="nature-legend-sep" />
+        <div className={`nature-legend${isMobile ? ' nature-legend--mobile' : ''}${isMobile && !showMobileLegend ? ' nature-legend--mobile-collapsed' : ''}`}>
+          {isMobile && (
+            <button
+              className="nature-legend-toggle"
+              onClick={() => setShowMobileLegend(o => !o)}
+              aria-label={showMobileLegend ? t('home.collapseLegend') : t('home.expandLegend')}
+            >
+              <span className="nature-legend-toggle-dots">
+                {['crime', 'suspeito', 'permitido', 'natural'].map(n => (
+                  <span key={n} className="nature-legend-dot" style={{ background: FIRE_NATURE_COLORS[n].color }} />
+                ))}
+              </span>
+              {showMobileLegend ? '×' : t('home.natureLegend')}
+            </button>
+          )}
+          {(!isMobile || showMobileLegend) && (
+            <>
+              <span className="nature-legend-title">{t('home.natureLegend')}</span>
+              {['crime', 'suspeito', 'permitido', 'natural'].map(n => (
+                <span key={n} className="nature-legend-item">
+                  <span className="nature-legend-dot" style={{ background: FIRE_NATURE_COLORS[n].color }} />
+                  {t(`home.nature_${n}`)}
+                </span>
+              ))}
+              <span className="nature-legend-sep" />
+              <span className="nature-legend-title">{t('home.confidenceLegend')}</span>
+              <span className="nature-legend-gradient">
+                <span style={{ background: FIRE_STYLES.nominal.color }} />
+                <span style={{ background: FIRE_STYLES.high.color }} />
+                <span style={{ background: FIRE_STYLES.low.color }} />
+              </span>
+              <span className="nature-legend-item nature-legend-item--confidence">
+                <span>{t('home.confidenceNominal')}</span>
+                <span>{t('home.confidenceHigh')}</span>
+                <span>{t('home.confidenceLow')}</span>
+              </span>
+              <span className="nature-legend-sep" />
+            </>
+          )}
           <div className="nature-legend-period">
-            <span className="nature-legend-title">{t('home.firePeriod')}</span>
+            {(!isMobile || showMobileLegend) && (
+              <span className="nature-legend-title">{t('home.firePeriod')}</span>
+            )}
             <div className="days-chips">
               {[['', t('home.firePeriodRecent')], ['7', `7 ${t('home.days')}`], ['30', `30 ${t('home.days')}`], ['90', `90 ${t('home.days')}`], ['365', `365 ${t('home.days')}`]].map(([val, label]) => {
                 const active = (fireDays == null ? '' : String(fireDays)) === val;
@@ -1420,11 +1481,12 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
         alerts={alertRows}
         loaded={alerts !== null}
         activeAlertId={activeAlertId}
-        onAlertEnter={onAlertEnter}
-        onAlertLeave={onAlertLeave}
+        onAlertEnter={() => {}}
+        onAlertLeave={() => {}}
         airQuality={airQuality}
         temperature={temperature}
-        onBiomeHover={onBiomeHover}
+        onBiomeHover={() => {}}
+        isMobile={isMobile}
       />
     </div>
   );
@@ -1608,9 +1670,31 @@ export default function Home() {
     };
   }, []);
 
+const NATURE_EXPAND = { c: 'crime', s: 'suspeito', p: 'permitido', n: 'natural' };
+const CONF_EXPAND = { n: 'nominal', h: 'high', l: 'low' };
+
+function expandCompactFires(compact) {
+  return compact.map(f => ({
+    id: f.i,
+    lat: f.la,
+    lon: f.lo,
+    confidence: CONF_EXPAND[f.c] || f.c || 'low',
+    nature: NATURE_EXPAND[f.n] || f.n || null,
+    acq_date: f.d,
+    acq_time: null,
+    satellite: null,
+    bright_ti4: null,
+  })).filter(f => f.lat != null && f.lon != null);
+}
+
   // Fire data — single global fetch, cached client-side (240s) and viewport-clipped by Leaflet/canvas.
   // Re-fetching on pan was causing the fires array identity to change every pan, remounting all CircleMarkers
   // and producing visible pop-in. Canvas renderer (preferCanvas on MapContainer) handles viewport clipping cheaply.
+  //
+  // Usa ?compact=true: backend envia campos curtos (i,la,lo,c,n,d) reduzindo
+  // o payload JSON em ~66% (3.5MB → 1.1MB para 15k pontos). O frontend expande
+  // localmente; detalhes (satélite, temp, evidence, vegetation) vêm do popup via
+  // /api/fire-detail.
   useEffect(() => {
     const ac = new AbortController();
     const generation = ++fireDataGenerationRef.current;
@@ -1625,11 +1709,15 @@ export default function Home() {
     // Vegetação (PRODES) não é mais trazida em lote — é buscada sob demanda
     // no popup via /api/fire-detail, reduzindo o tempo de resposta de ~4s para ~0.02s.
     const limit = fireDays ? '&limit=15000' : '';
-    const url = '/api/fires' + (fireDays ? `?days=${fireDays}` : '') + limit;
+    const url = '/api/fires' + (fireDays ? `?days=${fireDays}` : '') + limit + '&compact=true';
     fetch(url, { signal: ac.signal })
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(d => {
-        const f = asArray(d.fires).filter(validFire);
+        const raw = asArray(d.fires);
+        // Compat: backend pode devolver compacto (array de arrays/objetos curtos)
+        // ou formato expandido. Detecta pelo primeiro campo.
+        const isCompact = raw.length > 0 && (Array.isArray(raw[0]) || raw[0].i != null);
+        const f = (isCompact ? expandCompactFires(raw) : raw).filter(validFire);
         setFires({ fires: f, generation });
         setCache(cacheKey, { fires: f, last_sync: d.last_sync });
       })
@@ -1681,7 +1769,6 @@ export default function Home() {
     }
     return () => ac.abort();
   }, []);
-
 
   // Lazy-load indigenous lands GeoJSON. Backend returns FeatureCollection (newer)
   // or legacy raw bounds map; toFeatureCollection normalizes both. v3 cache key

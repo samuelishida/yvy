@@ -737,6 +737,7 @@
 /* ── Responsive ───────────────────────────────────────── */
 @media (max-width: 720px) {
   .map-stage { min-height: 300px; }
+  .map-stage--mobile { overflow: hidden; }
 
   .layer-bar {
     padding: 0;
@@ -769,16 +770,133 @@
 
   .lt-sub { display: none; }
 
-  .float-panel {
-    width: min(210px, calc(100vw - 24px));
-    /* bottom: 40px clears the 2-line Leaflet attribution (~34px) on mobile.
-       At bottom: 8px the collapsed card overlapped the attribution bar. */
-    bottom: 40px;
-    right: 8px;
+  /* PRODES check becomes a floating action button when collapsed */
+  .prodes-check--mobile { top: auto; left: auto; right: 8px; bottom: 92px; width: auto; z-index: 490; }
+  .prodes-check--mobile-open {
+    position: fixed;
+    inset: auto 0 0 0;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: none;
+    z-index: 600;
+    background: rgba(10, 15, 13, 0.65);
+    justify-content: flex-end;
+    padding: 10px;
   }
+  .prodes-check-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px;
+    border-radius: 9999px;
+    border: 1px solid rgba(0, 201, 122, 0.45);
+    background: rgba(0, 201, 122, 0.16);
+    color: #00C97A;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  }
+  .prodes-check-form { margin: 0; }
+  .prodes-check-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .prodes-check--mobile-open .prodes-check-form {
+    background: rgba(13, 19, 16, 0.96);
+    border-radius: 14px 14px 0 0;
+    padding: 14px;
+    border: 1px solid rgba(42, 53, 48, 1);
+    border-bottom: none;
+    box-shadow: 0 -8px 32px rgba(0,0,0,0.45);
+  }
+  .prodes-check--mobile-open .prodes-check-row { flex-direction: column; gap: 10px; }
+  .prodes-check--mobile-open .prodes-check-input { width: 100%; }
+  .prodes-check--mobile-open .prodes-check-btn { width: 100%; }
+
+  /* Legend becomes a small toggle in bottom-left */
+  .nature-legend--mobile {
+    bottom: 40px;
+    left: 8px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    pointer-events: auto;
+    gap: 0;
+  }
+  .nature-legend--mobile-collapsed .nature-legend-period { display: none; }
+  .nature-legend-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 9999px;
+    border: 1px solid rgba(42, 53, 48, 1);
+    background: rgba(13, 19, 16, 0.92);
+    color: #E8F0EC;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  }
+  .nature-legend-toggle-dots {
+    display: flex;
+    gap: 3px;
+    align-items: center;
+  }
+  .nature-legend-toggle-dots .nature-legend-dot { width: 7px; height: 7px; }
+
+  .nature-legend--mobile:not(.nature-legend--mobile-collapsed) {
+    bottom: 40px;
+    left: 8px;
+    padding: 10px 12px;
+    background: rgba(13, 19, 16, 0.92);
+    border: 1px solid rgba(42, 53, 48, 1);
+    border-radius: 12px;
+    max-width: min(260px, calc(100vw - 16px));
+    gap: 4px;
+  }
+
+  /* Days chips always visible above the legend toggle */
+  .nature-legend--mobile .nature-legend-period { margin-top: 0; }
+  .nature-legend--mobile .days-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .nature-legend--mobile .days-chips::-webkit-scrollbar { display: none; }
+  .nature-legend--mobile .days-chip { flex-shrink: 0; }
+
+  /* Float panel becomes a bottom sheet on mobile */
+  .float-panel--mobile {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: none;
+    border-radius: 14px 14px 0 0;
+    z-index: 550;
+    box-shadow: 0 -8px 32px rgba(0,0,0,0.45);
+  }
+  .float-panel--mobile .fp-summary {
+    padding: 10px 14px;
+    min-height: 48px;
+  }
+  .float-panel--mobile .fp-body { max-height: 55vh; }
+  .float-panel--mobile .fp-content { max-height: calc(55vh - 48px); }
   .fp-count { font-size: 22px; }
-  .fp-summary { padding: 8px 10px; }
-  .fp-body { max-height: 180px; }
 
   /* Tabs: equal share, smaller type so all three fit */
   .fp-tab {

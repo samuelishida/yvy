@@ -477,7 +477,31 @@ function _M.bulk_upsert_fires_keep_first(docs)
     return #docs
 end
 
-local function rows_to_fires(rows, include_evidence)
+local CONF_CODE = { nominal = "n", high = "h", low = "l", h = "h", l = "l", n = "n" }
+local NATURE_CODE = { crime = "c", suspeito = "s", permitido = "p", natural = "n" }
+
+local function rows_to_fires_compact(rows)
+    local result = {}
+    for _, r in ipairs(rows) do
+        local d = utils.decode_jsonb(r.data_json or r["data_json"])
+        local conf = d.confidence
+        if type(conf) == "string" then conf = conf:lower() end
+        result[#result + 1] = {
+            i = r.id or r["id"],
+            la = tonumber(string.format("%.5f", r.lat or r["lat"])),
+            lo = tonumber(string.format("%.5f", r.lon or r["lon"])),
+            c = CONF_CODE[conf] or (type(conf) == "string" and conf:sub(1, 1)) or "",
+            n = NATURE_CODE[r.nature or r["nature"]] or "",
+            d = r.acq_date or r["acq_date"],
+        }
+    end
+    return result
+end
+
+local function rows_to_fires(rows, include_evidence, compact)
+    if compact then
+        return rows_to_fires_compact(rows)
+    end
     local result = {}
     for _, r in ipairs(rows) do
         local d = utils.decode_jsonb(r.data_json or r["data_json"])
@@ -548,6 +572,36 @@ function _M.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit, brazil_only, sourc
     return rows_to_fires(rows, false)
 end
 
+function _M.find_fires_compact(sw_lat, ne_lat, sw_lng, ne_lng, limit, brazil_only, source)
+    limit = limit or 10000
+    local db = pool_acquire()
+
+    local sql = [[
+        SELECT id, lat, lon, acq_date, ingested_at, nature, nature_at,
+               json(nature_evidence) AS nature_evidence_json, nature_version,
+               json(data) AS data_json
+        FROM fire_data
+        WHERE lat >= ? AND lat <= ? AND lon >= ? AND lon <= ?
+    ]]
+    local params = {sw_lat, ne_lat, sw_lng, ne_lng}
+    if brazil_only then
+        sql = sql .. "\n          AND " .. is_brazil_filter_sql()
+    end
+    if source then
+        sql = sql .. "\n          AND json_extract(data, '$.source') LIKE ?"
+        params[#params + 1] = source
+    end
+    sql = sql .. [[
+        ORDER BY acq_date DESC, lat, lon
+        LIMIT ?
+    ]]
+    params[#params + 1] = limit
+
+    local rows = fetch_all(db, sql, params)
+    pool_release(db)
+    return rows_to_fires(rows, false, true)
+end
+
 -- Same as find_fires but restricts to fires whose acq_date falls within the
 -- last `days` days, so a heavy classification loop only sees relevant rows
 -- instead of up to 50k historical ones.
@@ -577,6 +631,34 @@ function _M.find_fires_since(days, sw_lat, ne_lat, sw_lng, ne_lng, limit, brazil
     local rows = fetch_all(db, sql, params)
     pool_release(db)
     return rows_to_fires(rows, false)
+end
+
+function _M.find_fires_since_compact(days, sw_lat, ne_lat, sw_lng, ne_lng, limit, brazil_only)
+    limit = limit or 50000
+    local cutoff = _M.days_ago_iso(days or 7)
+    local db = pool_acquire()
+
+    local sql = [[
+        SELECT id, lat, lon, acq_date, ingested_at, nature, nature_at,
+               json(nature_evidence) AS nature_evidence_json, nature_version,
+               json(data) AS data_json
+        FROM fire_data
+        WHERE lat >= ? AND lat <= ? AND lon >= ? AND lon <= ?
+          AND acq_date >= ?
+    ]]
+    local params = {sw_lat, ne_lat, sw_lng, ne_lng, cutoff}
+    if brazil_only then
+        sql = sql .. "\n          AND " .. is_brazil_filter_sql()
+    end
+    sql = sql .. [[
+        ORDER BY CASE WHEN nature = 'permitido' THEN 0 ELSE 1 END, acq_date DESC, lat, lon
+        LIMIT ?
+    ]]
+    params[#params + 1] = limit
+
+    local rows = fetch_all(db, sql, params)
+    pool_release(db)
+    return rows_to_fires(rows, false, true)
 end
 
 function _M.find_fire_by_id(id)
