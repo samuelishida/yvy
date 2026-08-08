@@ -30,19 +30,19 @@ const BIOME_HIGHLIGHT_COLORS = {
 };
 
 const FIRE_STYLES = {
-  nominal: { color: '#EF5350', fillColor: '#EF5350', fillOpacity: 0.6,  radius: 2.5, weight: 0 },
-  high:    { color: '#f97316', fillColor: '#f97316', fillOpacity: 0.48, radius: 2,   weight: 0 },
-  low:     { color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 0.28, radius: 1.5, weight: 0 },
+  nominal: { color: '#EF5350', fillColor: '#EF5350', fillOpacity: 0.4,  radius: 2.5, weight: 0 },
+  high:    { color: '#f97316', fillColor: '#f97316', fillOpacity: 0.32, radius: 2,   weight: 0 },
+  low:     { color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 0.2,  radius: 1.5, weight: 0 },
 };
 
 // Nature classes (Inc 7): crime = vermelho, suspeito = laranja, permitido =
 // verde, natural = azul. Aplicado quando fire.nature vem preenchido (Inc 5);
 // sem nature cai no fallback por confidence (FIRE_STYLES).
 const FIRE_NATURE_COLORS = {
-  crime:     { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.62, radius: 3,   weight: 0 },
-  suspeito:  { color: '#f97316', fillColor: '#f97316', fillOpacity: 0.55, radius: 2.5, weight: 0 },
-  permitido: { color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.35, radius: 2.5, weight: 0 },
-  natural:   { color: '#38bdf8', fillColor: '#38bdf8', fillOpacity: 0.5,  radius: 2.5, weight: 0 },
+  crime:     { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.42, radius: 3,   weight: 0 },
+  suspeito:  { color: '#f97316', fillColor: '#f97316', fillOpacity: 0.38, radius: 2.5, weight: 0 },
+  permitido: { color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.25, radius: 2.5, weight: 0 },
+  natural:   { color: '#38bdf8', fillColor: '#38bdf8', fillOpacity: 0.35, radius: 2.5, weight: 0 },
 };
 
 const asArray = value => Array.isArray(value) ? value : [];
