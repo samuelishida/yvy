@@ -60,10 +60,16 @@ def _is_exception_report(text: str) -> bool:
 
 
 def fetch_page(ws: str, layer: str, start_date: str, end_date: str, start: int) -> list:
+    """Fetch one page of DETER features via WFS 2.0.0.
+
+    WFS 1.1.0 on TerraBrasilis is broken (pool-overload ExceptionReport /
+    timeout on GetFeature with geometry), but WFS 2.0.0 works. Key differences:
+    version=2.0.0, typeNames (plural), count instead of maxFeatures.
+    """
     params = {
-        "service": "WFS", "version": "1.1.0", "request": "GetFeature",
-        "typeName": f"{ws}:{layer}", "outputFormat": "application/json",
-        "maxFeatures": str(PAGE), "startIndex": str(start),
+        "service": "WFS", "version": "2.0.0", "request": "GetFeature",
+        "typeNames": f"{ws}:{layer}", "outputFormat": "application/json",
+        "count": str(PAGE), "startIndex": str(start),
         "CQL_FILTER": CQL_FILTER_TMPL.format(start=start_date, end=end_date),
     }
     last_exc = None
