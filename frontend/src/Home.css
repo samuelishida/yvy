@@ -204,7 +204,20 @@
 .prodes-check-btn:active { transform: translateY(1px); }
 .prodes-check-btn:disabled { opacity: 0.5; cursor: default; }
 
-/* ── Leaflet popups — Yvy dark theme (CAR, fogo, TI, UC, AMS) ──
+/* Período dos focos — seletor compacto na barra de camadas (plan: sinaflor-fogo-permitido) */
+.days-select {
+  background: rgba(13, 19, 16, 0.85);
+  color: #e8f0ec;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  font-size: 11px;
+  padding: 3px 6px;
+  height: 24px;
+}
+.days-select:focus { outline: none; border-color: rgba(34, 197, 94, 0.6); }
+.days-select option { background: #0d1310; color: #e8f0ec; }
+
+/* ── Leaflet popups — Yvy dark theme (CAR, fogo, TI, UC) ──
    Leaflet's default popup is white; theme every map card dark so the
    light-on-dark font is readable and matches the app chrome. */
 .map-stage .leaflet-popup-content-wrapper {

@@ -131,7 +131,7 @@ function _M.get_freshness(ctx)
     if not ok then freshness = {} end
 
     local sources = {}
-    for _, id in ipairs({"firms", "news", "deter", "deter_car", "ams"}) do
+    for _, id in ipairs({"firms", "news", "deter", "deter_car"}) do
         local f = freshness[id] or {}
         sources[#sources + 1] = {
             id = id,

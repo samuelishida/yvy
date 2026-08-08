@@ -42,27 +42,24 @@ function _M.get_fires(ctx)
     local sw_lat = args.sw_lat
     local sw_lng = args.sw_lng
 
-    -- (a) Whitelist de source + parser explícito de ams, ANTES do cache:
-    -- o cache key embute apenas params canônicos, então ?source=ams (inválido)
-    -- não pode colidir com ?ams=true (antes ambos viravam "…:ams" e o cache
-    -- servia a resposta errada). Nunca usamos tonumber em ams — a flag é
-    -- booleana e o frontend sempre envia "true" (tonumber("true") é nil, o que
-    -- silenciosamente desligaria o AMS ou recriaria a colisão).
+    -- (a) Whitelist de source (canônica), ANTES do cache: o cache key embute
+    -- apenas params canônicos, então ?source=ams (inválido) nunca vira chave.
     local source = args.source or ""
     if source ~= "" and source ~= "firms" and source ~= "bdqueimadas" then
         ctx:error(400, "invalid source"); return
     end
 
-    local ams_enabled
-    if args.ams == "true" or args.ams == "1" then
-        ams_enabled = 1
-    elseif args.ams == nil or args.ams == "false" or args.ams == "0" then
-        ams_enabled = nil
-    else
-        ctx:error(400, "invalid ams"); return
+    -- (plan: sinaflor-fogo-permitido) ?days=N opcional (1..365): janela de datas
+    -- via find_fires_since — permite ver focos antigos (ex: permitido fora da
+    -- moratória) que o cap de 10k dos "mais recentes" esconderia.
+    local days = nil
+    if args.days ~= nil and args.days ~= "" then
+        days = tonumber(args.days)
+        if not days or days < 1 then days = 1 end
+        if days > 365 then days = 365 end
     end
 
-    local cache_key = "firescache:" .. (ne_lat or "global") .. ":" .. (ne_lng or "") .. ":" .. (sw_lat or "") .. ":" .. (sw_lng or "") .. (args.vegetation == "true" and ":veg" or "") .. (source ~= "" and (":" .. source) or "") .. (ams_enabled and ":ams" or "")
+    local cache_key = "firescache:" .. (ne_lat or "global") .. ":" .. (ne_lng or "") .. ":" .. (sw_lat or "") .. ":" .. (sw_lng or "") .. (args.vegetation == "true" and ":veg" or "") .. (source ~= "" and (":" .. source) or "") .. (days and (":days" .. days) or "")
 
     local cached = redis.get(cache_key)
     if cached then
@@ -99,7 +96,14 @@ function _M.get_fires(ctx)
     elseif source == "firms" then
         source_filter = "NASA_FIRMS%"
     end
-    local data = db.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, MAX_RESULTS, true, source_filter)
+    local data
+    if days then
+        -- Janela de datas (find_fires_since): limite alto (50k) para janelas
+        -- longas não truncarem os focos antigos que queremos ver.
+        data = db.find_fires_since(days, sw_lat, ne_lat, sw_lng, ne_lng, 50000, true)
+    else
+        data = db.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, MAX_RESULTS, true, source_filter)
+    end
 
     -- Inc 8 (plan: terrabrasilis-integration): ?vegetation=true cruza cada foco
     -- com PRODES no local — UMA query de deforestation_data por bbox + atribuição.
@@ -107,20 +111,6 @@ function _M.get_fires(ctx)
         local veg_map = db.get_vegetation_context_batch(sw_lat, ne_lat, sw_lng, ne_lng, data)
         for i, f in ipairs(data) do
             f.vegetation = veg_map[i]  -- (d) batch sempre devolve o mapa completo
-        end
-    end
-
-    -- Inc 11: ?ams=true adiciona o risco de propagação AMS a cada foco.
-    -- (b) N+1 fix: UMA chamada get_ams_risk_batch (bounded ~2° buckets, Inc 7)
-    -- em vez do loop per-foco get_ams_risk_at. A batch keya por f.id; find_fires
-    -- não expõe id, então sintetizamos ids estáveis para o lote e os removemos
-    -- antes de codificar (o id interno do banco não vaza para o JSON).
-    if ams_enabled then
-        for i, f in ipairs(data) do f.id = i end
-        local batch = db.get_ams_risk_batch(data)
-        for _, f in ipairs(data) do
-            f.ams = batch[f.id]  -- nil se ausente (mesma semântica de antes)
-            f.id = nil
         end
     end
 

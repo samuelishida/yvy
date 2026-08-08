@@ -274,12 +274,6 @@ function FirePopupContent({ fire, fireAlert, t }) {
           </span>
         </>
       )}
-      {fire.ams && fire.ams.risk_level && (
-        <>
-          <br />
-          <span style={{ color: '#f97316' }}>🔥 {t('home.amsRisk')}: {fire.ams.risk_level} (AMS {fire.ams.view_date || ''})</span>
-        </>
-      )}
       {landTag && (
         <>
           <br />
@@ -795,7 +789,7 @@ const ProdesFlyTo = React.memo(function ProdesFlyTo({ bbox }) {
   return null;
 });
 
-const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, t, alerts, activeAlertId, flyToAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, airQuality, temperature, activeBiome, biomeGeoJSON, onBiomeHover, focus }) {  const [satellite, setSatellite] = useState(true);
+const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, t, alerts, activeAlertId, flyToAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, airQuality, temperature, activeBiome, biomeGeoJSON, onBiomeHover, focus, fireDays, setFireDays }) {  const [satellite, setSatellite] = useState(true);
   // Unique per-mount key prevents "Map container already initialized" on remount
   const [mapKey] = useState(() => ++_mapMountCounter);
   const [visibleFires, setVisibleFires] = useState([]);
@@ -804,28 +798,6 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
   const [carInspect, setCarInspect] = useState(null);
   // Cerrado vegetation overlay (Inc 9): opcional, padrão OFF.
   const [showCerradoVeg, setShowCerradoVeg] = useState(false);
-  // AMS fire-spreading-risk overlay (Inc 11): opcional, padrão OFF.
-  const [showAms, setShowAms] = useState(false);
-  const [amsRisk, setAmsRisk] = useState(null);
-  useEffect(() => {
-    if (!showAms) return;
-    let alive = true;
-    cachedFetch('/api/ams/risk?sw_lat=-34&ne_lat=5.5&sw_lng=-74&ne_lng=-34&days=3', { ttl: 300_000 })
-      .then(d => { if (alive) setAmsRisk(d); })
-      .catch(() => { if (alive) setAmsRisk(null); });
-    return () => { alive = false; };
-  }, [showAms]);
-  const amsGeoJSON = useMemo(() => {
-    if (!amsRisk || !amsRisk.polygons || !amsRisk.polygons.length) return null;
-    return {
-      type: 'FeatureCollection',
-      features: amsRisk.polygons.map(p => ({
-        type: 'Feature',
-        properties: { risk_level: p.risk_level, view_date: p.view_date, municipio: p.municipio },
-        geometry: p.geom,
-      })),
-    };
-  }, [amsRisk]);
   // Verificação PRODES por recibo CAR (plan: terrabrasilis-integration, Inc 12).
   const [prodesInput, setProdesInput] = useState('');
   const [prodesResult, setProdesResult] = useState(null);
@@ -1025,6 +997,21 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           >
             <Flame size={10} /> {t('home.layerFires')}<span className="lt-sub">FIRMS</span>
           </button>
+          {/* Período dos focos (plan: sinaflor-fogo-permitido): ?days=N no
+              /api/fires. Padrão 'Atuais' (10k mais recentes); 90/365 revelam
+              focos antigos (ex: permitido fora da moratória). */}
+          <select
+            className="days-select"
+            value={fireDays ?? ''}
+            onChange={e => setFireDays(e.target.value ? Number(e.target.value) : null)}
+            title={t('home.firePeriod')}
+          >
+            <option value="">{t('home.firePeriodRecent')}</option>
+            <option value="7">7 {t('home.days')}</option>
+            <option value="30">30 {t('home.days')}</option>
+            <option value="90">90 {t('home.days')}</option>
+            <option value="365">365 {t('home.days')}</option>
+          </select>
           <button
             className={`layer-toggle${satellite ? ' active' : ''}`}
             onClick={() => setSatellite(!satellite)}
@@ -1054,12 +1041,6 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             onClick={() => setShowCerradoVeg(!showCerradoVeg)}
           >
             <span className="lt-dot" style={{ background: '#a3e635' }} /> {t('home.layerCerradoVeg')}
-          </button>
-          <button
-            className={`layer-toggle${showAms ? ' active' : ''}`}
-            onClick={() => setShowAms(!showAms)}
-          >
-            <span className="lt-dot" style={{ background: '#f97316' }} /> {t('home.layerAms')}<span className="lt-sub">AMS</span>
           </button>
         </div>
       </div>
@@ -1275,25 +1256,6 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               }}
             />
           )}
-          {showAms && amsGeoJSON && (
-            <GeoJSON
-              key="ams-risk"
-              data={amsGeoJSON}
-              style={(feature) => ({
-                color: feature.properties.risk_level === 'ALTO' || feature.properties.risk_level === 'ALTA'
-                  ? '#ef4444' : feature.properties.risk_level === 'MODERADO'
-                    ? '#f97316' : '#2dd4ff',
-                fillColor: feature.properties.risk_level === 'ALTO' || feature.properties.risk_level === 'ALTA'
-                  ? '#ef4444' : feature.properties.risk_level === 'MODERADO'
-                    ? '#f97316' : '#2dd4ff',
-                fillOpacity: 0.12, weight: 1.5, opacity: 0.6, dashArray: '6 4',
-              })}
-              onEachFeature={(feature, layer) => {
-                const p = feature.properties;
-                layer.bindPopup(`🔥 ${t('home.amsRisk')}: ${esc(p.risk_level) || '?'} (AMS ${esc(p.view_date)})`);
-              }}
-            />
-          )}
           <ViewportFireFilter fires={fireRows} onVisibleFiresChange={setVisibleFires} />
           <CanvasRedrawOnToggle flag={showFires} />
           {(showFires || showCar) && (
@@ -1408,6 +1370,9 @@ const DEFAULT_LON = -51.925;
 export default function Home() {
   const { t } = useI18n();
   const [fires,          setFires]          = useState(null);
+  // Período dos focos (plan: sinaflor-fogo-permitido): null = 10k mais recentes;
+  // 7/30/90/365 = janela ?days=N (revela focos antigos, ex: permitido).
+  const [fireDays,       setFireDays]       = useState(null);
   const [airQuality,     setAirQuality]     = useState(null);
   const [temperature,    setTemperature]    = useState(null);
   const [showDeforest,   setShowDeforest]   = useState(true);
@@ -1568,14 +1533,18 @@ export default function Home() {
   useEffect(() => {
     const ac = new AbortController();
     const validFire = f => f.lat != null && f.lon != null;
-    const cached = getCache('fires', 240);
+    // Cache por período (chave inclui fireDays) — trocar o seletor não pode
+    // servir o cache de outra janela.
+    const cacheKey = 'fires' + (fireDays ? ':' + fireDays : '');
+    const cached = getCache(cacheKey, 240);
     if (cached) setFires(asArray(cached.fires).filter(validFire));
-    fetch('/api/fires?vegetation=true&ams=true', { signal: ac.signal })
+    const url = '/api/fires?vegetation=true' + (fireDays ? `&days=${fireDays}` : '');
+    fetch(url, { signal: ac.signal })
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(d => {
         const f = asArray(d.fires).filter(validFire);
         setFires(f);
-        setCache('fires', { fires: f, last_sync: d.last_sync });
+        setCache(cacheKey, { fires: f, last_sync: d.last_sync });
       })
       .catch(err => {
         if (err.name !== 'AbortError') {
@@ -1584,7 +1553,7 @@ export default function Home() {
         }
       });
     return () => ac.abort();
-  }, []);
+  }, [fireDays]);
 
   // Weather (cached 15min in localStorage)
   useEffect(() => {
@@ -1675,6 +1644,8 @@ export default function Home() {
         showFires={showFires}
         setShowDeforest={setShowDeforest}
         setShowFires={setShowFires}
+        fireDays={fireDays}
+        setFireDays={setFireDays}
         showIndigenous={showIndigenous}
         setShowIndigenous={setShowIndigenous}
         showConservation={showConservation}

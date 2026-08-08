@@ -72,7 +72,6 @@ describe("dashboard freshness", function()
         assert.is_false(by_id.deter.available)
         assert.is_nil(by_id.deter.last_ingested_at)
         assert.are_equal(0, by_id.deter.rows)
-        assert.is_false(by_id.ams.available)
         assert.is_false(by_id.deter_car.available)
     end)
 

@@ -146,25 +146,6 @@ CREATE TABLE IF NOT EXISTS deter_alerts (
     UNIQUE(mun_geocod, classname, view_date)
 );
 
-CREATE TABLE IF NOT EXISTS ams_risk (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    view_date TEXT,
-    viewed_at TEXT,
-    satelite TEXT,
-    municipio TEXT,
-    biome TEXT,
-    geocode TEXT,
-    layer TEXT,
-    risk_level TEXT,
-    min_lat REAL,
-    min_lon REAL,
-    max_lat REAL,
-    max_lon REAL,
-    geom BLOB,
-    ingested_at TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_ams_bbox ON ams_risk(min_lat, min_lon, max_lat, max_lon);
-
 CREATE INDEX IF NOT EXISTS idx_fire_source ON fire_data(json_extract(data, '$.source'));
 ]]
 
@@ -363,10 +344,9 @@ function _M.init_db()
         db:exec("ALTER TABLE deter_alerts ADD COLUMN municipality TEXT")
     end
 
-    -- View_date indexes for the alert/AMS windowed queries (Inc 7).
+    -- View_date indexes for the alert windowed queries (Inc 7).
     db:exec("CREATE INDEX IF NOT EXISTS idx_deter_alerts_view_date ON deter_alerts(view_date)")
     db:exec("CREATE INDEX IF NOT EXISTS idx_deter_car_alerts_view_date ON deter_car_alerts(view_date)")
-    db:exec("CREATE INDEX IF NOT EXISTS idx_ams_risk_view_date ON ams_risk(view_date)")
 
     db:close()
 
@@ -996,7 +976,6 @@ function _M.get_ingest_freshness()
         news = "news",
         deter_polygons = "deter",
         deter_car_alerts = "deter_car",
-        ams_risk = "ams",
     }
     local res = {}
     for tbl, id in pairs(source_map) do
@@ -2286,137 +2265,4 @@ end
 
 -- Camadas AMS (fire-spreading-risk polígonos / active-fire-today pontos) num
 -- bbox + janela de dias. geom decodificada (JSON TEXT/JSONB → tabela).
-function _M.get_ams_risk(sw_lat, ne_lat, sw_lng, ne_lng, days, limit)
-    days = days or 7
-    limit = limit or 5000  -- bounded (Inc 7): serves fire-spreading-risk polygons
-    local cutoff = _M.days_ago_iso(days)
-    local db = pool_acquire()
-    local rows = fetch_all(db, [[
-        SELECT id, view_date, viewed_at, satelite, municipio, biome, geocode,
-               layer, risk_level, min_lat, min_lon, max_lat, max_lon, json(geom) AS geom_json
-        FROM ams_risk
-        WHERE min_lat <= ? AND max_lat >= ? AND min_lon <= ? AND max_lon >= ?
-          AND view_date >= ?
-        ORDER BY view_date DESC
-        LIMIT ?
-    ]], {ne_lat, sw_lat, ne_lng, sw_lng, cutoff, limit})
-    pool_release(db)
-
-    local result = {}
-    for _, r in ipairs(rows) do
-        result[#result + 1] = {
-            id = r.id,
-            view_date = r.view_date,
-            viewed_at = r.viewed_at,
-            satelite = r.satelite,
-            municipio = r.municipio,
-            biome = r.biome,
-            geocode = r.geocode,
-            layer = r.layer,
-            risk_level = r.risk_level,
-            geom = utils.decode_jsonb(r.geom_json or r["geom_json"]),
-        }
-    end
-    return result
-end
-
--- Nível de risco em lote para N focos (Inc 7): elimina o N+1 do loop
--- per-foco de get_ams_risk_at em bboxes grandes (ex. ?ams=true, até 10k focos).
--- Estratégia bounded-batch: agrupa focos em buckets de ~2°; UMA query espacial
--- por bucket (bbox-pre-filter em SQL, ORDER BY view_date DESC); por foco,
--- seleciona o primeiro candidato cujo bbox (expandido pelo raio R) contém o
--- ponto — mesma semântica de get_ams_risk_at. Se um bucket exceder
--- MAX_CANDIDATES_PER_BUCKET, cai para queries per-foco (idênticas a
--- get_ams_risk_at). Retorna {id={risk_level, view_date}}.
-function _M.get_ams_risk_batch(fires)
-    local result = {}
-    if not fires or #fires == 0 then return result end
-
-    local BUCKET = 2.0          -- ~2° de span espacial por query
-    local MAX_CANDIDATES_PER_BUCKET = 2000
-    local R = 0.1               -- mesmo raio de busca de get_ams_risk_at (~11km)
-
-    -- Agrupa focos por bucket (canto inferior-esquerdo do quadrado ~2°).
-    local buckets, order = {}, {}
-    for _, f in ipairs(fires) do
-        local bk = string.format("%.0f,%.0f", math.floor((f.lat or 0) / BUCKET), math.floor((f.lon or 0) / BUCKET))
-        if not buckets[bk] then
-            buckets[bk] = {}
-            order[#order + 1] = bk
-        end
-        buckets[bk][#buckets[bk] + 1] = f
-    end
-
-    local db = pool_acquire()
-    for _, bk in ipairs(order) do
-        local bls, bbs = bk:match("^([^,]+),(.+)$")
-        local bl, bb = tonumber(bls) * BUCKET, tonumber(bbs) * BUCKET
-        local ne_lat, sw_lat = bl + BUCKET, bl
-        local ne_lng, sw_lng = bb + BUCKET, bb
-
-        local rows = fetch_all(db, [[
-            SELECT risk_level, view_date, min_lat, min_lon, max_lat, max_lon
-            FROM ams_risk
-            WHERE min_lat <= ? AND max_lat >= ? AND min_lon <= ? AND max_lon >= ?
-              AND layer = 'fire-spreading-risk' AND risk_level IS NOT NULL
-            ORDER BY view_date DESC
-            LIMIT ?
-        ]], {ne_lat, sw_lat, ne_lng, sw_lng, MAX_CANDIDATES_PER_BUCKET + 1})
-
-        if #rows > MAX_CANDIDATES_PER_BUCKET then
-            -- Bucket com candidatos demais: fallback per-foco (raro — os
-            -- polígonos AMS são regionais, buckets pequenos raramente estouram).
-            for _, f in ipairs(buckets[bk]) do
-                local rr = fetch_all(db, [[
-                    SELECT risk_level, view_date FROM ams_risk
-                    WHERE min_lat <= ? AND max_lat >= ? AND min_lon <= ? AND max_lon >= ?
-                      AND layer = 'fire-spreading-risk' AND risk_level IS NOT NULL
-                    ORDER BY view_date DESC LIMIT 1
-                ]], {f.lat + R, f.lat - R, f.lon + R, f.lon - R})
-                if rr[1] then
-                    result[f.id] = { risk_level = rr[1].risk_level, view_date = rr[1].view_date }
-                end
-            end
-        else
-            -- Point-in-bbox apenas nos candidatos do bucket (mais recente primeiro).
-            for _, f in ipairs(buckets[bk]) do
-                for _, p in ipairs(rows) do
-                    if f.lat >= (p.min_lat or -90) - R and f.lat <= (p.max_lat or 90) + R
-                       and f.lon >= (p.min_lon or -180) - R and f.lon <= (p.max_lon or 180) + R then
-                        result[f.id] = { risk_level = p.risk_level, view_date = p.view_date }
-                        break
-                    end
-                end
-            end
-        end
-    end
-    pool_release(db)
-    return result
-end
-
--- Nível de risco mais próximo de um ponto (fogo): procura um polígono
--- fire-spreading-risk num raio pequeno (≈1 bbox de busca). Retorna
--- {risk_level, view_date, biome, municipio} ou nil.
-function _M.get_ams_risk_at(lat, lon)
-    local R = 0.1  -- ~11km de busca (polígonos AMS são regionais)
-    local db = pool_acquire()
-    local rows = fetch_all(db, [[
-        SELECT risk_level, view_date, biome, municipio
-        FROM ams_risk
-        WHERE min_lat <= ? AND max_lat >= ? AND min_lon <= ? AND max_lon >= ?
-          AND layer = 'fire-spreading-risk' AND risk_level IS NOT NULL
-        ORDER BY view_date DESC
-        LIMIT 1
-    ]], {lat + R, lat - R, lon + R, lon - R})
-    pool_release(db)
-    local r = rows[1]
-    if not r then return nil end
-    return {
-        risk_level = r.risk_level,
-        view_date = r.view_date,
-        biome = r.biome,
-        municipio = r.municipio,
-    }
-end
-
 return _M

@@ -239,16 +239,6 @@ server.route("GET", "/api/deter/car-alert-stats", function(ctx)
     deter.get_car_alert_stats(ctx)
 end)
 
--- AMS fire-spreading-risk overlay (plan: terrabrasilis-integration, Inc 11)
-server.route("GET", "/api/ams/risk", function(ctx)
-    local ams = require("app.routes.ams")
-    ams.get_risk(ctx)
-end)
-server.route("GET", "/api/ams/active", function(ctx)
-    local ams = require("app.routes.ams")
-    ams.get_active(ctx)
-end)
-
 -- Biomes
 server.route("GET", "/api/biomes", biomes.get_biomes)
 

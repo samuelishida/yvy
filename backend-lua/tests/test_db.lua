@@ -41,7 +41,6 @@ describe("db", function()
             assert.is_true(tables["deter_polygons"])
             assert.is_true(tables["deter_car_alerts"])
             assert.is_true(tables["deter_alerts"])
-            assert.is_true(tables["ams_risk"])
         end)
     end)
 
@@ -57,7 +56,6 @@ describe("db", function()
             db:close()
 
             assert.is_true(idx["idx_deter_bbox"])
-            assert.is_true(idx["idx_ams_bbox"])
             assert.is_true(idx["idx_fire_source"])
         end)
 
