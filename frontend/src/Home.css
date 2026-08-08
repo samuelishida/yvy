@@ -776,17 +776,14 @@
   .prodes-check--mobile { top: auto; left: auto; right: 8px; bottom: 160px; width: auto; z-index: 490; }
   .prodes-check--mobile-open {
     position: fixed;
-    inset: auto 0 0 0;
-    top: auto;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    inset: 0;
     width: 100%;
     max-width: none;
     z-index: 600;
     background: rgba(10, 15, 13, 0.65);
-    justify-content: flex-end;
-    padding: 10px;
+    justify-content: flex-start;
+    align-items: center;
+    padding: 12px;
   }
   .prodes-check-toggle {
     display: flex;
@@ -814,12 +811,13 @@
     gap: 8px;
   }
   .prodes-check--mobile-open .prodes-check-form {
+    width: 100%;
+    max-width: 420px;
     background: rgba(13, 19, 16, 0.96);
-    border-radius: 14px 14px 0 0;
+    border-radius: 14px;
     padding: 14px;
     border: 1px solid rgba(42, 53, 48, 1);
-    border-bottom: none;
-    box-shadow: 0 -8px 32px rgba(0,0,0,0.45);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.45);
   }
   .prodes-check--mobile-open .prodes-check-row { flex-direction: column; gap: 10px; }
   .prodes-check--mobile-open .prodes-check-input { width: 100%; }
