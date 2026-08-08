@@ -1113,7 +1113,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
       </div>
 
       {/* Verificação PRODES por recibo CAR (plan: terrabrasilis-integration, Inc 12) */}
-      <div className={`prodes-check${isMobile ? ' prodes-check--mobile' : ''}${showMobileProdes ? ' prodes-check--mobile-open' : ''}`}>
+      <div className={`prodes-check${isMobile ? ' prodes-check--mobile' : ''}${showMobileProdes ? ' prodes-check--mobile-open' : ''}${prodesResult || prodesError ? ' prodes-check--mobile-has-result' : ''}`}>
         {isMobile && !showMobileProdes && (
           <button
             className="prodes-check-toggle"
@@ -1124,110 +1124,112 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           </button>
         )}
         {(!isMobile || showMobileProdes) && (
-          <form className="prodes-check-form" onSubmit={prodesQuery}>
-            <div className="prodes-check-header">
-              <label className="prodes-check-label" htmlFor="prodes-input">
-                {t('home.verifyProperty')}
-              </label>
-              {isMobile && (
-                <button
-                  className="prodes-result-close"
-                  type="button"
-                  onClick={() => setShowMobileProdes(false)}
-                  aria-label={t('home.close')}
-                >×</button>
-              )}
-            </div>
-            <div className="prodes-check-row">
-              <input
-                id="prodes-input"
-                className="prodes-check-input"
-                value={prodesInput}
-                onChange={(e) => setProdesInput(e.target.value)}
-                placeholder={t('home.receiptPlaceholder')}
-                aria-label={t('home.receiptPlaceholder')}
-              />
-              <button className="prodes-check-btn" type="submit" disabled={prodesLoading}>
-                {prodesLoading ? t('home.checkingProperty') : t('home.check')}
-              </button>
-            </div>
-          </form>
-        )}
-        {prodesError && (
-          <div className="prodes-error">
-            <span>{prodesError}</span>
-            <button
-              className="prodes-result-close"
-              onClick={clearProdes}
-              aria-label={t('home.close')}
-              title={t('home.close')}
-            >×</button>
-          </div>
-        )}
-        {prodesResult && (
-          <div className="prodes-result">
-            {prodesResult.data ? (
-              <>
-                <div className="prodes-result-header">
-                  <div className="prodes-result-title">{t('home.propertySummary')}</div>
+          <>
+            <form className="prodes-check-form" onSubmit={prodesQuery}>
+              <div className="prodes-check-header">
+                <label className="prodes-check-label" htmlFor="prodes-input">
+                  {t('home.verifyProperty')}
+                </label>
+                {isMobile && (
                   <button
                     className="prodes-result-close"
-                    onClick={clearProdes}
+                    type="button"
+                    onClick={() => setShowMobileProdes(false)}
                     aria-label={t('home.close')}
-                    title={t('home.close')}
                   >×</button>
-                </div>
-                <div className="prodes-result-code"><strong>{prodesResult.data.cod_imovel}</strong></div>
-                {protectedOverlap && protectedOverlap.status === 'suspeito' && (
-                  <div className="prodes-fraud">
-                    <div className="prodes-fraud-title">⚠ {t('home.carFraudTitle')}</div>
-                    <div className="prodes-fraud-detail">
-                      {t('home.carFraudDetail', {
-                        name: protectedOverlap.overlaps[0].name,
-                        type: protectedOverlap.overlaps[0].type === 'uc' ? 'UC' : 'TI',
-                        pct: protectedOverlap.overlaps[0].overlap_pct,
-                      })}
-                      {protectedOverlap.overlaps.length > 1 &&
-                        ` ${t('home.carFraudMore', { n: protectedOverlap.overlaps.length - 1 })}`}
-                    </div>
-                    <div className="prodes-fraud-note">{t('home.carFraudNote')}</div>
-                  </div>
                 )}
-                {protectedOverlap && protectedOverlap.status === 'indeterminado' && (
-                  <div className="prodes-result-meta">{t('home.carOverlapIndeterminate')}</div>
-                )}
-                {prodesResult.data.has_prodes ? (
-                  <div className="prodes-result-yes">
-                    {t('home.hasProdesYes', {
-                      area: prodesResult.data.prodes_area_ha,
-                      years: (prodesResult.data.years || []).join(', '),
-                    })}
-                  </div>
-                ) : (
-                  <div className="prodes-result-no">{t('home.hasProdesNo')}</div>
-                )}
-                <div className="prodes-result-meta">
-                  {t('home.propertyAreaLabel', { area: prodesResult.data.property_area_ha ?? '—' })} · {t('home.prodesEstimate')}
-                </div>
-                {prodesResult.data.years && prodesResult.data.years.length > 0 && (
-                  <div className="prodes-result-meta">
-                    {t('home.yearsLabel', { years: prodesResult.data.years.join(', ') })}
-                  </div>
-                )}
-                {prodesResult.data.regrowth && (
-                  <div className="prodes-result-meta">{t('home.regrowthNote')}</div>
-                )}
-              </>
-            ) : (
-              <div className="prodes-result-no">
-                {prodesResult.reason === 'car_unavailable'
-                  ? t('home.carUnavailable')
-                  : prodesResult.reason === 'not_found'
-                    ? t('home.propertyNotFound')
-                    : t('home.prodesNotAvailable')}
+              </div>
+              <div className="prodes-check-row">
+                <input
+                  id="prodes-input"
+                  className="prodes-check-input"
+                  value={prodesInput}
+                  onChange={(e) => setProdesInput(e.target.value)}
+                  placeholder={t('home.receiptPlaceholder')}
+                  aria-label={t('home.receiptPlaceholder')}
+                />
+                <button className="prodes-check-btn" type="submit" disabled={prodesLoading}>
+                  {prodesLoading ? t('home.checkingProperty') : t('home.check')}
+                </button>
+              </div>
+            </form>
+            {prodesError && (
+              <div className="prodes-error">
+                <span>{prodesError}</span>
+                <button
+                  className="prodes-result-close"
+                  onClick={clearProdes}
+                  aria-label={t('home.close')}
+                  title={t('home.close')}
+                >×</button>
               </div>
             )}
-          </div>
+            {prodesResult && (
+              <div className="prodes-result">
+                {prodesResult.data ? (
+                  <>
+                    <div className="prodes-result-header">
+                      <div className="prodes-result-title">{t('home.propertySummary')}</div>
+                      <button
+                        className="prodes-result-close"
+                        onClick={clearProdes}
+                        aria-label={t('home.close')}
+                        title={t('home.close')}
+                      >×</button>
+                    </div>
+                    <div className="prodes-result-code"><strong>{prodesResult.data.cod_imovel}</strong></div>
+                    {protectedOverlap && protectedOverlap.status === 'suspeito' && (
+                      <div className="prodes-fraud">
+                        <div className="prodes-fraud-title">⚠ {t('home.carFraudTitle')}</div>
+                        <div className="prodes-fraud-detail">
+                          {t('home.carFraudDetail', {
+                            name: protectedOverlap.overlaps[0].name,
+                            type: protectedOverlap.overlaps[0].type === 'uc' ? 'UC' : 'TI',
+                            pct: protectedOverlap.overlaps[0].overlap_pct,
+                          })}
+                          {protectedOverlap.overlaps.length > 1 &&
+                            ` ${t('home.carFraudMore', { n: protectedOverlap.overlaps.length - 1 })}`}
+                        </div>
+                        <div className="prodes-fraud-note">{t('home.carFraudNote')}</div>
+                      </div>
+                    )}
+                    {protectedOverlap && protectedOverlap.status === 'indeterminado' && (
+                      <div className="prodes-result-meta">{t('home.carOverlapIndeterminate')}</div>
+                    )}
+                    {prodesResult.data.has_prodes ? (
+                      <div className="prodes-result-yes">
+                        {t('home.hasProdesYes', {
+                          area: prodesResult.data.prodes_area_ha,
+                          years: (prodesResult.data.years || []).join(', '),
+                        })}
+                      </div>
+                    ) : (
+                      <div className="prodes-result-no">{t('home.hasProdesNo')}</div>
+                    )}
+                    <div className="prodes-result-meta">
+                      {t('home.propertyAreaLabel', { area: prodesResult.data.property_area_ha ?? '—' })} · {t('home.prodesEstimate')}
+                    </div>
+                    {prodesResult.data.years && prodesResult.data.years.length > 0 && (
+                      <div className="prodes-result-meta">
+                        {t('home.yearsLabel', { years: prodesResult.data.years.join(', ') })}
+                      </div>
+                    )}
+                    {prodesResult.data.regrowth && (
+                      <div className="prodes-result-meta">{t('home.regrowthNote')}</div>
+                    )}
+                  </>
+                ) : (
+                  <div className="prodes-result-no">
+                    {prodesResult.reason === 'car_unavailable'
+                      ? t('home.carUnavailable')
+                      : prodesResult.reason === 'not_found'
+                        ? t('home.propertyNotFound')
+                        : t('home.prodesNotAvailable')}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -1241,11 +1243,12 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           scrollWheelZoom
           preferCanvas
           zoomControl={false}
+          attributionControl={false}
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
         >
           <TileLayer key={satellite ? 'sat' : 'osm'} attribution={tileAttr} url={tileUrl} />
-          {/* Zoom reposicionado para bottom-left: no topleft ele sobrepunha o
-              painel "Resumo do imóvel" (z-index Leaflet 1000 > painel 490). */}
+          {/* Zoom reposicionado para bottom-left; attribution removido no
+              mobile para liberar espaço (credits mantidos em tileAttr). */}
           <ZoomControl position="bottomleft" />
           <MapController activeAlert={flyToAlert} />
           <FocusController focus={focus} />

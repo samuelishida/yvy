@@ -771,9 +771,16 @@
   .lt-sub { display: none; }
 
   /* PRODES check becomes a floating action button when collapsed.
-     Posicionado acima da legenda de natureza/zoom (bottom >=116 + altura
-     toggle ~36 + gap 8 => 160px) para não cobrir nenhum controle esquerdo. */
-  .prodes-check--mobile { top: auto; left: auto; right: 8px; bottom: 160px; width: auto; z-index: 490; }
+     Alinhado à esquerda junto com a legenda de natureza; sobe dinamicamente
+     quando a legenda está expandida para não ficar por baixo dela. */
+  .prodes-check--mobile {
+    top: auto;
+    left: 8px;
+    right: auto;
+    bottom: 74px;
+    width: auto;
+    z-index: 490;
+  }
   .prodes-check--mobile-open {
     position: fixed;
     inset: 0;
@@ -823,11 +830,18 @@
   .prodes-check--mobile-open .prodes-check-input { width: 100%; }
   .prodes-check--mobile-open .prodes-check-btn { width: 100%; }
 
-  /* Legend becomes a small toggle/panel anchored above the zoom control.
-     Zoom bottom-left é ~52px altura + 14px margem; deixamos 72px acima
-     da attribution (40px) para nunca cobrir o zoom. */
+  /* Result/error cards do VERIFICAR IMÓVEL ficam dentro do modal, não no topo. */
+  .prodes-check--mobile .prodes-error,
+  .prodes-check--mobile .prodes-result {
+    margin-top: 10px;
+    width: 100%;
+    max-width: 420px;
+  }
+
+  /* Legend anchored above the zoom control; botão PRODES sobe quando
+     a legenda está expandida (~80px de altura). */
   .nature-legend--mobile {
-    bottom: 116px;
+    bottom: 74px;
     left: 8px;
     padding: 0;
     background: transparent;
@@ -839,6 +853,10 @@
     z-index: 420;
   }
   .nature-legend--mobile-collapsed .nature-legend-period { display: none; }
+  .nature-legend--mobile-collapsed ~ .prodes-check--mobile,
+  .map-stage--mobile:has(.nature-legend--mobile-collapsed) .prodes-check--mobile {
+    bottom: 74px;
+  }
   .nature-legend-toggle {
     display: flex;
     align-items: center;
@@ -864,7 +882,7 @@
   .nature-legend-toggle-dots .nature-legend-dot { width: 7px; height: 7px; }
 
   .nature-legend--mobile:not(.nature-legend--mobile-collapsed) {
-    bottom: 116px;
+    bottom: 74px;
     left: 8px;
     padding: 10px 12px;
     background: rgba(13, 19, 16, 0.92);
@@ -873,6 +891,13 @@
     max-width: min(260px, calc(100vw - 16px));
     gap: 4px;
     z-index: 420;
+  }
+
+  /* Quando a legenda está expandida, o botão PRODES sobe acima dela.
+     Altura aproximada do painel expandido ~84px + gap 8px. */
+  .nature-legend--mobile:not(.nature-legend--mobile-collapsed) ~ .prodes-check--mobile,
+  .map-stage--mobile:has(.nature-legend--mobile:not(.nature-legend--mobile-collapsed)) .prodes-check--mobile {
+    bottom: 168px;
   }
 
   /* Days chips always visible above the legend toggle */
