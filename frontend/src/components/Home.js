@@ -1113,7 +1113,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
       </div>
 
       {/* Verificação PRODES por recibo CAR (plan: terrabrasilis-integration, Inc 12) */}
-      <div className={`prodes-check${isMobile ? ' prodes-check--mobile' : ''}${showMobileProdes ? ' prodes-check--mobile-open' : ''}${showMobileLegend ? ' prodes-check--mobile-legend-open' : ''}${prodesResult || prodesError ? ' prodes-check--mobile-has-result' : ''}`}>
+      <div className={`prodes-check${isMobile ? ' prodes-check--mobile' : ''}${showMobileProdes ? ' prodes-check--mobile-open' : ''}${prodesResult || prodesError ? ' prodes-check--mobile-has-result' : ''}`}>
         {isMobile && !showMobileProdes && (
           <button
             className="prodes-check-toggle"
@@ -1415,9 +1415,9 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           )}
         </MapContainer>
 
-      {/* Nature legend — bottom left, only meaningful while fires layer is on */}
+      {/* Nature legend — bottom left on desktop; mobile uses a pill toggle that opens a modal sheet so it never covers other controls. */}
       {showFires && (
-        <div className={`nature-legend${isMobile ? ' nature-legend--mobile' : ''}${isMobile && !showMobileLegend ? ' nature-legend--mobile-collapsed' : ''}`}>
+        <div className={`nature-legend${isMobile ? ' nature-legend--mobile' : ''}${isMobile && !showMobileLegend ? ' nature-legend--mobile-collapsed' : ''}${isMobile && showMobileLegend ? ' nature-legend--mobile-open' : ''}`}>
           {isMobile && (
             <button
               className="nature-legend-toggle"
@@ -1433,49 +1433,99 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             </button>
           )}
           {(!isMobile || showMobileLegend) && (
-            <>
-              <span className="nature-legend-title">{t('home.natureLegend')}</span>
-              {['crime', 'suspeito', 'permitido', 'natural'].map(n => (
-                <span key={n} className="nature-legend-item">
-                  <span className="nature-legend-dot" style={{ background: FIRE_NATURE_COLORS[n].color }} />
-                  {t(`home.nature_${n}`)}
+            isMobile ? (
+              <div className="nature-legend-card" onClick={(e) => { if (e.target === e.currentTarget) setShowMobileLegend(false); }}>
+                <div className="nature-legend-card-inner">
+                  <div className="nature-legend-card-header">
+                    <span className="nature-legend-title">{t('home.natureLegend')}</span>
+                    <button
+                      className="nature-legend-card-close"
+                      onClick={() => setShowMobileLegend(false)}
+                      aria-label={t('home.close')}
+                    >×</button>
+                  </div>
+                  {['crime', 'suspeito', 'permitido', 'natural'].map(n => (
+                    <span key={n} className="nature-legend-item">
+                      <span className="nature-legend-dot" style={{ background: FIRE_NATURE_COLORS[n].color }} />
+                      {t(`home.nature_${n}`)}
+                    </span>
+                  ))}
+                  <span className="nature-legend-sep" />
+                  <span className="nature-legend-title">{t('home.confidenceLegend')}</span>
+                  <span className="nature-legend-gradient">
+                    <span style={{ background: FIRE_STYLES.nominal.color }} />
+                    <span style={{ background: FIRE_STYLES.high.color }} />
+                    <span style={{ background: FIRE_STYLES.low.color }} />
+                  </span>
+                  <span className="nature-legend-item nature-legend-item--confidence">
+                    <span>{t('home.confidenceNominal')}</span>
+                    <span>{t('home.confidenceHigh')}</span>
+                    <span>{t('home.confidenceLow')}</span>
+                  </span>
+                  <span className="nature-legend-sep" />
+                  <div className="nature-legend-period">
+                    <span className="nature-legend-title">{t('home.firePeriod')}</span>
+                    <div className="days-chips">
+                      {[['', t('home.firePeriodRecent')], ['7', `7 ${t('home.days')}`], ['30', `30 ${t('home.days')}`], ['90', `90 ${t('home.days')}`], ['365', `365 ${t('home.days')}`]].map(([val, label]) => {
+                        const active = (fireDays == null ? '' : String(fireDays)) === val;
+                        return (
+                          <button
+                            key={val}
+                            type="button"
+                            className={`days-chip${active ? ' days-chip--active' : ''}`}
+                            onClick={() => setFireDays(val === '' ? null : Number(val))}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                <span className="nature-legend-title">{t('home.natureLegend')}</span>
+                {['crime', 'suspeito', 'permitido', 'natural'].map(n => (
+                  <span key={n} className="nature-legend-item">
+                    <span className="nature-legend-dot" style={{ background: FIRE_NATURE_COLORS[n].color }} />
+                    {t(`home.nature_${n}`)}
+                  </span>
+                ))}
+                <span className="nature-legend-sep" />
+                <span className="nature-legend-title">{t('home.confidenceLegend')}</span>
+                <span className="nature-legend-gradient">
+                  <span style={{ background: FIRE_STYLES.nominal.color }} />
+                  <span style={{ background: FIRE_STYLES.high.color }} />
+                  <span style={{ background: FIRE_STYLES.low.color }} />
                 </span>
-              ))}
-              <span className="nature-legend-sep" />
-              <span className="nature-legend-title">{t('home.confidenceLegend')}</span>
-              <span className="nature-legend-gradient">
-                <span style={{ background: FIRE_STYLES.nominal.color }} />
-                <span style={{ background: FIRE_STYLES.high.color }} />
-                <span style={{ background: FIRE_STYLES.low.color }} />
-              </span>
-              <span className="nature-legend-item nature-legend-item--confidence">
-                <span>{t('home.confidenceNominal')}</span>
-                <span>{t('home.confidenceHigh')}</span>
-                <span>{t('home.confidenceLow')}</span>
-              </span>
-              <span className="nature-legend-sep" />
-            </>
+                <span className="nature-legend-item nature-legend-item--confidence">
+                  <span>{t('home.confidenceNominal')}</span>
+                  <span>{t('home.confidenceHigh')}</span>
+                  <span>{t('home.confidenceLow')}</span>
+                </span>
+                <span className="nature-legend-sep" />
+                <div className="nature-legend-period">
+                  <span className="nature-legend-title">{t('home.firePeriod')}</span>
+                  <div className="days-chips">
+                    {[['', t('home.firePeriodRecent')], ['7', `7 ${t('home.days')}`], ['30', `30 ${t('home.days')}`], ['90', `90 ${t('home.days')}`], ['365', `365 ${t('home.days')}`]].map(([val, label]) => {
+                      const active = (fireDays == null ? '' : String(fireDays)) === val;
+                      return (
+                        <button
+                          key={val}
+                          type="button"
+                          className={`days-chip${active ? ' days-chip--active' : ''}`}
+                          onClick={() => setFireDays(val === '' ? null : Number(val))}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )
           )}
-          <div className="nature-legend-period">
-            {(!isMobile || showMobileLegend) && (
-              <span className="nature-legend-title">{t('home.firePeriod')}</span>
-            )}
-            <div className="days-chips">
-              {[['', t('home.firePeriodRecent')], ['7', `7 ${t('home.days')}`], ['30', `30 ${t('home.days')}`], ['90', `90 ${t('home.days')}`], ['365', `365 ${t('home.days')}`]].map(([val, label]) => {
-                const active = (fireDays == null ? '' : String(fireDays)) === val;
-                return (
-                  <button
-                    key={val}
-                    type="button"
-                    className={`days-chip${active ? ' days-chip--active' : ''}`}
-                    onClick={() => setFireDays(val === '' ? null : Number(val))}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
         </div>
       )}
 

@@ -770,14 +770,19 @@
 
   .lt-sub { display: none; }
 
-  /* PRODES check becomes a floating action button when collapsed.
-     Alinhado à esquerda junto com a legenda de natureza; sobe dinamicamente
-     quando a legenda está expandida para não ficar por baixo dela. */
-  .prodes-check--mobile {
+  /* Zoom re-anchored above the float-panel bar on mobile so it does not
+     overlap the bottom sheet or the nature legend. */
+  .map-stage--mobile .leaflet-bottom.leaflet-left .leaflet-control {
+    margin: 0 0 62px 8px;
+  }
+
+  /* PRODES check becomes a floating action button on the left, above zoom. */
+  .prodes-check--mobile:not(.prodes-check--mobile-open) {
+    pointer-events: none;
     top: auto;
     left: 8px;
     right: auto;
-    bottom: 74px;
+    bottom: 130px;
     width: auto;
     z-index: 490;
   }
@@ -791,6 +796,13 @@
     justify-content: flex-start;
     align-items: center;
     padding: 12px;
+    pointer-events: auto;
+  }
+  .prodes-check--mobile .prodes-check-toggle,
+  .prodes-check--mobile .prodes-check-form,
+  .prodes-check--mobile .prodes-error,
+  .prodes-check--mobile .prodes-result {
+    pointer-events: auto;
   }
   .prodes-check-toggle {
     display: flex;
@@ -807,7 +819,6 @@
     letter-spacing: 0.04em;
     text-transform: uppercase;
     cursor: pointer;
-    pointer-events: auto;
     box-shadow: 0 4px 16px rgba(0,0,0,0.35);
   }
   .prodes-check-form { margin: 0; }
@@ -838,24 +849,24 @@
     max-width: 420px;
   }
 
-  /* Legend anchored above the zoom control; botão PRODES sobe quando
-     a legenda está expandida (~80px de altura). */
+  /* Nature legend on mobile: a small pill toggle in the bottom-right. When
+     opened it becomes a centered modal so it never overlaps PRODES/zoom/float. */
   .nature-legend--mobile {
-    bottom: 74px;
-    left: 8px;
+    bottom: 62px;
+    left: auto;
+    right: 8px;
     padding: 0;
     background: transparent;
     border: none;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    pointer-events: auto;
+    pointer-events: none;
     gap: 0;
     z-index: 420;
   }
-  .nature-legend--mobile-collapsed .nature-legend-period { display: none; }
-  .nature-legend--mobile-collapsed ~ .prodes-check--mobile,
-  .map-stage--mobile:has(.nature-legend--mobile-collapsed) .prodes-check--mobile {
-    bottom: 74px;
+  .nature-legend--mobile .nature-legend-toggle,
+  .nature-legend--mobile .nature-legend-card {
+    pointer-events: auto;
   }
   .nature-legend-toggle {
     display: flex;
@@ -881,48 +892,105 @@
   }
   .nature-legend-toggle-dots .nature-legend-dot { width: 7px; height: 7px; }
 
-  .nature-legend--mobile:not(.nature-legend--mobile-collapsed) {
-    bottom: 74px;
-    left: 8px;
-    padding: 10px 12px;
-    background: rgba(13, 19, 16, 0.92);
+  /* Opened state: modal overlay with a centered card. */
+  .nature-legend--mobile.nature-legend--mobile-open {
+    position: fixed;
+    inset: 0;
+    bottom: auto;
+    right: auto;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    background: rgba(10, 15, 13, 0.65);
+    z-index: 600;
+  }
+  .nature-legend--mobile-open .nature-legend-toggle { display: none; }
+  .nature-legend-card {
+    width: 100%;
+    max-width: 420px;
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
+  }
+  .nature-legend-card-inner {
+    background: rgba(13, 19, 16, 0.96);
     border: 1px solid rgba(42, 53, 48, 1);
-    border-radius: 12px;
-    max-width: min(260px, calc(100vw - 16px));
+    border-radius: 14px;
+    padding: 14px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+    display: flex;
+    flex-direction: column;
     gap: 4px;
-    z-index: 420;
+  }
+  .nature-legend-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 2px;
+  }
+  .nature-legend-card-close {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid rgba(232, 240, 236, 0.2);
+    background: rgba(232, 240, 236, 0.06);
+    color: rgba(232, 240, 236, 0.6);
+    font-size: 16px;
+    line-height: 1;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    transition: color 0.15s ease-out, background 0.15s ease-out, border-color 0.15s ease-out;
+  }
+  .nature-legend-card-close:hover {
+    color: #E8F0EC;
+    background: rgba(232, 240, 236, 0.14);
+    border-color: rgba(232, 240, 236, 0.35);
   }
 
-  /* Quando a legenda está expandida, o botão PRODES sobe acima dela. */
-  .prodes-check--mobile-legend-open {
-    bottom: 170px !important;
-  }
-
-  /* Days chips always visible above the legend toggle */
+  /* Days chips scroll horizontally inside the modal. */
   .nature-legend--mobile .nature-legend-period { margin-top: 0; }
   .nature-legend--mobile .days-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .nature-legend--mobile .days-chips::-webkit-scrollbar { display: none; }
   .nature-legend--mobile .days-chip { flex-shrink: 0; }
 
-  /* Float panel becomes a bottom sheet on mobile */
+  /* Float panel becomes a small anchored bar when closed and a bottom sheet
+     when open. When closed it must not cover the map or other controls. */
   .float-panel--mobile {
     position: fixed;
     top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: auto;
+    max-width: none;
+    border-radius: 12px;
+    z-index: 550;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  }
+  .float-panel--mobile.float-panel--open {
     left: 0;
     right: 0;
     bottom: 0;
-    width: 100%;
-    max-width: none;
     border-radius: 14px 14px 0 0;
-    z-index: 550;
     box-shadow: 0 -8px 32px rgba(0,0,0,0.45);
   }
+  .float-panel--mobile:not(.float-panel--open) .fp-body { display: none; }
   .float-panel--mobile .fp-summary {
     padding: 10px 14px;
-    min-height: 48px;
+    min-height: 44px;
   }
-  .float-panel--mobile .fp-body { max-height: 55vh; }
-  .float-panel--mobile .fp-content { max-height: calc(55vh - 48px); }
+  .float-panel--mobile.float-panel--open .fp-body { max-height: 55vh; }
+  .float-panel--mobile.float-panel--open .fp-content { max-height: calc(55vh - 44px); }
   .fp-count { font-size: 22px; }
 
   /* Tabs: equal share, smaller type so all three fit */
