@@ -817,9 +817,10 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
     setProdesError(null);
     setProtectedOverlap(null);
   }, []);
-  const prodesQuery = async (e) => {
-    e.preventDefault();
-    const cod = prodesInput.trim();
+  const prodesQueryRef = useRef(null);
+  const prodesQuery = async (e, forcedCod) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const cod = (forcedCod || prodesInput).trim();
     if (!cod || prodesLoading) return;
     setProdesLoading(true);
     setProdesError(null);
@@ -848,6 +849,8 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
       })
       .catch(() => setProtectedOverlap(null));
   };
+  prodesQueryRef.current = prodesQuery;
+
   const alertRows = asArray(alerts);
   const fireRows = asArray(fires);
 
@@ -886,6 +889,19 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
       // silencioso — sem popup em falha de lookup
     }
   };
+
+  // Carrega o resumo PRODES/sobreposição de um imóvel no painel lateral,
+  // sem o usuário precisar copiar/colar o código do popup.
+  const loadCarSummary = useCallback((cod) => {
+    if (!cod || prodesLoading) return;
+    setProdesInput(cod);
+    // Dispara a busca no próximo tick para garantir que o estado do input já
+    // foi atualizado (e o botão reflete "Verificando...").
+    setTimeout(() => {
+      const fakeEvent = { preventDefault: () => {} };
+      prodesQueryRef.current(fakeEvent, cod);
+    }, 0);
+  }, [prodesLoading]);
 
   const fireAlertMap = useMemo(() => {
     const m = new Map();
@@ -1027,16 +1043,22 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
       {/* Verificação PRODES por recibo CAR (plan: terrabrasilis-integration, Inc 12) */}
       <div className="prodes-check">
         <form className="prodes-check-form" onSubmit={prodesQuery}>
-          <input
-            className="prodes-check-input"
-            value={prodesInput}
-            onChange={(e) => setProdesInput(e.target.value)}
-            placeholder={t('home.receiptPlaceholder')}
-            aria-label={t('home.receiptPlaceholder')}
-          />
-          <button className="prodes-check-btn" type="submit" disabled={prodesLoading}>
-            {prodesLoading ? t('home.checkingProperty') : t('home.verifyProperty')}
-          </button>
+          <label className="prodes-check-label" htmlFor="prodes-input">
+            {t('home.verifyProperty')}
+          </label>
+          <div className="prodes-check-row">
+            <input
+              id="prodes-input"
+              className="prodes-check-input"
+              value={prodesInput}
+              onChange={(e) => setProdesInput(e.target.value)}
+              placeholder={t('home.receiptPlaceholder')}
+              aria-label={t('home.receiptPlaceholder')}
+            />
+            <button className="prodes-check-btn" type="submit" disabled={prodesLoading}>
+              {prodesLoading ? t('home.checkingProperty') : t('home.check')}
+            </button>
+          </div>
         </form>
         {prodesError && (
           <div className="prodes-error">
@@ -1297,9 +1319,16 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               closeOnClick={false}
             >
               {carInspect.imovel ? (
-                <div>
-                  <strong>📋 {carInspect.imovel.id}</strong><br/>
-                  {carInspect.imovel.name}/{carInspect.imovel.uf}
+                <div className="car-popup">
+                  <div className="car-popup-title">📋 {carInspect.imovel.id}</div>
+                  <div className="car-popup-sub">{carInspect.imovel.name}/{carInspect.imovel.uf}</div>
+                  <button
+                    className="car-popup-btn"
+                    onClick={() => loadCarSummary(carInspect.imovel.id)}
+                    disabled={prodesLoading}
+                  >
+                    {prodesLoading ? t('home.checkingProperty') : t('home.viewPropertySummary')}
+                  </button>
                 </div>
               ) : (
                 <div>{t('home.noCar')}</div>
