@@ -38,12 +38,12 @@ O frontend do Yvy sofre de poluição visual em 3 telas principais:
 
 Incrementos 1-5 são independentes entre si. **Inc 6 depende (soft) do Inc 3**: os 2 slots liberados pelo split do combo são preenchidos pelos cards novos.
 
-- Inc 1 — Backend: RSS boilerplate cleanup (S) — depends on: none — unblocks: none
-- Inc 2 — Frontend: Home defaults + News clamp + FloatPanel empty state (S) — depends on: none — unblocks: none
-- Inc 3 — Dashboard: headers + dead code removal + combo split (M) — depends on: none — unblocks: 6 (soft)
-- Inc 4 — Nature legend: dual-system indicator (S) — depends on: none — unblocks: none
-- Inc 5 — Fire aggregation grid overlay (L) — depends on: none — unblocks: none
-- Inc 6 — Dashboard: TerraBrasilis data crossing cards (M) — depends on: 3 (soft — usa os slots do split do combo) — unblocks: none — **nota: também toca backend (nova rota `/api/deter/car-alert-stats` em `routes/deter.lua` + `main.lua`)**
+- Inc 1 — Backend: RSS boilerplate cleanup (S) — depends on: none — unblocks: none — **STATUS: done (2026-08-07)**
+- Inc 2 — Frontend: Home defaults + News clamp + FloatPanel empty state (S) — depends on: none — unblocks: none — **STATUS: done (2026-08-07)**
+- Inc 3 — Dashboard: headers + dead code removal + combo split (M) — depends on: none — unblocks: 6 (soft) — **STATUS: done (2026-08-07)**
+- Inc 4 — Nature legend: dual-system indicator (S) — depends on: none — unblocks: none — **STATUS: done (2026-08-07)**
+- Inc 5 — Fire aggregation grid overlay (L) — depends on: none — unblocks: none — **STATUS: done (2026-08-07)** — **REMOVIDO (2026-08-08, pedido do usuário):** o botão "Densidade", o `FireGridOverlay`/`ZoomBridge` e o CSS `.fire-grid-canvas` foram removidos de `Home.js`/`Home.css`/`i18n.js` (usuário não entendeu o recurso e pediu para tirar). Fix associado: `TileLayer` de CAR e Cerrado Veg ganharam `minNativeZoom={6}` (tiles existem só em z6+; antes pediam z5 → PNG transparente / minZoom bloqueava no zoom padrão)
+- Inc 6 — Dashboard: TerraBrasilis data crossing cards (M) — depends on: 3 (soft — usa os slots do split do combo) — unblocks: none — **STATUS: done (2026-08-07)** — **nota: também toca backend (nova rota `/api/deter/car-alert-stats` em `routes/deter.lua` + `main.lua`)**
 
 ---
 
@@ -54,6 +54,8 @@ Incrementos 1-5 são independentes entre si. **Inc 6 depende (soft) do Inc 3**: 
 **Depends on:** none
 **Unblocks:** none
 **Done criteria:** após rodar `clean_news_boilerplate.lua` (local + prod) e invalidar o cache `news:*`, `curl http://localhost:5001/api/news?lang=pt&page_size=20` **e** `...&lang=en` não retornam "apareceu primeiro em" / "appeared first on" em nenhuma description (PT ou EN).
+
+> **Implementation note (2026-08-07):** o padrão canônico (2 regexes) deixava **65+ linhas residuais** no corpus real (744 notícias) — violando o done criteria. Padrões expandidos em `utils.strip_boilerplate` para cobrir as variantes reais: "appeared first in" (traduções), ordem "first appeared on/in", prefixos "The \<Word\> post" (ex: "The Dell post", "The Alcântara post" — `[^%s]+ post.+` sem espaço literal porque o título pode começar com vírgula), "<Owner>'s \<Word\> post" (ex: "Petrobras' Plan post"), e sufixos truncados (sem fonte — `$`-anchored ou com reticências "…"). Verificado no corpus completo: 0 residual PT, 0 residual EN, 0 over-strip (nenhuma description < 20 chars). Testes: 12 casos em `test_utils.lua` (não `test_scrapers.lua` — função mora em utils.lua).
 
 #### Files to touch
 
@@ -330,16 +332,19 @@ Incrementos 1-5 são independentes entre si. **Inc 6 depende (soft) do Inc 3**: 
 ## Cross-cutting verification
 
 Após todos os incrementos:
-1. `make test-lua` — todos os testes passam (11+ arquivos em `backend-lua/tests/`; contagem "83/83" defasada)
-2. `cd frontend && npm run build` — sem erros
-3. Smoke test manual: Home → Dashboard → News → Mapas Temáticos, verificar que todas as páginas carregam sem erros de console
-4. **Pós-TerraBrasilis: abrir o Dashboard e confirmar os 3 cards novos (Inc 6) com dados reais** (DETER/CAR/fogo×veg) e sem regressão nos cards existentes
-5. **Inc 6 (SHOULD-FIX #5):** `curl -H "X-API-Key: $API_KEY" "http://localhost:5001/api/deter/car-alert-stats?days=7"` retorna `{total, by_severity, by_uf}` com dados reais
-6. `git diff --stat` — revisar que as mudanças são só as esperadas
+1. `make test-lua` — **176 testes passam** (20 arquivos `test_*.lua` + `helpers.lua`; contagem "83/83" defasada)
+2. `cd frontend && npm run build` — sem erros nem warnings
+3. Smoke test manual: Home → Dashboard → News → Mapas Temáticos, todas as páginas carregam sem erros de console (erros de console restantes no Mapas Temáticos vêm do iframe de terceiros `globalnaturewatch.org`, pré-existentes)
+4. Dashboard com os 3 cards novos (Inc 6) — Fogo×Veg com dados reais (🔥 nativa / 🪓 desmatado / 🌱 regeneração); DETER Activity e CAR Severity com empty states corretos quando não há dados na janela
+5. **Inc 6 (SHOULD-FIX #5):** `curl -H "X-API-Key: $API_KEY" "http://localhost:5001/api/deter/car-alert-stats?days=7"` retorna `{total, by_severity, by_uf}` — **rota nova registrada em `main.lua` + `routes/deter.lua`, testada em `test_deter_car.lua` (2 casos novos), backend reiniciado para carregar a rota**
+6. `git diff --stat` — 18 arquivos alterados (687+/513-), 4 componentes deletados, 1 tool novo
 
 ## Standards / common-mistakes referenced
 
-Nenhum arquivo `.agents/` encontrado no repositório.
+- `.agents/common-mistakes/common-mistakes.md` existe com 6 lições; aplicadas:
+  - **#1 (fixtures clock-relative):** `test_deter_car.lua` usa `days_ago(n)` nas fixtures da rota nova (`/api/deter/car-alert-stats`), nunca datas fixas.
+  - **#2 (Redis isolado):** os testes de rota usam `fake_ctx` com `remote_addr=127.0.0.1` + stub do Redis (padrão `test_fires_routes.lua`); nenhum namespace de produção é escrito.
+  - **#3 (batch, N+1):** nenhum loop per-item novo no backend; `get_vegetation_context_batch` já existente é reutilizado pelo card Fogo×Veg.
 
 ## Open questions (CONSIDER from review)
 

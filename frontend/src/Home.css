@@ -23,6 +23,41 @@
   min-height: 0;
 }
 
+/* CAR tiles are baked lime-green (#a3e635) opaque PNGs; hue-shift to magenta
+   (#FF84FF rendered) so the overlay contrasts with the warm-toned Cerrado Veg
+   / PRODES / fire layers when everything is on. */
+.car-tiles {
+  filter: hue-rotate(240deg) saturate(1.8);
+}
+
+/* ── Leaflet zoom control ───────────────────────────────
+   Movido para bottom-left (no topleft sobrepunha o painel "Resumo do imóvel")
+   e re-tematizado para combinar com o resto do chrome escuro. */
+.map-stage .leaflet-bottom.leaflet-left { z-index: 460; }
+.map-stage .leaflet-bottom.leaflet-left .leaflet-control { margin: 0 0 14px 16px; }
+
+.map-stage .leaflet-bar {
+  border: 1px solid rgba(42, 53, 48, 1);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.map-stage .leaflet-bar a {
+  background: rgba(13, 19, 16, 0.93);
+  color: #E8F0EC;
+  border-bottom: 1px solid rgba(42, 53, 48, 1);
+  transition: background 0.15s ease-out, color 0.15s ease-out;
+}
+.map-stage .leaflet-bar a:last-child { border-bottom: none; }
+.map-stage .leaflet-bar a:hover {
+  background: rgba(0, 201, 122, 0.12);
+  color: #00C97A;
+}
+.map-stage .leaflet-bar a.leaflet-disabled {
+  color: rgba(138, 158, 147, 0.35);
+}
+
 /* ── Layer bar ────────────────────────────────────────── */
 .layer-bar {
   position: absolute;
@@ -158,6 +193,37 @@
   color: rgba(232, 240, 236, 0.85);
   pointer-events: auto;
 }
+.prodes-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.prodes-result-header .prodes-result-title { margin-bottom: 0; }
+.prodes-result-close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(232, 240, 236, 0.2);
+  background: rgba(232, 240, 236, 0.06);
+  color: rgba(232, 240, 236, 0.6);
+  font-size: 13px;
+  line-height: 1;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: color 0.15s ease-out, background 0.15s ease-out, border-color 0.15s ease-out;
+}
+.prodes-result-close:hover {
+  color: #E8F0EC;
+  background: rgba(232, 240, 236, 0.14);
+  border-color: rgba(232, 240, 236, 0.35);
+}
 .prodes-result-title {
   font-size: 10px;
   letter-spacing: 0.08em;
@@ -185,6 +251,10 @@
 .prodes-fraud-detail { color: rgba(232, 240, 236, 0.9); font-size: 11px; }
 .prodes-fraud-note { color: rgba(232, 240, 236, 0.55); font-size: 10px; margin-top: 4px; }
 .prodes-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 8px 12px;
   background: rgba(80, 20, 12, 0.9);
   border: 1px solid rgba(239, 68, 68, 0.4);
@@ -198,7 +268,9 @@
 /* ── Nature legend ────────────────────────────────────── */
 .nature-legend {
   position: absolute;
-  bottom: 20px;
+  /* bottom: 92px — acima do controle de zoom (bottom-left), que ocupa
+     ~62px + margem de 14px. Antes ambos dividiam o canto e se sobrepunham. */
+  bottom: 92px;
   left: 20px;
   z-index: 400;
   display: flex;
@@ -233,6 +305,28 @@
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
+}
+
+/* Second group: confidence fallback (fires without nature classification) */
+.nature-legend-sep {
+  height: 1px;
+  background: rgba(42, 53, 48, 1);
+  margin: 4px 0 2px;
+}
+.nature-legend-gradient {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid rgba(42, 53, 48, 1);
+}
+.nature-legend-gradient > span {
+  flex: 1 1 0;
+}
+.nature-legend-item--confidence {
+  justify-content: space-between;
+  gap: 10px;
+  opacity: 0.85;
 }
 
 /* ── Float panel ──────────────────────────────────────── */

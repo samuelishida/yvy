@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Circle, Popup, GeoJSON, useMapEvents, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Circle, Popup, GeoJSON, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
 import { TreePine, Flame, ChevronDown } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { getCache, setCache } from '../utils/cache';
@@ -478,8 +478,11 @@ function GaugeRing({ value, max, color, size = 64 }) {
   );
 }
 
-const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAlertEnter, onAlertLeave, airQuality, temperature, onBiomeHover }) {
-  const [open, setOpen] = useState(true);
+const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAlertEnter, onAlertLeave, airQuality, temperature, onBiomeHover, loaded }) {
+  // Always collapsed on mount — the summary line already shows the live count
+  // (crit/warn badges + total); the user expands on demand. Auto-opening would
+  // defeat the collapse-by-default declutter.
+  const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('biomes');
   const { t } = useI18n();
   const critCount = alerts.filter(a => a.tick === 'crit').length;
@@ -502,7 +505,7 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
     <div className={`float-panel${open ? ' float-panel--open' : ''}`}>
       <button className="fp-summary" onClick={() => setOpen(o => !o)} aria-expanded={open}>
         <div className="fp-hero">
-          <span className="fp-count">{alerts.length > 0 ? alerts.length.toLocaleString('pt-BR') : '—'}</span>
+          <span className="fp-count">{loaded ? alerts.length.toLocaleString('pt-BR') : '—'}</span>
           <span className="fp-unit">{t('home.panelAlertsUnit')}</span>
         </div>
         <div className="fp-right">
@@ -662,10 +665,14 @@ const ALERT_TYPE_KEYS = {
 const INDIGENOUS_STYLE = { color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.22, weight: 2.5, opacity: 0.9, dashArray: '6 4' };
 const CONSERVATION_STYLE = { color: '#4ade80', fillColor: '#4ade80', fillOpacity: 0.2, weight: 2.5, opacity: 0.9, dashArray: '6 4' };
 
-// CAR overlay (Inc 3): lime-400 (#a3e635) — mais vivo/claro que o green-400 das UCs.
-// Tiles renderizados opacos; o TileLayer opacity=0.5 é o único controle de
-// transparência. CAR_TILES_VERSION é bumped ao regenerar os tiles (busta caches).
-const CAR_COLOR = '#a3e635';
+// CAR overlay: tiles são PNGs opacos pré-renderizados em lime (#a3e635, ver
+// scripts/data/render_car_tiles.py). O TileLayer .car-tiles aplica um filtro
+// CSS hue-rotate(240deg) saturate(1.8) que recolore para magenta (#FF84FF) —
+// contrasta com os tons quentes (Cerrado Veg/PRODES/focos) quando tudo está
+// ligado. O dot da layer bar (CAR_COLOR) espelha a cor renderizada. TileLayer
+// opacity=0.5 é o único controle de transparência. CAR_TILES_VERSION é bumped
+// ao regenerar os tiles (busta caches).
+const CAR_COLOR = '#FF84FF';
 const CAR_TILES_VERSION = '1';
 
 // Bounds do Brasil para o popup "sem imóvel" (mesmo clamp do backend).
@@ -784,6 +791,13 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
   // Sobreposição CAR × UC/TI (plan: protected-area-crossing, Inc 2) — badge de
   // grilagem. Busca separada do PRODES para uma falha não derrubar o resumo.
   const [protectedOverlap, setProtectedOverlap] = useState(null);
+  // Fecha o card de verificação e devolve a interação do mapa (sem isso o card
+  // ficava preso cobrindo o mapa até recarregar a página).
+  const clearProdes = useCallback(() => {
+    setProdesResult(null);
+    setProdesError(null);
+    setProtectedOverlap(null);
+  }, []);
   const prodesQuery = async (e) => {
     e.preventDefault();
     const cod = prodesInput.trim();
@@ -803,33 +817,53 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
       setProdesLoading(false);
     }
     // Badge de grilagem: independente do PRODES — falha aqui não derruba o resumo.
+    // Só aplica a resposta do recibo ATUAL — uma resposta atrasada de um recibo
+    // anterior não pode vazar para o card novo.
     cachedFetch(`/api/car/protected-overlap?cod_imovel=${encodeURIComponent(cod)}`, { ttl: 3_600_000 })
-      .then(ov => { if (ov && ov.data && ov.data.found) setProtectedOverlap(ov.data); })
+      .then(ov => {
+        if (ov && ov.data && ov.data.found && ov.data.cod_imovel === cod) {
+          setProtectedOverlap(ov.data);
+        } else {
+          setProtectedOverlap(null);
+        }
+      })
       .catch(() => setProtectedOverlap(null));
   };
   const alertRows = asArray(alerts);
   const fireRows = asArray(fires);
 
   // Clique-para-inspecionar: 1º clique abre o popup do imóvel; o próximo clique
-  // no mapa FECHA (toggle) — evita o card preso. Popup "sem imóvel" só dentro
-  // do Brasil (evita spam de popup em oceano). onClose limpa o estado quando o
+  // no mapa FECHA (toggle) — evita o card preso. O toggle é decidido de forma
+  // SÍNCRONA no clique (ref atualizado na hora, não no render) e respostas de
+  // lookups superados são descartadas (seq), então cliques rápidos não reabrem
+  // um popup que o usuário acabou de fechar. Popup "sem imóvel" só dentro do
+  // Brasil (evita spam de popup em oceano). onClose limpa o estado quando o
   // Leaflet fecha nativamente (ex: abriu o popup de fogo por cima).
+  const carInspectSeqRef = useRef(0);
   const carInspectOpenRef = useRef(false);
-  carInspectOpenRef.current = carInspect != null;
   const onCarInspect = async (latlng) => {
+    const seq = ++carInspectSeqRef.current;
     if (carInspectOpenRef.current) {
+      // Toggle: fecha.
+      carInspectOpenRef.current = false;
       setCarInspect(null);
       return;
     }
+    // Marca como abrindo imediatamente — o próximo clique já fecha, mesmo antes
+    // do lookup resolver.
+    carInspectOpenRef.current = true;
     try {
       const d = await cachedFetch(`/api/car/lookup?lat=${latlng.lat}&lon=${latlng.lng}`, { ttl: 60_000 });
+      if (seq !== carInspectSeqRef.current) return; // lookup superado, descarta
       const imovel = (d && d.imovel) || null;
       if (!imovel && !isInBrazil(latlng.lat, latlng.lng)) {
+        carInspectOpenRef.current = false;
         setCarInspect(null);
         return;
       }
       setCarInspect({ lat: latlng.lat, lng: latlng.lng, imovel });
     } catch (e) {
+      carInspectOpenRef.current = false;
       // silencioso — sem popup em falha de lookup
     }
   };
@@ -961,12 +995,30 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             {prodesLoading ? t('home.checkingProperty') : t('home.verifyProperty')}
           </button>
         </form>
-        {prodesError && <div className="prodes-error">{prodesError}</div>}
+        {prodesError && (
+          <div className="prodes-error">
+            <span>{prodesError}</span>
+            <button
+              className="prodes-result-close"
+              onClick={clearProdes}
+              aria-label={t('home.close')}
+              title={t('home.close')}
+            >×</button>
+          </div>
+        )}
         {prodesResult && (
           <div className="prodes-result">
             {prodesResult.data ? (
               <>
-                <div className="prodes-result-title">{t('home.propertySummary')}</div>
+                <div className="prodes-result-header">
+                  <div className="prodes-result-title">{t('home.propertySummary')}</div>
+                  <button
+                    className="prodes-result-close"
+                    onClick={clearProdes}
+                    aria-label={t('home.close')}
+                    title={t('home.close')}
+                  >×</button>
+                </div>
                 <div className="prodes-result-code"><strong>{prodesResult.data.cod_imovel}</strong></div>
                 {protectedOverlap && protectedOverlap.status === 'suspeito' && (
                   <div className="prodes-fraud">
@@ -1030,9 +1082,13 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           zoomDelta={0.5}
           scrollWheelZoom
           preferCanvas
+          zoomControl={false}
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
         >
           <TileLayer key={satellite ? 'sat' : 'osm'} attribution={tileAttr} url={tileUrl} />
+          {/* Zoom reposicionado para bottom-left: no topleft ele sobrepunha o
+              painel "Resumo do imóvel" (z-index Leaflet 1000 > painel 490). */}
+          <ZoomControl position="bottomleft" />
           <MapController activeAlert={flyToAlert} />
           <ProdesFlyTo bbox={prodesResult && prodesResult.data ? prodesResult.data.bbox : null} />
           <BiomeHighlightLayer activeBiome={activeBiome} biomeGeoJSON={biomeGeoJSON} />
@@ -1043,48 +1099,57 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             onHoverEnd={onFireHoverEnd}
             onClearLock={onClearFireLock}
           />
-          <TileLayer
-            key="prodes-tiles"
-            url="/api/tiles/prodes?z={z}&x={x}&y={y}"
-            opacity={showDeforest ? 0.33 : 0}
-            tileSize={256}
-            maxNativeZoom={12}
-            minZoom={2}
-            keepBuffer={4}
-            updateWhenZooming={false}
-            updateWhenIdle={false}
-            fadeIn={150}
-            attribution="&copy; INPE/TerraBrasilis PRODES"
-            zIndex={100}
-          />
-          <TileLayer
-            key="car-tiles"
-            url={`/api/tiles/car?z={z}&x={x}&y={y}&v=${CAR_TILES_VERSION}`}
-            opacity={showCar ? 0.5 : 0}
-            tileSize={256}
-            maxNativeZoom={12}
-            minZoom={2}
-            keepBuffer={4}
-            updateWhenZooming={false}
-            updateWhenIdle={false}
-            fadeIn={150}
-            attribution="&copy; SICAR"
-            zIndex={90}
-          />
-          <TileLayer
-            key="cerrado-veg-tiles"
-            url="/api/tiles/cerrado-veg?z={z}&x={x}&y={y}"
-            opacity={showCerradoVeg ? 0.5 : 0}
-            tileSize={256}
-            maxNativeZoom={9}
-            minZoom={6}
-            keepBuffer={4}
-            updateWhenZooming={false}
-            updateWhenIdle={false}
-            fadeIn={150}
-            attribution="&copy; INPE Cerrado Veg"
-            zIndex={85}
-          />
+          {showDeforest && (
+            <TileLayer
+              key="prodes-tiles"
+              url="/api/tiles/prodes?z={z}&x={x}&y={y}"
+              opacity={0.33}
+              tileSize={256}
+              maxNativeZoom={12}
+              minZoom={2}
+              keepBuffer={4}
+              updateWhenZooming={false}
+              updateWhenIdle={false}
+              fadeIn={150}
+              attribution="&copy; INPE/TerraBrasilis PRODES"
+              zIndex={100}
+            />
+          )}
+          {showCar && (
+            <TileLayer
+              key="car-tiles"
+              className="car-tiles"
+              url={`/api/tiles/car?z={z}&x={x}&y={y}&v=${CAR_TILES_VERSION}`}
+              opacity={0.5}
+              tileSize={256}
+              maxNativeZoom={12}
+              minNativeZoom={6}
+              minZoom={2}
+              keepBuffer={4}
+              updateWhenZooming={false}
+              updateWhenIdle={false}
+              fadeIn={150}
+              attribution="&copy; SICAR"
+              zIndex={90}
+            />
+          )}
+          {showCerradoVeg && (
+            <TileLayer
+              key="cerrado-veg-tiles"
+              url="/api/tiles/cerrado-veg?z={z}&x={x}&y={y}"
+              opacity={0.7}
+              tileSize={256}
+              maxNativeZoom={9}
+              minNativeZoom={6}
+              minZoom={2}
+              keepBuffer={4}
+              updateWhenZooming={false}
+              updateWhenIdle={false}
+              fadeIn={150}
+              attribution="&copy; INPE Cerrado Veg"
+              zIndex={85}
+            />
+          )}
           {showFires && activeAlert?.center && (
             <Circle
               center={activeAlert.center}
@@ -1175,7 +1240,14 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             </>
           )}
           {carInspect && (
-            <Popup position={[carInspect.lat, carInspect.lng]} autoClose closeOnClick onClose={() => setCarInspect(null)}>
+            <Popup
+              position={[carInspect.lat, carInspect.lng]}
+              autoClose
+              onClose={() => {
+                carInspectOpenRef.current = false;
+                setCarInspect(null);
+              }}
+            >
               {carInspect.imovel ? (
                 <div>
                   <strong>📋 {carInspect.imovel.id}</strong><br/>
@@ -1198,12 +1270,25 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               {t(`home.nature_${n}`)}
             </span>
           ))}
+          <span className="nature-legend-sep" />
+          <span className="nature-legend-title">{t('home.confidenceLegend')}</span>
+          <span className="nature-legend-gradient">
+            <span style={{ background: FIRE_STYLES.nominal.color }} />
+            <span style={{ background: FIRE_STYLES.high.color }} />
+            <span style={{ background: FIRE_STYLES.low.color }} />
+          </span>
+          <span className="nature-legend-item nature-legend-item--confidence">
+            <span>{t('home.confidenceNominal')}</span>
+            <span>{t('home.confidenceHigh')}</span>
+            <span>{t('home.confidenceLow')}</span>
+          </span>
         </div>
       )}
 
       {/* Consolidated float panel — bottom right */}
       <FloatPanel
         alerts={alertRows}
+        loaded={alerts !== null}
         activeAlertId={activeAlertId}
         onAlertEnter={onAlertEnter}
         onAlertLeave={onAlertLeave}
@@ -1223,13 +1308,13 @@ export default function Home() {
   const [fires,          setFires]          = useState(null);
   const [airQuality,     setAirQuality]     = useState(null);
   const [temperature,    setTemperature]    = useState(null);
-  const [showDeforest,   setShowDeforest]   = useState(true);
+  const [showDeforest,   setShowDeforest]   = useState(false);
   const [showFires,      setShowFires]      = useState(true);
-  const [showIndigenous, setShowIndigenous] = useState(true);
-  const [showConservation, setShowConservation] = useState(true);
+  const [showIndigenous, setShowIndigenous] = useState(false);
+  const [showConservation, setShowConservation] = useState(false);
   const [indigenousGeo,  setIndigenousGeo]  = useState(null);
   const [conservationGeo, setConservationGeo] = useState(null);
-  const [alerts,         setAlerts]         = useState([]);
+  const [alerts,         setAlerts]         = useState(null);
   const [alertHoverId,   setAlertHoverId]   = useState(null);
   const [fireAlertId,    setFireAlertId]    = useState(null);
   const [hoveredFireIdx, setHoveredFireIdx] = useState(null);

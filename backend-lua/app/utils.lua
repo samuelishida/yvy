@@ -40,6 +40,61 @@ function _M.normalize_title(s)
     return s:lower():gsub("[%p%s]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
 end
 
+-- Strip RSS boilerplate attribution suffixes from news descriptions. Some
+-- feeds append a line like "O post [título] apareceu primeiro em [fonte]."
+-- / "The post [title] appeared first on [source]." to the description text;
+-- it adds visual noise in the UI and pollutes search. Shared by the RSS
+-- scraper and cleanup tools.
+--
+-- The pattern set covers the real corpus (744+ rows), not just the canonical
+-- forms: "appeared first in" (translated feeds), "first appeared on/in" word
+-- order, "The <Word> post ..." prefixes (e.g. "The Dell post", "The Alcântara
+-- post"), "<Owner>'s <Word> post ..." (e.g. "Petrobras' Plan post"), and
+-- truncated suffixes where the source was cut off (ends in "appeared first"
+-- or with a UTF-8 ellipsis). `[^%.]+` bounds the source name to the sentence
+-- so trailing text after the boilerplate is preserved.
+function _M.strip_boilerplate(desc)
+    if type(desc) ~= "string" or desc == "" then return desc end
+    -- PT: canonical + truncated (source cut off with an ellipsis)
+    desc = desc:gsub("[Oo] post .+ apareceu primeiro em [^%.]+%.?%s*", "")
+    desc = desc:gsub("[Oo] post .+ apareceu primeiro%s+…", "")
+    -- EN canonical: "The post [title] appeared first on/in [source]."
+    desc = desc:gsub("[Tt]he post .+ appeared first on [^%.]+%.?%s*", "")
+    desc = desc:gsub("[Tt]he post .+ appeared first in [^%.]+%.?%s*", "")
+    desc = desc:gsub("[Tt]he post .+ first appeared on [^%.]+%.?%s*", "")
+    desc = desc:gsub("[Tt]he post .+ first appeared in [^%.]+%.?%s*", "")
+    -- EN: "The <Word> post[title] ..." — note `.+` directly after "post" so
+    -- a comma/punct right after "post" ("The Alcântara post, a quilombo...")
+    -- still matches; the literal space would break on "post,".
+    desc = desc:gsub("[Tt]he [^%s]+ post.+ appeared first on [^%.]+%.?%s*", "")
+    desc = desc:gsub("[Tt]he [^%s]+ post.+ appeared first in [^%.]+%.?%s*", "")
+    desc = desc:gsub("[Tt]he [^%s]+ post.+ first appeared on [^%.]+%.?%s*", "")
+    desc = desc:gsub("[Tt]he [^%s]+ post.+ first appeared in [^%.]+%.?%s*", "")
+    -- EN: "<Owner>'s <Word> post[title] ..." (e.g. "Petrobras' Plan post")
+    desc = desc:gsub("[A-Z][^%s]-%'%s+[^%s]+ post.+ appeared first on [^%.]+%.?%s*", "")
+    desc = desc:gsub("[A-Z][^%s]-%'%s+[^%s]+ post.+ appeared first in [^%.]+%.?%s*", "")
+    desc = desc:gsub("[A-Z][^%s]-%'%s+[^%s]+ post.+ first appeared on [^%.]+%.?%s*", "")
+    desc = desc:gsub("[A-Z][^%s]-%'%s+[^%s]+ post.+ first appeared in [^%.]+%.?%s*", "")
+    -- EN truncated: suffix cut off (no source), anchored to end of string or
+    -- followed by a UTF-8 ellipsis (feeds cut the source off mid-sentence)
+    desc = desc:gsub("[Tt]he post .+ appeared first on%s*$", "")
+    desc = desc:gsub("[Tt]he post .+ appeared first in%s*$", "")
+    desc = desc:gsub("[Tt]he post .+ appeared first%s*$", "")
+    desc = desc:gsub("[Tt]he [^%s]+ post.+ first appeared%s*$", "")
+    desc = desc:gsub("[Tt]he [^%s]+ post.+ appeared first%s*$", "")
+    desc = desc:gsub("[Tt]he post .+ appeared first%s*…", "")
+    desc = desc:gsub("[Tt]he post .+ first appeared%s*…", "")
+    desc = desc:gsub("[Tt]he [^%s]+ post.+ appeared first%s*…", "")
+    desc = desc:gsub("[Tt]he [^%s]+ post.+ first appeared%s*…", "")
+    -- EN: InfoAmazonia attribution "This content was first published on
+    -- <source>, at <title>" — always appended at the end of the description,
+    -- so greedy `.+` to end-of-string is safe. The `$`-anchored second pattern
+    -- covers feeds that cut the source off mid-word ("... on InfoAma").
+    desc = desc:gsub("[Tt]his content was first published on [^%,]+%s*,%s*at%s+.+", "")
+    desc = desc:gsub("[Tt]his content was first published on [^%,]+$", "")
+    return desc:gsub("^%s+", ""):gsub("%s+$", "")
+end
+
 function _M.parse_csv(text)
     if not text or text == "" then
         return {}

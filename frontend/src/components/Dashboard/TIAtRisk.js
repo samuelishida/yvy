@@ -37,6 +37,9 @@ export default function TIAtRisk() {
 
   return (
     <div className="dash-section">
+      <div className="chart-card__header">
+        <h2>{t('dashboard.tiAtRisk')}</h2>
+      </div>
       <div className="ti-table">
         {lands.map((l, idx) => {
           const pct = ((l.fire_count || 0) / maxCount) * 100;

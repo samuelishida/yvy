@@ -160,6 +160,10 @@ local function parse_rss(xml_text, source_name)
                 elseif tag == "description" or tag == "summary" or tag == "content" then
                     -- Strip HTML tags for description
                     local desc = text:gsub("<[^>]+>", " "):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+                    -- Strip RSS boilerplate ("... apareceu primeiro em ...") before
+                    -- the keep-longest comparison so the winning text is clean.
+                    local clean = utils.strip_boilerplate(desc)
+                    if clean ~= "" then desc = clean end
                     if not current.description or #desc > #(current.description or "") then
                         current.description = desc
                     end

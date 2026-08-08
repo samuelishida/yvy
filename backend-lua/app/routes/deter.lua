@@ -82,4 +82,19 @@ function _M.get_car_alerts(ctx)
     ctx:json(200, result)
 end
 
+-- (visual-declutter Inc 6) Agregado por severidade para o card "CAR Alerts
+-- Severity". Não agregar client-side a partir de /api/deter/car-alerts: essa
+-- rota é paginada (page_size max 100) e subestimaria o total.
+function _M.get_car_alert_stats(ctx)
+    if not auth.enforce(ctx) then return end
+    if not rl.enforce(ctx) then return end
+
+    local days = tonumber(ctx.req.args.days) or 7
+    if days < 1 then days = 1 end
+    if days > 3650 then days = 3650 end
+
+    local db = require("app.db")
+    ctx:json(200, db.get_car_alert_stats(days))
+end
+
 return _M

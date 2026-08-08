@@ -74,6 +74,11 @@
   color: rgba(138, 158, 147, 1);
   line-height: 1.65;
   margin-bottom: 16px;
+  /* Clamp descriptions to 3 lines for uniform cards (Inc 2 declutter). */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* ── Meta row ─────────────────────────────────────────── */

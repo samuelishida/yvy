@@ -146,4 +146,31 @@ describe("deter car alerts", function()
             assert.are_equal("PA-7", ctx.body.alerts[1].cod_imovel)
         end)
     end)
+
+    describe("routes /api/deter/car-alert-stats", function()
+        it("returns total + by_severity + by_uf within the days window", function()
+            local ctx = fake_ctx({ days = 7 })
+            deter_routes.get_car_alert_stats(ctx)
+            assert.are_equal(200, ctx.status)
+            assert.are_equal(4, ctx.body.total)
+            local sev = {}
+            for _, x in ipairs(ctx.body.by_severity) do sev[x.severity] = x.count end
+            assert.are_equal(1, sev["maximo"])
+            assert.are_equal(1, sev["alto"])
+            assert.are_equal(1, sev["medio"])
+            assert.are_equal(1, sev["baixo"])
+            local ufs = {}
+            for _, x in ipairs(ctx.body.by_uf) do ufs[x.uf] = x.count end
+            assert.are_equal(1, ufs["RO"])
+            assert.are_equal(1, ufs["AM"])
+        end)
+
+        it("caps days at 3650 and rejects invalid day ranges", function()
+            local ctx = fake_ctx({ days = "99999" })
+            deter_routes.get_car_alert_stats(ctx)
+            assert.are_equal(200, ctx.status)
+            -- 99999 é clampado para 3650 → janela cobre até o alerta antigo
+            assert.are_equal(5, ctx.body.total)
+        end)
+    end)
 end)

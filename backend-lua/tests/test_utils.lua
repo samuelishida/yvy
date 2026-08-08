@@ -86,4 +86,76 @@ describe("utils", function()
             assert.is_false(utils.starts_with("abc", "xyz"))
         end)
     end)
+
+    describe("strip_boilerplate", function()
+        it("strips PT RSS boilerplate", function()
+            assert.are_equal("Incêndios avançam na Amazônia.",
+                utils.strip_boilerplate("Incêndios avançam na Amazônia. O post Incêndios avançam na Amazônia apareceu primeiro em InfoAmazônia."))
+        end)
+
+        it("strips EN RSS boilerplate", function()
+            assert.are_equal("Fires advance in the Amazon.",
+                utils.strip_boilerplate("Fires advance in the Amazon. The post Fires advance in the Amazon appeared first on Mongabay."))
+        end)
+
+        it("preserves text after the boilerplate", function()
+            assert.are_equal("Extra info",
+                utils.strip_boilerplate("The post X appeared first on Y. Extra info"))
+        end)
+
+        it("is a no-op on clean descriptions", function()
+            assert.are_equal("Uma matéria normal sobre o Cerrado.",
+                utils.strip_boilerplate("Uma matéria normal sobre o Cerrado."))
+        end)
+
+        it("handles nil, empty and non-string", function()
+            assert.is_nil(utils.strip_boilerplate(nil))
+            assert.are_equal("", utils.strip_boilerplate(""))
+            assert.are_equal(42, utils.strip_boilerplate(42))
+        end)
+
+        it("strips 'appeared first in' variant", function()
+            assert.are_equal("Smart toilets use water.",
+                utils.strip_boilerplate("Smart toilets use water. The post The end of an era: what will replace toilet paper in homes? appeared first in Ratchet Free."))
+        end)
+
+        it("strips 'first appeared on' word-order variant", function()
+            assert.are_equal("Framework alleges Dell is sabotaging.",
+                utils.strip_boilerplate("Framework alleges Dell is sabotaging. The Dell post attempts to affect Framework marketing by sending XPS laptops to influencers first appeared on Edivaldo Blog."))
+        end)
+
+        it("strips 'The <Word> post' prefix variant", function()
+            assert.are_equal("IPhone Ultra promises.",
+                utils.strip_boilerplate("IPhone Ultra promises. The Apple post may launch iPhone Ultra in 2026 first appeared on Edivaldo Blog."))
+        end)
+
+        it("strips '<Owner> post' prefix variant", function()
+            assert.are_equal("Petrobras began drilling the seabed.",
+                utils.strip_boilerplate("Petrobras began drilling the seabed. Petrobras' Plan post excludes the rescue of manatees in the new oil frontier appeared first on Environmental News."))
+        end)
+
+        it("handles punctuation right after 'post' (comma)", function()
+            assert.are_equal("In the municipality with the largest quilombola population in Brazil.",
+                utils.strip_boilerplate("In the municipality with the largest quilombola population in Brazil. The Alcântara post, a quilombo under rockets first appeared in Amazônia Real ."))
+        end)
+
+        it("strips truncated suffix (no source)", function()
+            assert.are_equal("An investigation into wildlife trafficking.",
+                utils.strip_boilerplate("An investigation into wildlife trafficking. The post Investigation into wildlife trafficking aims at a link with a mega zoo in India appeared first on"))
+            assert.are_equal("The golden lion tamarin is in danger.",
+                utils.strip_boilerplate("The golden lion tamarin is in danger. The post Golden Lion Tamarin comes into the crosshairs appeared first"))
+            assert.are_equal("Morgan Stanley sees the company as a favorite.",
+                utils.strip_boilerplate("Morgan Stanley sees the company as a favorite. The post Second phase of UniversalizaSP can reach $100 billion appeared first…"))
+        end)
+
+        it("strips PT truncated suffix (ellipsis)", function()
+            assert.are_equal("Sempre guardo uma rolha de vinho na fruteira.",
+                utils.strip_boilerplate("Sempre guardo uma rolha de vinho na fruteira. O post Sempre guardo uma rolha de vinho na fruteira. Esse método é infalível apareceu primeiro …"))
+        end)
+
+        it("strips 'This content was first published on' attribution", function()
+            assert.are_equal("Um novo projeto de lei quer alavancar o papel do Brasil na corrida global dos minerais críticos.",
+                utils.strip_boilerplate("Um novo projeto de lei quer alavancar o papel do Brasil na corrida global dos minerais críticos. This content was first published on InfoAmazonia , at PL de minerais críticos avança sem considerar riscos"))
+        end)
+    end)
 end)
