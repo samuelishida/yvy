@@ -39,9 +39,51 @@
 
 ## Deploy / rollback
 
+### Option A: Manual OCI CLI deploy (when GitHub Actions is stuck)
+
+Use local OCI CLI to discover the VM IP and SSH in as `ubuntu`. Assumes:
+- `oci` CLI installed and `~/.oci/config` with API key.
+- SSH key at `~/.ssh/oci_yvy` (or `yvy-oci-deploy`).
+- Services already installed via Terraform + Ansible.
+
+```bash
+export OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING=True
+INSTANCE_ID=$(oci compute instance list \
+  -c ocid1.tenancy.oc1..aaaaaaaa5vfmx4xoxmfv577ibav5fk3ablvy56yo4arls7lvyrtbvcsohjha \
+  --region sa-saopaulo-1 --lifecycle-state RUNNING \
+  --query 'data[?"display-name"==`yvy-server`].id' --raw-output | tr -d '[]" ')
+VM_IP=$(oci compute instance list-vnics --instance-id "$INSTANCE_ID" \
+  --region sa-saopaulo-1 --query 'data[0]."public-ip"' --raw-output)
+SSH="ssh -i ~/.ssh/oci_yvy -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@$VM_IP"
+
+# Pull, rebuild frontend, restart services
+$SSH 'cd /opt/yvy && git pull origin main'
+cat > /tmp/rebuild_yvy.sh << 'EOF'
+#!/usr/bin/env bash
+export NVM_DIR="$HOME/.nvm"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+  . "$NVM_DIR/nvm.sh"
+  nvm use 18
+fi
+cd /opt/yvy/frontend
+npm ci
+npm run build
+EOF
+scp -i ~/.ssh/oci_yvy -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+  /tmp/rebuild_yvy.sh "ubuntu@$VM_IP:/tmp/rebuild_yvy.sh"
+$SSH 'bash /tmp/rebuild_yvy.sh'
+$SSH 'cd /opt/yvy && sudo systemctl restart yvy-backend yvy-frontend && sleep 3 && \
+  sudo systemctl is-active yvy-backend yvy-frontend'
+
+# Verify public HTTPS
+curl -sk -o /dev/null -w "%{http_code}\n" "https://$VM_IP/"
+```
+
+### Option B: Terraform + Ansible
+
 1. Run the CI checks locally or via GitHub Actions.
 2. Update `.env` with the target environment values.
-3. Deploy with Terraform + Ansible (`bash scripts/deploy/deploy-local.sh`) or restart services (`sudo systemctl restart yvy-backend yvy-frontend`).
+3. Deploy with `bash scripts/deploy/deploy-local.sh`.
 4. Verify `/health` on frontend and backend.
 5. Roll back by checking out the previous git revision, rerunning `scripts/dev/setup-local.sh`, and restarting os serviços.
 
