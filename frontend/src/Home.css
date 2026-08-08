@@ -316,8 +316,9 @@
   margin-bottom: 4px;
 }
 .prodes-result-code { font-size: 12px; margin-bottom: 4px; }
-.prodes-result-yes { color: #00C97A; font-weight: 600; margin-bottom: 4px; }
-.prodes-result-no { color: #f97316; font-weight: 600; margin-bottom: 4px; }
+/* "SIM" = tem desmatamento (passivo) → cor de alerta/negativa; "NÃO" = regular → verde */
+.prodes-result-yes { color: #f87171; font-weight: 600; margin-bottom: 4px; }
+.prodes-result-no { color: #00C97A; font-weight: 600; margin-bottom: 4px; }
 .prodes-result-meta { font-size: 11px; opacity: 0.65; margin-top: 2px; }
 .prodes-fraud {
   margin-top: 8px;
