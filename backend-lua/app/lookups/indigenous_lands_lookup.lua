@@ -114,4 +114,17 @@ function _M.classify_point(lon, lat)
     return nil
 end
 
+-- Candidatos cujo bounds sobrepõe a caixa (lon-first). Mesmo uso da UC:
+-- overlap CAR×TI (routes/car.lua) e scan DETER (tools/deter_protected_alerts.lua).
+function _M.candidates_in_bbox(min_lon, min_lat, max_lon, max_lat)
+    local result = {}
+    for _, entry in ipairs(lands) do
+        local b = entry.bounds
+        if b[1] <= max_lon and b[3] >= min_lon and b[2] <= max_lat and b[4] >= min_lat then
+            result[#result + 1] = { name = entry.name, rings = entry.rings, bounds = b }
+        end
+    end
+    return result
+end
+
 return _M

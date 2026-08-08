@@ -781,12 +781,16 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
   const [prodesResult, setProdesResult] = useState(null);
   const [prodesLoading, setProdesLoading] = useState(false);
   const [prodesError, setProdesError] = useState(null);
+  // Sobreposição CAR × UC/TI (plan: protected-area-crossing, Inc 2) — badge de
+  // grilagem. Busca separada do PRODES para uma falha não derrubar o resumo.
+  const [protectedOverlap, setProtectedOverlap] = useState(null);
   const prodesQuery = async (e) => {
     e.preventDefault();
     const cod = prodesInput.trim();
     if (!cod || prodesLoading) return;
     setProdesLoading(true);
     setProdesError(null);
+    setProtectedOverlap(null);
     try {
       const d = await cachedFetch(`/api/car/prodes?cod_imovel=${encodeURIComponent(cod)}`, { ttl: 60_000 });
       setProdesResult(d);
@@ -798,6 +802,10 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
     } finally {
       setProdesLoading(false);
     }
+    // Badge de grilagem: independente do PRODES — falha aqui não derruba o resumo.
+    cachedFetch(`/api/car/protected-overlap?cod_imovel=${encodeURIComponent(cod)}`, { ttl: 3_600_000 })
+      .then(ov => { if (ov && ov.data && ov.data.found) setProtectedOverlap(ov.data); })
+      .catch(() => setProtectedOverlap(null));
   };
   const alertRows = asArray(alerts);
   const fireRows = asArray(fires);
@@ -960,6 +968,24 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               <>
                 <div className="prodes-result-title">{t('home.propertySummary')}</div>
                 <div className="prodes-result-code"><strong>{prodesResult.data.cod_imovel}</strong></div>
+                {protectedOverlap && protectedOverlap.status === 'suspeito' && (
+                  <div className="prodes-fraud">
+                    <div className="prodes-fraud-title">⚠ {t('home.carFraudTitle')}</div>
+                    <div className="prodes-fraud-detail">
+                      {t('home.carFraudDetail', {
+                        name: protectedOverlap.overlaps[0].name,
+                        type: protectedOverlap.overlaps[0].type === 'uc' ? 'UC' : 'TI',
+                        pct: protectedOverlap.overlaps[0].overlap_pct,
+                      })}
+                      {protectedOverlap.overlaps.length > 1 &&
+                        ` ${t('home.carFraudMore', { n: protectedOverlap.overlaps.length - 1 })}`}
+                    </div>
+                    <div className="prodes-fraud-note">{t('home.carFraudNote')}</div>
+                  </div>
+                )}
+                {protectedOverlap && protectedOverlap.status === 'indeterminado' && (
+                  <div className="prodes-result-meta">{t('home.carOverlapIndeterminate')}</div>
+                )}
                 {prodesResult.data.has_prodes ? (
                   <div className="prodes-result-yes">
                     {t('home.hasProdesYes', {

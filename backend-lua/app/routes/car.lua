@@ -5,9 +5,12 @@
 -- e devolve o imóvel sob o ponto, ou null se não houver CAR ali.
 
 require("app.env")
-local auth = require("app.middleware.auth")
-local rl   = require("app.middleware.rate_limit")
-local cjson = require("cjson")
+local env        = require("app.env")
+local geo        = require("app.geo")
+local auth       = require("app.middleware.auth")
+local rl         = require("app.middleware.rate_limit")
+local cjson      = require("cjson")
+local car_lookup = require("app.lookups.car_lookup")
 
 local _M = {}
 
@@ -160,6 +163,164 @@ function _M.get_prodes_status(ctx)
     }
 
     redis.set(cache_key, cjson.encode(result), 86400)
+    ctx:json(200, { ok = true, cached = false, data = result })
+end
+
+-- ── Sobreposição CAR × UC/TI (plan: protected-area-crossing, Inc 1)
+--
+-- Dado o recibo (cod_imovel), estima a fração do imóvel que cai dentro de UCs
+-- e TIs (Monte-Carlo: grade de pontos dentro do polígono CAR × ray-cast contra
+-- os candidatos). Status "suspeito" quando qualquer sobreposição ≥
+-- PROTECTED_OVERLAP_SUSPECT (default 0.8 — regra do usuário). Cache Redis
+-- `car:protected:<COD>` TTL 86400, igual ao car:prodes:<COD>.
+
+local OVERLAP_SUSPECT = tonumber(env.get("PROTECTED_OVERLAP_SUSPECT", "0.8")) or 0.8
+local OVERLAP_SAMPLES = tonumber(env.get("PROTECTED_OVERLAP_SAMPLES", "32")) or 32
+local OVERLAP_MAX_SAMPLES = tonumber(env.get("PROTECTED_OVERLAP_MAX_SAMPLES", "128")) or 128
+local OVERLAP_MARGIN = 0.05      -- faixa (fração) perto do threshold → refina a grade
+local MIN_INTERIOR = 20          -- abaixo disso a estimativa não é confiável
+local CACHE_TTL = 86400
+
+-- Estimativa Monte-Carlo: grade samples×samples sobre o bbox do imóvel; conta
+-- pontos dentro do polígono CAR (point_in_geom) e, para cada ponto interior,
+-- testa os candidatos UC/TI (bbox-reject + ray-cast). O erro escala com a
+-- contagem interior (não com o lado da grade) — `sampled` é exposto na resposta.
+local function sample_overlap(prop_geom, bbox, uc_candidates, ti_candidates, samples)
+    local min_lon, min_lat = bbox.min_lon, bbox.min_lat
+    local max_lon, max_lat = bbox.max_lon, bbox.max_lat
+    local d_lon, d_lat = max_lon - min_lon, max_lat - min_lat
+
+    local by_key = {}
+    local overlaps = {}
+    local interior = 0
+
+    for i = 0, samples - 1 do
+        local lon = min_lon + (i + 0.5) / samples * d_lon
+        for j = 0, samples - 1 do
+            local lat = min_lat + (j + 0.5) / samples * d_lat
+            if car_lookup.point_in_geom(lon, lat, prop_geom) then
+                interior = interior + 1
+                for _, cand in ipairs(uc_candidates) do
+                    local b = cand.bounds
+                    if lon >= b[1] and lon <= b[3] and lat >= b[2] and lat <= b[4]
+                       and geo.point_in_polygon(lon, lat, cand.rings) then
+                        local k = "uc:" .. cand.name
+                        if not by_key[k] then
+                            by_key[k] = { type = "uc", name = cand.name, category = cand.category, count = 0 }
+                            overlaps[#overlaps + 1] = by_key[k]
+                        end
+                        by_key[k].count = by_key[k].count + 1
+                    end
+                end
+                for _, cand in ipairs(ti_candidates) do
+                    local b = cand.bounds
+                    if lon >= b[1] and lon <= b[3] and lat >= b[2] and lat <= b[4]
+                       and geo.point_in_polygon(lon, lat, cand.rings) then
+                        local k = "ti:" .. cand.name
+                        if not by_key[k] then
+                            by_key[k] = { type = "ti", name = cand.name, count = 0 }
+                            overlaps[#overlaps + 1] = by_key[k]
+                        end
+                        by_key[k].count = by_key[k].count + 1
+                    end
+                end
+            end
+        end
+    end
+
+    local max_pct = 0
+    for _, c in ipairs(overlaps) do
+        local pct = interior > 0 and (c.count / interior) * 100 or 0
+        c.overlap_pct = math.floor(pct * 10 + 0.5) / 10
+        c.count = nil
+        if c.overlap_pct > max_pct then max_pct = c.overlap_pct end
+    end
+    table.sort(overlaps, function(a, b) return a.overlap_pct > b.overlap_pct end)
+
+    local status = "ok"
+    if interior < MIN_INTERIOR then
+        status = "indeterminado"
+    elseif max_pct / 100 >= OVERLAP_SUSPECT then
+        status = "suspeito"
+    end
+
+    return { overlaps = overlaps, sampled = interior, status = status, max_pct = max_pct }
+end
+
+function _M.get_protected_overlap(ctx)
+    if not auth.enforce(ctx) then return end
+    if not rl.enforce(ctx) then return end
+
+    local cod = ctx.req.args.cod_imovel
+    if type(cod) ~= "string" or cod == "" then
+        ctx:error(400, "Missing cod_imovel")
+        return
+    end
+
+    local redis = require("app.redis")
+    local cache_key = "car:protected:" .. cod:upper()
+    local cached = redis.get(cache_key)
+    if cached then
+        local ok, data = pcall(cjson.decode, cached)
+        if ok and type(data) == "table" then
+            data.cached = true
+            ctx:json(200, { ok = true, cached = true, data = data })
+            return
+        end
+    end
+
+    local car = require("app.lookups.car_lookup")
+    car.load_car()
+    if not car.is_loaded() then
+        ctx:json(200, { cod_imovel = cod, found = false, reason = "car_unavailable", note = "CAR unavailable" })
+        return
+    end
+
+    local prop = car.get_by_cod_imovel(cod)
+    if not prop then
+        ctx:json(200, { cod_imovel = cod, found = false, reason = "not_found" })
+        return
+    end
+
+    local prop_geom = car.decode_geometry(prop.geom)
+    if not prop_geom then
+        ctx:json(200, { cod_imovel = cod, found = false, reason = "invalid_geometry" })
+        return
+    end
+
+    -- Lookups UC/TI (idempotentes; pcall para um lookup ausente não derrubar a rota)
+    local uc = require("app.lookups.conservation_units_lookup")
+    local ti = require("app.lookups.indigenous_lands_lookup")
+    pcall(uc.load_conservation_units)
+    pcall(ti.load_indigenous_lands)
+
+    -- Seleção por bbox do imóvel = superconjunto do polígono (nada pode escapar)
+    local b = prop.bbox
+    local uc_candidates = uc.candidates_in_bbox(b.min_lon, b.min_lat, b.max_lon, b.max_lat)
+    local ti_candidates = ti.candidates_in_bbox(b.min_lon, b.min_lat, b.max_lon, b.max_lat)
+
+    -- Amostragem adaptativa: refina a grade se o resultado cair na margem do
+    -- threshold ou se a contagem interior for baixa (cap PROTECTED_OVERLAP_MAX_SAMPLES)
+    local samples = OVERLAP_SAMPLES
+    local res
+    while samples <= OVERLAP_MAX_SAMPLES do
+        res = sample_overlap(prop_geom, prop.bbox, uc_candidates, ti_candidates, samples)
+        local near = math.abs(res.max_pct - OVERLAP_SUSPECT * 100) < OVERLAP_MARGIN * 100
+        if (not near) and res.sampled >= MIN_INTERIOR then break end
+        samples = samples * 2
+    end
+
+    local result = {
+        cod_imovel = prop.id,
+        found = true,
+        sampled = res.sampled,
+        overlaps = res.overlaps,
+        status = res.status,
+        threshold = OVERLAP_SUSPECT,
+        estimate = "grid-sampling",
+        cached = false,
+    }
+    redis.set(cache_key, cjson.encode(result), CACHE_TTL)
     ctx:json(200, { ok = true, cached = false, data = result })
 end
 

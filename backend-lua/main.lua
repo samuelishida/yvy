@@ -214,6 +214,12 @@ server.route("GET", "/api/car/summary", function(ctx)
     car_routes.get_summary(ctx)
 end)
 
+-- CAR × UC/TI overlap (plan: protected-area-crossing, Inc 1)
+server.route("GET", "/api/car/protected-overlap", function(ctx)
+    local car_routes = require("app.routes.car")
+    car_routes.get_protected_overlap(ctx)
+end)
+
 -- DETER alerts (plan: terrabrasilis-integration, Inc 2/3)
 server.route("GET", "/api/deter/polygons", function(ctx)
     local deter = require("app.routes.deter")

@@ -36,4 +36,23 @@ function _M.point_in_polygon(px, py, rings)
     return true
 end
 
+-- Quantos dos 4 cantos do bbox {min_lon, min_lat, max_lon, max_lat} caem dentro
+-- do polígono (rings). Usado pelo scan DETER×UC/TI para detectar cortes grandes
+-- que cruzam a borda de uma área protegida irregular (o teste de centroide
+-- sozinho os perde quando o centro cai num entalhe/concavidade).
+function _M.bbox_corner_hits(rings, bbox)
+    if not rings or not bbox then return 0 end
+    local corners = {
+        { bbox.min_lon, bbox.min_lat },
+        { bbox.max_lon, bbox.min_lat },
+        { bbox.min_lon, bbox.max_lat },
+        { bbox.max_lon, bbox.max_lat },
+    }
+    local hits = 0
+    for _, c in ipairs(corners) do
+        if _M.point_in_polygon(c[1], c[2], rings) then hits = hits + 1 end
+    end
+    return hits
+end
+
 return _M

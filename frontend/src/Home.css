@@ -169,6 +169,21 @@
 .prodes-result-yes { color: #00C97A; font-weight: 600; margin-bottom: 4px; }
 .prodes-result-no { color: #f97316; font-weight: 600; margin-bottom: 4px; }
 .prodes-result-meta { font-size: 11px; opacity: 0.65; margin-top: 2px; }
+.prodes-fraud {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  border-radius: 8px;
+  background: rgba(80, 20, 12, 0.85);
+}
+.prodes-fraud-title {
+  color: #f87171;
+  font-weight: 700;
+  font-size: 12px;
+  margin-bottom: 3px;
+}
+.prodes-fraud-detail { color: rgba(232, 240, 236, 0.9); font-size: 11px; }
+.prodes-fraud-note { color: rgba(232, 240, 236, 0.55); font-size: 10px; margin-top: 4px; }
 .prodes-error {
   padding: 8px 12px;
   background: rgba(80, 20, 12, 0.9);

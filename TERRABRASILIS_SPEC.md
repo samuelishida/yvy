@@ -23,6 +23,14 @@ geoespaciais dos programas oficiais de monitoramento ambiental:
 Serviços oficiais: **WMS**, **WFS**, **WCS**, **CSW** (padrões OGC / INDE),
 mais dashboards interativos e área de download (vetor + raster).
 
+> **Nota (plan: protected-area-crossing):** "AMS" como *Área de Manejo Especial*
+> **não é** uma categoria de dado oficial nem um layer do TerraBrasilis — a sigla
+> AMS no site é a logomarca da cooperação Brasil-Alemanha/KfW (Análise de
+> Monitoramento Espacial). As linhas `ams*` desta spec (workspaces `ams1h/ams2/ams3`)
+> continuam sendo camadas de **fogo** ("Alerta e Monitoramento Sinótico"). O
+> cruzamento de propriedades (CAR) e desmatamento (DETER) com áreas públicas usa
+> **UCs** (ICMBio/CNUC) e **TIs** (FUNAI) — dados já embarcados no app.
+
 ---
 
 ## 2. Formas de acesso

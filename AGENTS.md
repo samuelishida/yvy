@@ -54,6 +54,7 @@ Browser :5001 → C HTTP server (yvy-server.c)
 - **SQLite layer** (`backend-lua/app/db.lua`) — JSONB support via `jsonb(?)` for writes, `json(data)` for reads, expression indexes on JSON fields. Auto-migrates from legacy flat-column schema.
 - **Rate limiting** uses Redis via `app/redis.lua` with connection pooling.
 - **ingest** via `app/ingest.lua` (Lua script, not Python).
+- **Protected-area crossing** (UC/TI): `/api/car/protected-overlap` (cache Redis `car:protected:<COD>` 24h); `tools/deter_protected_alerts.lua` grava `alerts:deter_protected` (scan noturno via `deter_daily.sh`).
 
 ### JSONB Schema
 
@@ -104,6 +105,11 @@ The app also auto-migrates on startup if legacy schema is detected.
 | `FIRMS_MAP_KEY` | empty | NASA FIRMS API key for fire data sync |
 | `NEWS_API_KEY` | empty | NewsAPI key for news aggregation |
 | `WAQI_TOKEN` | empty | World Air Quality Index API token |
+| `PROTECTED_OVERLAP_SUSPECT` | `0.8` | Fração de UC/TI p/ status "suspeito" no overlap CAR×UC/TI |
+| `PROTECTED_OVERLAP_SAMPLES` | `32` | Lado da grade Monte-Carlo do overlap CAR×UC/TI |
+| `PROTECTED_OVERLAP_MAX_SAMPLES` | `128` | Cap do refinamento adaptativo da grade |
+| `DETER_LARGE_CUT_KM2` | `5` | Área mínima p/ gate de cantos no scan DETER×UC/TI |
+| `DETER_CORNER_HITS` | `3` | Cantos do bbox dentro da área p/ incursão geométrica |
 
 ## Deployment
 

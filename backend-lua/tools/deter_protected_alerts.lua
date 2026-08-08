@@ -24,12 +24,20 @@ env.load_dotenv(backend_dir .. ".env")
 
 local db       = require("app.db")
 local redis    = require("app.redis")
+local geo      = require("app.geo")
 local ti       = require("app.lookups.indigenous_lands_lookup")
 local uc       = require("app.lookups.conservation_units_lookup")
 local cjson    = require("cjson")
 local logger   = require("app.logger")
 
 local days = tonumber(arg and arg[1]) or 30
+
+-- Gate do teste de cantos (plan: protected-area-crossing, Inc 3): um polígono
+-- DETER só é considerado incursão por cantos se for um corte GRANDE (área ≥
+-- DETER_LARGE_CUT_KM2) com ≥ DETER_CORNER_HITS cantos do bbox dentro da área
+-- protegida — evita flag por simples toque de borda.
+local DETER_LARGE_CUT_KM2 = tonumber(env.get("DETER_LARGE_CUT_KM2", "5")) or 5
+local DETER_CORNER_HITS = tonumber(env.get("DETER_CORNER_HITS", "3")) or 3
 
 db.init_db()
 ti.load_indigenous_lands()
@@ -78,11 +86,31 @@ local function max_severity_class(classes)
     return best
 end
 
--- Detecta UCs/TIs de um polígono DETER. Retorna lista de hits
--- { type="uc"|"ti", name=..., info=... }.
+-- Detecta UCs/TIs de um polígono DETER (plan: protected-area-crossing, Inc 3).
+-- Geometria real: candidatos por bbox (candidates_in_bbox) + incursão por
+-- centroide OU gate de cantos (corte grande cruzando borda irregular). O
+-- atributo nativo `uc` (com filtro de incursão ≥ 10%) vira sinal ADICIONAL.
+-- Hits são deduplicados por (type, name) — um mesmo polígono não pode contar
+-- duas vezes a mesma UC (attr + geometria) e fabricar um crit de área.
+-- Retorna hits { type="uc"|"ti", name, info, area_ha } (área só do caminho
+-- attr-nativo; hits de geometria ficam com 0 — sem área fabricada).
 local function detect_territory(polygon)
     local hits = {}
+    local by_key = {}
     local clat, clon = bbox_center(polygon)
+    local b = {
+        min_lon = polygon.min_lon, min_lat = polygon.min_lat,
+        max_lon = polygon.max_lon, max_lat = polygon.max_lat,
+    }
+    local large = polygon.area_km2 and polygon.area_km2 >= DETER_LARGE_CUT_KM2
+
+    local function add_hit(type_, name, info, area_ha)
+        local key = type_ .. ":" .. name
+        if not by_key[key] then
+            by_key[key] = true
+            hits[#hits + 1] = { type = type_, name = name, info = info, area_ha = area_ha or 0 }
+        end
+    end
 
     -- UC: atributo nativo primeiro (com filtro de incursão ≥ 10%)
     local ucs = split_ucs(polygon.uc)
@@ -94,21 +122,34 @@ local function detect_territory(polygon)
             end
         end
         if include_uc then
+            local area_ha = (tonumber(polygon.areauckm) or 0) * 100
             for _, name in ipairs(ucs) do
-                hits[#hits + 1] = { type = "uc", name = name }
+                add_hit("uc", name, nil, area_ha)
             end
-        end
-    else
-        local info = uc.classify_point(clon, clat)
-        if info then
-            hits[#hits + 1] = { type = "uc", name = info.name, info = info }
         end
     end
 
-    -- TI: centroide contra anéis
-    local ti_info = ti.classify_point(clon, clat)
-    if ti_info then
-        hits[#hits + 1] = { type = "ti", name = ti_info.name, info = ti_info }
+    -- Geometria UC (roda sempre — o atributo `uc` pode citar a UC e o polígono
+    -- cruzar outra; o dedup por key impede double-count)
+    for _, cand in ipairs(uc.candidates_in_bbox(b.min_lon, b.min_lat, b.max_lon, b.max_lat)) do
+        local incursion = geo.point_in_polygon(clon, clat, cand.rings)
+        if (not incursion) and large then
+            incursion = geo.bbox_corner_hits(cand.rings, b) >= DETER_CORNER_HITS
+        end
+        if incursion then
+            add_hit("uc", cand.name, cand)
+        end
+    end
+
+    -- TI: geometria (centroide OU gate de cantos)
+    for _, cand in ipairs(ti.candidates_in_bbox(b.min_lon, b.min_lat, b.max_lon, b.max_lat)) do
+        local incursion = geo.point_in_polygon(clon, clat, cand.rings)
+        if (not incursion) and large then
+            incursion = geo.bbox_corner_hits(cand.rings, b) >= DETER_CORNER_HITS
+        end
+        if incursion then
+            add_hit("ti", cand.name, cand)
+        end
     end
 
     return hits
@@ -158,15 +199,12 @@ local function run()
                     }
                     by_key[key] = entry
                 end
-                -- Inc 8: area_ha = área de sobreposição com a área protegida,
+                -- Inc 8/3: area_ha = área de sobreposição com a área protegida,
                 -- NÃO a área total do polígono DETER (que inflava e fabricava
                 -- crit). UC usa o atributo nativo areauckm (km² dentro da UC);
-                -- TI não tem atributo nativo → 0 (sem área fabricada).
-                local overlap_km2 = 0
-                if hit.type == "uc" then
-                    overlap_km2 = tonumber(poly.areauckm) or 0
-                end
-                entry.area_ha = entry.area_ha + (overlap_km2 * 100)
+                -- hits de geometria (centroide/cantos) ficam com 0 — sem área
+                -- fabricada (ver plan protected-area-crossing, SHOULD-FIX 1).
+                entry.area_ha = entry.area_ha + (hit.area_ha or 0)
                 if poly.classname and not entry.class_set[poly.classname] then
                     entry.class_set[poly.classname] = true
                     entry.classes[#entry.classes + 1] = poly.classname
@@ -211,9 +249,22 @@ local function run()
     logger.info("DETER protected-area alerts: " .. #alerts .. " entries (" .. total .. " polygons scanned, " .. days .. "d)")
 end
 
-local ok, err = pcall(run)
-if not ok then
-    logger.error("deter_protected_alerts failed: " .. tostring(err))
-    -- chave ausente = sentinela de run falho (ver plan Inc 6 observability)
-    os.exit(1)
+-- Require-ável para testes (plan: protected-area-crossing, Inc 3): quando
+-- carregado como módulo (busted), NÃO executa o scan no load; exports internos
+-- _detect_territory/_bbox_corner_hits permitem assertar a regra de incursão.
+local _M = {}
+function _M.detect_territory(polygon) return detect_territory(polygon) end
+function _M.bbox_corner_hits(rings, bbox) return geo.bbox_corner_hits(rings, bbox) end
+
+-- arg[0] = script principal quando rodado direto (lua5.1 tools/deter_protected_alerts.lua)
+local is_main = arg and arg[0] and arg[0]:match("deter_protected_alerts%.lua$")
+if is_main then
+    local ok, err = pcall(run)
+    if not ok then
+        logger.error("deter_protected_alerts failed: " .. tostring(err))
+        -- chave ausente = sentinela de run falho (ver plan Inc 6 observability)
+        os.exit(1)
+    end
 end
+
+return _M
