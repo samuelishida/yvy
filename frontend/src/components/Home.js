@@ -324,18 +324,28 @@ function FirePopupContent({ fire, fireAlert, t }) {
 }
 
 // FireMarker - no Popup child (heavy!). Popup shown via single shared component.
+// Aumenta o raio no zoom out para que os pontos amostrados não fiquem invisíveis.
 const FireMarker = React.memo(function FireMarker({ fire, idx, s, highlighted }) {
+  const map = useMap();
+  const zoom = map ? map.getZoom() : 5;
+  const scale = zoom < 4 ? 1 + (4 - zoom) * 0.35 : 1;
+  const radius = Math.max(2.5, Math.min(7, s.radius * scale));
+  const pathOptions = {
+    ...s,
+    radius,
+    fillOpacity: Math.min(0.6, s.fillOpacity * (zoom < 4 ? 1.25 : 1)),
+  };
   return (
     <React.Fragment key={`f-${idx}`}>
       <CircleMarker
         center={[fire.lat, fire.lon]}
-        pathOptions={s}
-        radius={s.radius}
+        pathOptions={pathOptions}
+        radius={radius}
       />
       {highlighted && (
         <CircleMarker
           center={[fire.lat, fire.lon]}
-          pathOptions={{ color: '#fff', fillColor: s.fillColor, fillOpacity: 1, radius: s.radius + 3, weight: 2 }}
+          pathOptions={{ color: '#fff', fillColor: s.fillColor, fillOpacity: 1, radius: radius + 3, weight: 2 }}
           interactive={false}
         />
       )}
@@ -374,7 +384,10 @@ function ViewportFireFilter({ fires, generation, onVisibleFiresChange }) {
       // amostramos um representante por célula da tela — mantém a visão geral
       // no zoom out sem travar o frontend.
       if (zoom < 5) {
-        const cellSize = zoom <= 3 ? 64 : 40;
+        // Densidade variável: mantém pontos visíveis no zoom out sem renderizar
+        // 15k CircleMarkers. Células menores no zoom 4 (quase visualização completa)
+        // e maiores conforme afasta, mas nunca sumindo completamente.
+        const cellSize = zoom >= 4.5 ? 14 : zoom >= 4 ? 18 : zoom >= 3.5 ? 24 : zoom >= 3 ? 32 : zoom >= 2.5 ? 42 : 56;
         const cells = new Map();
         for (const f of fires) {
           if (f.lat < south || f.lat > north || f.lon < west || f.lon > east) continue;
