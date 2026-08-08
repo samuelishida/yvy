@@ -785,13 +785,17 @@
     top: auto;
     left: 8px;
     right: auto;
-    bottom: 62px;
+    bottom: 8px;
     width: auto;
     z-index: 490;
+    /* Card de resultado cresce PARA CIMA do botão, não para baixo. */
+    flex-direction: column-reverse;
+    align-items: flex-start;
+    gap: 8px;
   }
-  /* Quando há resultado, o container sobe para não sobrepor a nature-legend. */
+  /* Quando há resultado, sobe o conjunto para não ser coberto pelo float panel. */
   .prodes-check--mobile.prodes-check--mobile-has-result:not(.prodes-check--mobile-open) {
-    bottom: 130px;
+    bottom: 64px;
   }
   .prodes-check--mobile-open {
     position: fixed;
