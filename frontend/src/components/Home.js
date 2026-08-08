@@ -229,7 +229,30 @@ function FireEventsHandler({ fires, fireAlertMap, visibleToFullIdxMap, onFireOve
 }
 
 // FirePopupContent - single shared popup content (not thousands)
+// Os dados pesados de nature_evidence são buscados sob demanda via
+// /api/fire-detail, reduzindo o payload da listagem de focos.
 function FirePopupContent({ fire, fireAlert, t }) {
+  const [detail, setDetail] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!fire?.id) return;
+    // Não precisa refazer se o popup já tem evidence no fire (fallback).
+    if (fire.nature_evidence) {
+      setDetail(fire);
+      return;
+    }
+    setLoading(true);
+    let aborted = false;
+    fetch(`/api/fire-detail?id=${encodeURIComponent(fire.id)}`)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(d => { if (!aborted) setDetail(d.fire || fire); })
+      .catch(() => { if (!aborted) setDetail(fire); })
+      .finally(() => { if (!aborted) setLoading(false); });
+    return () => { aborted = true; };
+  }, [fire]);
+
+  const d = detail || fire;
   const landTag = fireAlert && (() => {
     if (fireAlert.type === 'indigenous_land')   return { cls: 'indigenous',   label: `${t('home.tagIndigenous')}: ${fireAlert.meta}` };
     if (fireAlert.type === 'conservation_unit') return { cls: 'conservation', label: `${t('home.tagConservation')}: ${fireAlert.meta}` };
@@ -240,35 +263,36 @@ function FirePopupContent({ fire, fireAlert, t }) {
   return (
     <>
       <strong>{t('home.heatFocus')}</strong><br />
-      {t('home.confidence')}: {fire.confidence}<br />
-      {fire.nature && (
+      {t('home.confidence')}: {d.confidence}<br />
+      {d.nature && (
         <>
           {t('home.nature')}:{' '}
-          <span style={{ color: FIRE_NATURE_COLORS[fire.nature]?.color || '#E8F0EC', fontWeight: 600 }}>
-            {t(`home.nature_${fire.nature}`)}
+          <span style={{ color: FIRE_NATURE_COLORS[d.nature]?.color || '#E8F0EC', fontWeight: 600 }}>
+            {t(`home.nature_${d.nature}`)}
           </span>
           <br />
         </>
       )}
-      {fire.nature_evidence?.authorization && (
+      {loading && <span style={{ color: '#888', fontSize: 11 }}>{t('home.loading')}…</span>}
+      {d.nature_evidence?.authorization && (
         <>
           {t('home.authorization')}:{' '}
           <span style={{ color: FIRE_NATURE_COLORS.permitido.color, fontWeight: 600 }}>
-            {fire.nature_evidence.authorization.nro} ({fire.nature_evidence.authorization.modo})
+            {d.nature_evidence.authorization.nro} ({d.nature_evidence.authorization.modo})
           </span>
           <br />
         </>
       )}
-      {t('home.date')}: {fire.acq_date} {fire.acq_time}<br />
-      {t('home.satellite')}: {fire.satellite}<br />
-      {t('home.brightnessTemp')}: {fire.bright_ti4}K
-      {fire.vegetation && (
+      {t('home.date')}: {d.acq_date} {d.acq_time}<br />
+      {t('home.satellite')}: {d.satellite}<br />
+      {t('home.brightnessTemp')}: {d.bright_ti4}K
+      {d.vegetation && (
         <>
           <br />
           <span style={{ color: '#2dd4ff' }}>
-            {fire.vegetation.status === 'deforested' || (fire.vegetation.status || '').startsWith('deforested')
-              ? `${t('home.fireInDeforested')} (${fire.vegetation.class_name || fire.vegetation.year || ''})`
-              : (fire.vegetation.status || '').startsWith('regrowth')
+            {d.vegetation.status === 'deforested' || (d.vegetation.status || '').startsWith('deforested')
+              ? `${t('home.fireInDeforested')} (${d.vegetation.class_name || d.vegetation.year || ''})`
+              : (d.vegetation.status || '').startsWith('regrowth')
                 ? t('home.fireInRegrowth')
                 : t('home.fireInNativeVeg')}
           </span>
@@ -1339,20 +1363,24 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             <span>{t('home.confidenceLow')}</span>
           </span>
           <span className="nature-legend-sep" />
-          <label className="nature-legend-period">
+          <div className="nature-legend-period">
             <span className="nature-legend-title">{t('home.firePeriod')}</span>
-            <select
-              className="days-select"
-              value={fireDays ?? ''}
-              onChange={e => setFireDays(e.target.value ? Number(e.target.value) : null)}
-            >
-              <option value="">{t('home.firePeriodRecent')}</option>
-              <option value="7">7 {t('home.days')}</option>
-              <option value="30">30 {t('home.days')}</option>
-              <option value="90">90 {t('home.days')}</option>
-              <option value="365">365 {t('home.days')}</option>
-            </select>
-          </label>
+            <div className="days-chips">
+              {[['', t('home.firePeriodRecent')], ['7', `7 ${t('home.days')}`], ['30', `30 ${t('home.days')}`], ['90', `90 ${t('home.days')}`], ['365', `365 ${t('home.days')}`]].map(([val, label]) => {
+                const active = (fireDays == null ? '' : String(fireDays)) === val;
+                return (
+                  <button
+                    key={val}
+                    type="button"
+                    className={`days-chip${active ? ' days-chip--active' : ''}`}
+                    onClick={() => setFireDays(val === '' ? null : Number(val))}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1550,8 +1578,10 @@ export default function Home() {
     if (cached) setFires(asArray(cached.fires).filter(validFire));
     // ?limit=15000: cap suficiente para ver permitido (162/90d) sem travar
     // o frontend com 50k CircleMarkers. Sem days, o default já é 10k.
+    // Vegetação (PRODES) não é mais trazida em lote — é buscada sob demanda
+    // no popup via /api/fire-detail, reduzindo o tempo de resposta de ~4s para ~0.02s.
     const limit = fireDays ? '&limit=15000' : '';
-    const url = '/api/fires?vegetation=true' + (fireDays ? `&days=${fireDays}` : '') + limit;
+    const url = '/api/fires' + (fireDays ? `?days=${fireDays}` : '') + limit;
     fetch(url, { signal: ac.signal })
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(d => {

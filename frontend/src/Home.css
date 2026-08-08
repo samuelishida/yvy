@@ -210,6 +210,36 @@
   flex-direction: column;
   gap: 3px;
   pointer-events: auto;
+  position: relative;
+  z-index: 1;
+}
+.days-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.days-chip {
+  background: rgba(13, 19, 16, 0.92);
+  color: rgba(232, 240, 236, 0.75);
+  border: 1px solid rgba(42, 53, 48, 1);
+  border-radius: 999px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  padding: 3px 8px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease-out, border-color 0.15s ease-out, color 0.15s ease-out;
+}
+.days-chip:hover {
+  background: rgba(0, 201, 122, 0.12);
+  border-color: rgba(0, 201, 122, 0.45);
+  color: #e8f0ec;
+}
+.days-chip--active {
+  background: rgba(0, 201, 122, 0.18);
+  border-color: rgba(0, 201, 122, 0.6);
+  color: #00C97A;
+  font-weight: 600;
 }
 .days-select {
   background: rgba(13, 19, 16, 0.92);
@@ -221,6 +251,7 @@
   padding: 3px 6px;
   height: 24px;
   cursor: pointer;
+  pointer-events: auto;  /* herda de .nature-legend-period, mas garante no select nativo */
 }
 .days-select:focus { outline: none; border-color: rgba(34, 197, 94, 0.6); }
 .days-select option { background: #0d1310; color: #e8f0ec; }

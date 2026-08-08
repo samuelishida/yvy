@@ -30,6 +30,28 @@ local GLOBAL_BBOXES = {
     "90,-90,180,90",
 }
 
+-- ── GET /api/fire-detail ────────────────────────────────────────────────
+-- Dados pesados (nature_evidence) sob demanda para o popup, evitando
+-- inflar a listagem de /api/fires.
+function _M.get_fire_detail(ctx)
+    if not auth.enforce(ctx) then return end
+    if not rl.enforce(ctx) then return end
+
+    local id = tonumber(ctx.req.args.id)
+    if not id then
+        ctx:error(400, "missing id")
+        return
+    end
+
+    local fire = db.find_fire_by_id(id)
+    if not fire then
+        ctx:error(404, "fire not found")
+        return
+    end
+
+    ctx:json(200, { fire = fire })
+end
+
 -- ── GET /api/fires ───────────────────────────────────────────────────────
 
 function _M.get_fires(ctx)

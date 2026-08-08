@@ -154,6 +154,7 @@ end)
 
 -- Fires
 server.route("GET", "/api/fires", fires.get_fires)
+server.route("GET", "/api/fire-detail", fires.get_fire_detail)
 server.route("GET", "/api/fires/timeseries", fires.get_fires_timeseries)
 server.route("GET", "/api/fires/by-state", fires.get_fires_by_state)
 server.route("GET", "/api/fires/by-biome", fires.get_by_biome)

@@ -477,11 +477,12 @@ function _M.bulk_upsert_fires_keep_first(docs)
     return #docs
 end
 
-local function rows_to_fires(rows)
+local function rows_to_fires(rows, include_evidence)
     local result = {}
     for _, r in ipairs(rows) do
         local d = utils.decode_jsonb(r.data_json or r["data_json"])
-        result[#result + 1] = {
+        local f = {
+            id = r.id or r["id"],
             lat = r.lat or r["lat"],
             lon = r.lon or r["lon"],
             confidence = d.confidence,
@@ -494,15 +495,18 @@ local function rows_to_fires(rows)
             daynight = d.daynight,
             source = d.source,  -- Inc 10: origem (FIRMS / BdQueimadas)
             nature = r.nature or r["nature"],
-            -- Sinaflor (plan: sinaflor-fogo-permitido): expõe a evidência da
-            -- classificação (ex: authorization {nro,modo}) e a versão da regra
-            -- p/ o frontend mostrar a autorização no popup. nature_evidence é
-            -- JSONB binário → json() devolve texto; NULL → nil (nil-safe).
-            nature_evidence = r.nature_evidence_json
-                and utils.decode_jsonb(r.nature_evidence_json) or nil,
             nature_version = r.nature_version ~= nil
                 and tonumber(r.nature_version) or nil,
         }
+        -- Sinaflor (plan: sinaflor-fogo-permitido): a evidência completa
+        -- (ex: authorization {nro,modo}) é pesada; só incluída quando
+        -- explicitamente solicitada (detalhe do popup). Listagem envia apenas
+        -- a natureza, reduzindo o payload JSON em ~30-40%.
+        if include_evidence then
+            f.nature_evidence = r.nature_evidence_json
+                and utils.decode_jsonb(r.nature_evidence_json) or nil
+        end
+        result[#result + 1] = f
     end
     return result
 end
@@ -518,7 +522,7 @@ function _M.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit, brazil_only, sourc
     local db = pool_acquire()
 
     local sql = [[
-        SELECT lat, lon, acq_date, ingested_at, nature, nature_at,
+        SELECT id, lat, lon, acq_date, ingested_at, nature, nature_at,
                json(nature_evidence) AS nature_evidence_json, nature_version,
                json(data) AS data_json
         FROM fire_data
@@ -541,7 +545,7 @@ function _M.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit, brazil_only, sourc
 
     local rows = fetch_all(db, sql, params)
     pool_release(db)
-    return rows_to_fires(rows)
+    return rows_to_fires(rows, false)
 end
 
 -- Same as find_fires but restricts to fires whose acq_date falls within the
@@ -553,7 +557,7 @@ function _M.find_fires_since(days, sw_lat, ne_lat, sw_lng, ne_lng, limit, brazil
     local db = pool_acquire()
 
     local sql = [[
-        SELECT lat, lon, acq_date, ingested_at, nature, nature_at,
+        SELECT id, lat, lon, acq_date, ingested_at, nature, nature_at,
                json(nature_evidence) AS nature_evidence_json, nature_version,
                json(data) AS data_json
         FROM fire_data
@@ -572,7 +576,27 @@ function _M.find_fires_since(days, sw_lat, ne_lat, sw_lng, ne_lng, limit, brazil
 
     local rows = fetch_all(db, sql, params)
     pool_release(db)
-    return rows_to_fires(rows)
+    return rows_to_fires(rows, false)
+end
+
+function _M.find_fire_by_id(id)
+    local db = pool_acquire()
+    local sql = [[
+        SELECT id, lat, lon, acq_date, ingested_at, nature, nature_at,
+               json(nature_evidence) AS nature_evidence_json, nature_version,
+               json(data) AS data_json
+        FROM fire_data
+        WHERE id = ?
+        LIMIT 1
+    ]]
+    local rows = fetch_all(db, sql, {id})
+    pool_release(db)
+    local fires = rows_to_fires(rows, true)
+    local fire = fires[1]
+    if fire then
+        fire.vegetation = _M.get_fire_vegetation_context(fire.lat, fire.lon)
+    end
+    return fire
 end
 
 function _M.prune_old_fires(days)
