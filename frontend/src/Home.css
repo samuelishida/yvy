@@ -806,7 +806,7 @@
     background: rgba(10, 15, 13, 0.65);
     justify-content: flex-start;
     align-items: center;
-    padding: 12px;
+    padding: 90px 12px 12px;
     pointer-events: auto;
   }
   .prodes-check--mobile .prodes-check-toggle,
@@ -819,13 +819,14 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 10px 14px;
+    padding: 8px 12px;
+    min-height: 40px;
     border-radius: 9999px;
     border: 1px solid rgba(0, 201, 122, 0.45);
     background: rgba(0, 201, 122, 0.16);
     color: #00C97A;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -912,8 +913,9 @@
   .nature-legend-toggle {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     padding: 8px 12px;
+    min-height: 40px;
     border-radius: 9999px;
     border: 1px solid rgba(42, 53, 48, 1);
     background: rgba(13, 19, 16, 0.92);
