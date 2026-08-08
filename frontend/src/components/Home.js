@@ -457,6 +457,25 @@ function FireHoverLock({ fires, hoveredFireIdx, lockedFireIdx, onHoverEnd, onCle
   return null;
 }
 
+// react-leaflet v4 NÃO converte props on* em handlers (onClose era no-op) e o
+// Popup do Leaflet não dispara evento 'close' próprio — só o MAPA dispara
+// 'popupclose' com {popup}. Sem sincronização, fechar via × deixava o estado
+// (carInspect / lock de fogo) intacto e o <Popup> continuava montado, reabrindo
+// no próximo re-render (ex: após zoom out). Este componente casa o popupclose
+// do mapa com a instância do popup (via ref) e limpa o estado correspondente.
+function PopupCloseSync({ carPopupRef, firePopupRef, onCarClose, onFireClose }) {
+  const map = useMap();
+  useEffect(() => {
+    const handler = (e) => {
+      if (carPopupRef.current && e.popup === carPopupRef.current) onCarClose();
+      if (firePopupRef.current && e.popup === firePopupRef.current) onFireClose();
+    };
+    map.on('popupclose', handler);
+    return () => { map.off('popupclose', handler); };
+  }, [map, carPopupRef, firePopupRef, onCarClose, onFireClose]);
+  return null;
+}
+
 function windDir(deg) {
   if (deg == null) return '—';
   const dirs = ['N','NE','L','SE','S','SO','O','NO'];
@@ -925,6 +944,30 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
     ? '&copy; Esri, Earthstar Geographics'
     : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 
+  // Posições estáveis p/ os Popups compartilhados: o array literal [lat, lon]
+  // mudava de identidade a cada render e o efeito de lifecycle do react-leaflet
+  // v4 (deps: [element, context, setOpen, position]) re-executava → removeLayer
+  // + openOn → REABRIA o popup a cada re-render (ex: após zoom out).
+  const fireIdx = hoveredFireIdx ?? lockedFireIdx;
+  const firePos = useMemo(
+    () => (fireIdx != null && fireRows[fireIdx] ? [fireRows[fireIdx].lat, fireRows[fireIdx].lon] : null),
+    [fireIdx, fireRows]
+  );
+  const carPos = useMemo(
+    () => (carInspect ? [carInspect.lat, carInspect.lng] : null),
+    [carInspect]
+  );
+  // react-leaflet v4 não expõe onClose no Popup (prop on* é ignorada) e o Popup
+  // do Leaflet não dispara 'close' próprio — o PopupCloseSync escuta o
+  // 'popupclose' do MAPA e casa com a instância (via ref) para limpar o estado
+  // de verdade quando o popup fecha (×, autoClose, Esc).
+  const firePopupRef = useRef(null);
+  const carPopupRef = useRef(null);
+  const onCarPopupClose = useCallback(() => {
+    carInspectOpenRef.current = false;
+    setCarInspect(null);
+  }, []);
+
   return (
     <div className="map-stage">
       {/* Layer bar */}
@@ -1099,6 +1142,12 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             onHoverEnd={onFireHoverEnd}
             onClearLock={onClearFireLock}
           />
+          <PopupCloseSync
+            carPopupRef={carPopupRef}
+            firePopupRef={firePopupRef}
+            onCarClose={onCarPopupClose}
+            onFireClose={onClearFireLock}
+          />
           {showDeforest && (
             <TileLayer
               key="prodes-tiles"
@@ -1226,7 +1275,8 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               {/* Single shared Popup for hovered/locked fire - avoids thousands of Popup components */}
               {(hoveredFireIdx != null || lockedFireIdx != null) && fireRows[hoveredFireIdx ?? lockedFireIdx] && (
                 <Popup
-                  position={[fireRows[hoveredFireIdx ?? lockedFireIdx].lat, fireRows[hoveredFireIdx ?? lockedFireIdx].lon]}
+                  ref={firePopupRef}
+                  position={firePos}
                   autoClose={!lockedFireIdx}
                   closeOnClick={false}
                 >
@@ -1241,12 +1291,10 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           )}
           {carInspect && (
             <Popup
-              position={[carInspect.lat, carInspect.lng]}
+              ref={carPopupRef}
+              position={carPos}
               autoClose
-              onClose={() => {
-                carInspectOpenRef.current = false;
-                setCarInspect(null);
-              }}
+              closeOnClick={false}
             >
               {carInspect.imovel ? (
                 <div>

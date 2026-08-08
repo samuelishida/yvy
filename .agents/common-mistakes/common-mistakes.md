@@ -61,3 +61,27 @@ geometry pitfalls: compute areas in an equal-area CRS (EPSG:4326 `area` is in
 square degrees, not hectares), paginate RTree candidate queries (a `LIMIT`
 silently truncates), and in shapely 2.x `STRtree.query` takes a geometry, not
 a `bounds` tuple.
+
+## 7. react-leaflet v4 Popup: `onClose` prop is a no-op; close events fire on the MAP, not the popup
+
+`<Popup onClose={...}>` does nothing in react-leaflet v4 — it only reads
+`eventHandlers` (and the Leaflet Popup never fires a `close` event on itself;
+it fires `popupclose` on the MAP with `{popup}`). So closing via the × button
+left React state (`carInspect`, fire `lockedFireIdx`) intact and the `<Popup>`
+still mounted. Two compounding traps made it REOPEN on the next re-render
+(e.g. after zoom out):
+
+- **`position={[lat, lon]}` array literal** changes identity every render, and
+  the Popup lifecycle effect deps are `[element, context, setOpen, position]`
+  → effect re-runs → `removeLayer` + `openOn` → close+reopen. Fix: memoize the
+  position array on the stable values.
+- **Leaflet default `closeOnClick: true`** closes the popup BEFORE the map
+  click handler runs; combined with a `popupclose` listener that resets the
+  open-ref, the same click then re-opened the popup (fresh lookup). Fix: set
+  `closeOnClick={false}` and let the app's own click handler (synchronous
+  toggle ref) close it.
+
+Correct pattern (see `PopupCloseSync` in `frontend/src/components/Home.js`):
+bind `map.on('popupclose')`, match `e.popup === <popupInstance>` via the
+`ref` prop (v4 forwards the Leaflet instance), and clear the corresponding
+React state.
