@@ -785,9 +785,9 @@
     top: auto;
     left: 8px;
     right: auto;
-    bottom: 8px;
+    bottom: 58px;
     width: auto;
-    z-index: 490;
+    z-index: 560;
     /* Card de resultado cresce PARA CIMA do botão, não para baixo. */
     flex-direction: column-reverse;
     align-items: flex-start;
@@ -795,7 +795,7 @@
   }
   /* Quando há resultado, sobe o conjunto para não ser coberto pelo float panel. */
   .prodes-check--mobile.prodes-check--mobile-has-result:not(.prodes-check--mobile-open) {
-    bottom: 64px;
+    bottom: 118px;
   }
   .prodes-check--mobile-open {
     position: fixed;
