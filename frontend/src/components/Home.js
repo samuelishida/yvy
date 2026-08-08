@@ -358,13 +358,7 @@ function ViewportFireFilter({ fires, generation, onVisibleFiresChange }) {
         lastGenerationRef.current = generation;
         return;
       }
-      // Zoom-gate: abaixo de zoom 5 o Brasil inteiro cabe na tela e pontos
-      // individuais são invisíveis — evita renderizar 15k CircleMarkers.
       const zoom = map.getZoom();
-      if (zoom < 5) {
-        onVisibleFiresChange([]);
-        return;
-      }
       const b = map.getBounds();
       const latSpan = b.getNorth() - b.getSouth();
       const lonSpan = b.getEast() - b.getWest();
@@ -374,6 +368,25 @@ function ViewportFireFilter({ fires, generation, onVisibleFiresChange }) {
       const south = Math.max(b.getSouth() - padLat, -85);
       const east = Math.min(b.getEast() + padLon, 180);
       const west = Math.max(b.getWest() - padLon, -180);
+
+      // Zoom-gate: abaixo de zoom 5 os pontos individuais viram sopa visual e
+      // 15k CircleMarkers pesam o canvas. Em vez de sumir completamente,
+      // amostramos um representante por célula da tela — mantém a visão geral
+      // no zoom out sem travar o frontend.
+      if (zoom < 5) {
+        const cellSize = zoom <= 3 ? 64 : 40;
+        const cells = new Map();
+        for (const f of fires) {
+          if (f.lat < south || f.lat > north || f.lon < west || f.lon > east) continue;
+          const p = map.latLngToContainerPoint([f.lat, f.lon]);
+          const key = `${Math.floor(p.x / cellSize)},${Math.floor(p.y / cellSize)}`;
+          if (!cells.has(key)) cells.set(key, f);
+        }
+        onVisibleFiresChange(Array.from(cells.values()));
+        lastGenerationRef.current = generation;
+        return;
+      }
+
       const visible = fires.filter(f =>
         f.lat >= south && f.lat <= north && f.lon >= west && f.lon <= east
       );
