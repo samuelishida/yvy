@@ -31,8 +31,8 @@
 }
 
 /* ── Leaflet zoom control ───────────────────────────────
-   Movido para bottom-left (no topleft sobrepunha o painel "Resumo do imóvel")
-   e re-tematizado para combinar com o resto do chrome escuro. */
+   Removido no mobile (gesto de pinça/substitui botões). No desktop mantém
+   bottom-left, longe do painel "Resumo do imóvel", com tema escuro. */
 .map-stage .leaflet-bottom.leaflet-left { z-index: 410; }
 .map-stage .leaflet-bottom.leaflet-left .leaflet-control { margin: 0 0 14px 16px; }
 
@@ -56,6 +56,11 @@
 }
 .map-stage .leaflet-bar a.leaflet-disabled {
   color: rgba(138, 158, 147, 0.35);
+}
+
+/* Mobile: esconde controles de zoom nativos do Leaflet. */
+.map-stage--mobile .leaflet-control-zoom {
+  display: none !important;
 }
 
 /* ── Layer bar ────────────────────────────────────────── */
@@ -770,21 +775,20 @@
 
   .lt-sub { display: none; }
 
-  /* Zoom re-anchored above the float-panel bar on mobile so it does not
-     overlap the bottom sheet or the nature legend. */
-  .map-stage--mobile .leaflet-bottom.leaflet-left .leaflet-control {
-    margin: 0 0 62px 8px;
-  }
-
-  /* PRODES check becomes a floating action button on the left, above zoom. */
+  /* PRODES check becomes a floating action button on the left. Resultado vira
+     card flutuante compacto após o CHECAR; input fica num modal fullscreen. */
   .prodes-check--mobile:not(.prodes-check--mobile-open) {
     pointer-events: none;
     top: auto;
     left: 8px;
     right: auto;
-    bottom: 130px;
+    bottom: 62px;
     width: auto;
     z-index: 490;
+  }
+  /* Quando há resultado, o container sobe para não sobrepor a nature-legend. */
+  .prodes-check--mobile.prodes-check--mobile-has-result:not(.prodes-check--mobile-open) {
+    bottom: 130px;
   }
   .prodes-check--mobile-open {
     position: fixed;
@@ -841,12 +845,42 @@
   .prodes-check--mobile-open .prodes-check-input { width: 100%; }
   .prodes-check--mobile-open .prodes-check-btn { width: 100%; }
 
-  /* Result/error cards do VERIFICAR IMÓVEL ficam dentro do modal, não no topo. */
+  /* Resultado/erro no mobile: card flutuante compacto quando o input está fechado. */
   .prodes-check--mobile .prodes-error,
   .prodes-check--mobile .prodes-result {
     margin-top: 10px;
     width: 100%;
     max-width: 420px;
+  }
+  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-error,
+  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-result {
+    margin-top: 8px;
+    width: calc(100vw - 130px);
+    max-width: 320px;
+    border-radius: 12px;
+    font-size: 12px;
+    padding: 10px 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  }
+  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-result-header,
+  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-error {
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-result-title,
+  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-result-code,
+  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-result-yes,
+  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-result-no,
+  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-result-meta,
+  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-fraud,
+  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-fraud-detail {
+    font-size: 12px;
+  }
+  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-result-close {
+    width: 22px;
+    height: 22px;
+    font-size: 14px;
+    flex-shrink: 0;
   }
 
   /* Nature legend on mobile: a small pill toggle in the bottom-right. When
