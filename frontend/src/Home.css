@@ -894,7 +894,7 @@
   /* Nature legend on mobile: a small pill toggle in the bottom-right. When
      opened it becomes a centered modal so it never overlaps PRODES/zoom/float. */
   .nature-legend--mobile {
-    bottom: 62px;
+    bottom: 58px;
     left: auto;
     right: 8px;
     padding: 0;
