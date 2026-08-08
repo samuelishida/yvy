@@ -568,7 +568,7 @@ function GaugeRing({ value, max, color, size = 64 }) {
   );
 }
 
-const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAlertEnter, onAlertLeave, airQuality, temperature, onBiomeHover, loaded, isMobile }) {
+const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, activeBiome, onAlertEnter, onAlertLeave, airQuality, temperature, onBiomeHover, loaded, isMobile }) {
   // Always collapsed on mount — the summary line already shows the live count
   // (crit/warn badges + total); the user expands on demand. Auto-opening would
   // defeat the collapse-by-default declutter.
@@ -579,6 +579,7 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
   const warnCount = alerts.filter(a => a.tick === 'warn').length;
   const aqiVal = airQuality ? airQuality.aqi : 0;
   const aqiColor = aqiVal <= 50 ? '#4ade80' : aqiVal <= 100 ? '#fbbf24' : '#ef4444';
+  const activeAlertRowRef = useRef(null);
 
   const sortedAlerts = useMemo(() => {
     const typePriority = { indigenous_land: 0, conservation_unit: 1, deter_protected: 2, cluster: 3, night_fire: 4, prodes: 5, pm25: 6 };
@@ -590,6 +591,15 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
       return (tier[a.tick] ?? 9) - (tier[b.tick] ?? 9);
     });
   }, [alerts]);
+
+  // Ensure the active alert row stays visible when the alerts tab is open.
+  useEffect(() => {
+    if (!open || tab !== 'alerts') return;
+    const node = activeAlertRowRef.current;
+    if (node && typeof node.scrollIntoView === 'function') {
+      node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [activeAlertId, tab, open]);
 
   const toggleOpen = () => setOpen(o => !o);
   const handleTab = (t) => { setTab(t); if (t !== 'biomes') onBiomeHover?.(null); };
@@ -626,9 +636,10 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
                 {sortedAlerts.length === 0 ? (
                   <div className="fp-empty">{t('home.emptyAlerts')}</div>
                 ) : (
-                  sortedAlerts.slice(0, 12).map((a, i) => (
+                  sortedAlerts.slice(0, Math.max(12, sortedAlerts.findIndex(a => a.id === activeAlertId) + 1)).map((a, i) => (
                     <div
                       key={a.id || i}
+                      ref={activeAlertId === a.id ? activeAlertRowRef : null}
                       className={`alert-row${activeAlertId === a.id ? ' alert-row--active' : ''}`}
                       onMouseEnter={() => onAlertEnter(a.id)}
                       onMouseLeave={onAlertLeave}
@@ -648,7 +659,7 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
             )}
             {tab === 'biomes' && (
               <div className="fp-biomes">
-                <BiomePanel onBiomeHover={onBiomeHover} />
+                <BiomePanel onBiomeHover={onBiomeHover} activeBiome={activeBiome} open={open} tab={tab} />
               </div>
             )}
             {tab === 'clima' && (
@@ -697,9 +708,10 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, onAle
   );
 });
 
-const BiomePanel = React.memo(function BiomePanel({ onBiomeHover }) {
+const BiomePanel = React.memo(function BiomePanel({ onBiomeHover, activeBiome, tab, open }) {
   const { t } = useI18n();
   const [biomes, setBiomes] = useState(null);
+  const activeRowRef = useRef(null);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -708,6 +720,15 @@ const BiomePanel = React.memo(function BiomePanel({ onBiomeHover }) {
       .catch(err => { if (err.name !== 'AbortError') console.error('Biomes fetch error:', err); });
     return () => ac.abort();
   }, []);
+
+  // Keep the active biome row visible when the biomes tab is open.
+  useEffect(() => {
+    if (!open || tab !== 'biomes') return;
+    const node = activeRowRef.current;
+    if (node && typeof node.scrollIntoView === 'function') {
+      node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [activeBiome, tab, open]);
 
   const sortedBiomes = useMemo(
     () => biomes === null ? DEFAULT_BIOMES : [...biomes].sort((a, b) => b.count - a.count),
@@ -727,7 +748,8 @@ const BiomePanel = React.memo(function BiomePanel({ onBiomeHover }) {
         {sortedBiomes.map((b, i) => (
           <div
             key={b.name}
-            className="biome-row"
+            ref={activeBiome === b.name ? activeRowRef : null}
+            className={`biome-row${activeBiome === b.name ? ' biome-row--active' : ''}`}
             onMouseEnter={() => onBiomeHover?.(b.name)}
             onMouseLeave={() => onBiomeHover?.(null)}
           >
@@ -1537,11 +1559,12 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
         alerts={alertRows}
         loaded={alerts !== null}
         activeAlertId={activeAlertId}
-        onAlertEnter={() => {}}
-        onAlertLeave={() => {}}
+        activeBiome={activeBiome}
+        onAlertEnter={onAlertEnter}
+        onAlertLeave={onAlertLeave}
         airQuality={airQuality}
         temperature={temperature}
-        onBiomeHover={() => {}}
+        onBiomeHover={onBiomeHover}
         isMobile={isMobile}
       />
     </div>

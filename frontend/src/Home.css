@@ -671,6 +671,9 @@
   transition: background 0.15s ease-out;
 }
 .biome-row:hover { background: rgba(255,255,255,0.04); }
+.biome-row--active { background: rgba(255,255,255,0.04); border-left: 2px solid #00C97A; }
+.alert-row--active,
+.biome-row--active { scroll-margin: 8px 0; }
 .biome-row + .biome-row { border-top: 1px solid rgba(42,53,48,0.6); }
 .biome-name  { color: #E8F0EC; font-weight: 500; font-size: 12px; }
 .biome-bar   { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.06); overflow: hidden; }
