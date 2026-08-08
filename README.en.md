@@ -388,7 +388,7 @@ Default output: `sqlite_backups/`
 ## Operations
 
 - `RUNBOOK.md` — Operations runbook
-- `AGENTS.md` — Quick guide for AI agents
+- `.agents/AGENTS.md` — Quick guide for AI agents
 - `.github/workflows/GITHUB_SECRETS.md` — Secrets configuration
 
 ## License

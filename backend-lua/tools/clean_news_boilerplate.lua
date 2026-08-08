@@ -36,7 +36,7 @@ local skipped = 0
 
 db:exec("BEGIN")
 
--- Read via json(data) — never the raw BLOB (AGENTS.md Gotchas).
+-- Read via json(data) — never the raw BLOB (.agents/AGENTS.md Gotchas).
 local select_stmt = db:prepare("SELECT url, json(data) AS data_text FROM news")
 if not select_stmt then
     print("ERROR preparing SELECT: " .. tostring(db:errmsg()))

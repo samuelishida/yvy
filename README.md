@@ -394,7 +394,7 @@ Saída padrão: `sqlite_backups/`
 ## Operação
 
 - `RUNBOOK.md` — Runbook de operações
-- `AGENTS.md` — Guia rápido para agentes de IA
+- `.agents/AGENTS.md` — Guia rápido para agentes de IA
 - `.github/workflows/GITHUB_SECRETS.md` — Configuração de secrets
 
 ## Licença

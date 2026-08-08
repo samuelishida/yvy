@@ -1,7 +1,7 @@
 # Common Mistakes — Yvy
 
 Shared lessons recorded after the TerraBrasilis Integration review (2026-08-07).
-Future plans and reviews should check code against these. See also `AGENTS.md`.
+Future plans and reviews should check code against these. See also `.agents/AGENTS.md`.
 
 ## 1. Test fixtures must be clock-relative, never absolute dates
 
