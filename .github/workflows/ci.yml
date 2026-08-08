@@ -1,11 +1,9 @@
 name: CI
 
 on:
+  # CI roda em QUALQUER branch (push ou PR). O deploy é separado e só
+  # dispara na main (ver deploy-oci.yml).
   push:
-    branches:
-      - main
-      - master
-      - dev
   pull_request:
 
 jobs:

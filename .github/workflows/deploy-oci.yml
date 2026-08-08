@@ -3,7 +3,10 @@ name: Deploy to OCI
 on:
   # Só dispara DEPOIS que o workflow "CI" terminar — não mais em paralelo no push.
   # O guard no job garante deploy apenas quando o CI passou (conclusion=success)
-  # e o run foi na main. workflow_dispatch segue disponível p/ deploy manual.
+  # E o run foi na main. Como o CI agora roda em qualquer branch, o workflow_run
+  # dispara para cada branch, mas o guard `head_branch == 'main'` garante que
+  # branches de feature/PR NUNCA deployam. workflow_dispatch segue disponível
+  # p/ deploy manual.
   workflow_run:
     workflows: ["CI"]
     types: [completed]
