@@ -1113,7 +1113,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
       </div>
 
       {/* Verificação PRODES por recibo CAR (plan: terrabrasilis-integration, Inc 12) */}
-      <div className={`prodes-check${isMobile ? ' prodes-check--mobile' : ''}${showMobileProdes ? ' prodes-check--mobile-open' : ''}${prodesResult || prodesError ? ' prodes-check--mobile-has-result' : ''}`}>
+      <div className={`prodes-check${isMobile ? ' prodes-check--mobile' : ''}${showMobileProdes ? ' prodes-check--mobile-open' : ''}${showMobileLegend ? ' prodes-check--mobile-legend-open' : ''}${prodesResult || prodesError ? ' prodes-check--mobile-has-result' : ''}`}>
         {isMobile && !showMobileProdes && (
           <button
             className="prodes-check-toggle"

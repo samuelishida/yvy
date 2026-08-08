@@ -893,11 +893,9 @@
     z-index: 420;
   }
 
-  /* Quando a legenda está expandida, o botão PRODES sobe acima dela.
-     Altura aproximada do painel expandido ~84px + gap 8px. */
-  .nature-legend--mobile:not(.nature-legend--mobile-collapsed) ~ .prodes-check--mobile,
-  .map-stage--mobile:has(.nature-legend--mobile:not(.nature-legend--mobile-collapsed)) .prodes-check--mobile {
-    bottom: 168px;
+  /* Quando a legenda está expandida, o botão PRODES sobe acima dela. */
+  .prodes-check--mobile-legend-open {
+    bottom: 170px !important;
   }
 
   /* Days chips always visible above the legend toggle */
