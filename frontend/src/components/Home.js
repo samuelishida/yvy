@@ -318,10 +318,10 @@ function ViewportFireFilter({ fires, onVisibleFiresChange }) {
         onVisibleFiresChange([]);
         return;
       }
-      // Zoom-gate: abaixo de zoom 7 o Brasil inteiro cabe na tela e pontos
+      // Zoom-gate: abaixo de zoom 5 o Brasil inteiro cabe na tela e pontos
       // individuais são invisíveis — evita renderizar 15k CircleMarkers.
       const zoom = map.getZoom();
-      if (zoom < 7) {
+      if (zoom < 5) {
         onVisibleFiresChange([]);
         return;
       }
