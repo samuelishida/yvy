@@ -332,14 +332,18 @@ const FireMarker = React.memo(function FireMarker({ fire, idx, s, highlighted })
 });
 
 // ViewportFireFilter - clips fires to visible bounds + 15% margin
-function ViewportFireFilter({ fires, onVisibleFiresChange }) {
+function ViewportFireFilter({ fires, generation, onVisibleFiresChange }) {
   const rafRef = useRef(null);
+  // Guarda a última geração processada; se mudou, descarta resultados
+  // baseados em arrays do período anterior.
+  const lastGenerationRef = useRef(generation);
   const updateVisibleFires = useCallback((map) => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = null;
       if (!fires || fires.length === 0) {
         onVisibleFiresChange([]);
+        lastGenerationRef.current = generation;
         return;
       }
       // Zoom-gate: abaixo de zoom 5 o Brasil inteiro cabe na tela e pontos
@@ -361,9 +365,10 @@ function ViewportFireFilter({ fires, onVisibleFiresChange }) {
       const visible = fires.filter(f =>
         f.lat >= south && f.lat <= north && f.lon >= west && f.lon <= east
       );
+      lastGenerationRef.current = generation;
       onVisibleFiresChange(visible);
     });
-  }, [fires, onVisibleFiresChange]);
+  }, [fires, generation, onVisibleFiresChange]);
 
   const map = useMapEvents({
     moveend: () => updateVisibleFires(map),
@@ -371,9 +376,14 @@ function ViewportFireFilter({ fires, onVisibleFiresChange }) {
   });
 
   useEffect(() => {
+    // Mudou de período e ainda não processamos a nova geração: limpa
+    // visibleFires para não exibir pontos do período anterior.
+    if (generation !== lastGenerationRef.current) {
+      onVisibleFiresChange([]);
+    }
     updateVisibleFires(map);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, [updateVisibleFires, map]);
+  }, [updateVisibleFires, map, generation, onVisibleFiresChange]);
 
   return null;
 }
@@ -820,7 +830,8 @@ const ProdesFlyTo = React.memo(function ProdesFlyTo({ bbox }) {
   return null;
 });
 
-const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, t, alerts, activeAlertId, flyToAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, airQuality, temperature, activeBiome, biomeGeoJSON, onBiomeHover, focus, fireDays, setFireDays }) {  const [satellite, setSatellite] = useState(true);
+const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, t, alerts, activeAlertId, flyToAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, airQuality, temperature, activeBiome, biomeGeoJSON, onBiomeHover, focus, fireDays, setFireDays, fireDataGeneration }) {
+  const [satellite, setSatellite] = useState(true);
   // Unique per-mount key prevents "Map container already initialized" on remount
   const [mapKey] = useState(() => ++_mapMountCounter);
   const [visibleFires, setVisibleFires] = useState([]);
@@ -950,11 +961,31 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
     return visibleFires.map(fire => ({ fire, fullIdx: fireToFullIdxMap.get(fire) }));
   }, [visibleFires, fireToFullIdxMap, showFires]);
 
+  // Quando os dados de fogo mudam, o array anterior de visibleFires pode
+  // conter objetos de outro conjunto (outro período). Esses objetos legados
+  // não são encontrados no fireToFullIdxMap → fullIdx undefined → keys
+  // duplicadas e pontos fantasmas. Reconcilia usando id do foco se houver.
+  const keyedFireRenderList = useMemo(() => {
+    return fireRenderList
+      .map(({ fire }) => {
+        const fullIdx = fireToFullIdxMap.get(fire);
+        if (fullIdx != null) return { fire, fullIdx };
+        // Fallback por id quando o objeto visibleFire veio de cache/estado anterior
+        const found = fireRows.find(f => f.id === fire.id);
+        if (found) {
+          const idx = fireToFullIdxMap.get(found);
+          if (idx != null) return { fire: found, fullIdx: idx };
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }, [fireRenderList, fireToFullIdxMap, fireRows]);
+
   const visibleToFullIdxMap = useMemo(() => {
     const m = new Map();
-    fireRenderList.forEach(({ fullIdx }, visIdx) => m.set(visIdx, fullIdx));
+    keyedFireRenderList.forEach(({ fullIdx }, visIdx) => m.set(visIdx, fullIdx));
     return m;
-  }, [fireRenderList]);
+  }, [keyedFireRenderList]);
 
   // Alert lookup for O(1) access instead of O(n) find in render loop
   const alertByIdMap = useMemo(() => {
@@ -1272,7 +1303,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               }}
             />
           )}
-          <ViewportFireFilter fires={fireRows} onVisibleFiresChange={setVisibleFires} />
+          <ViewportFireFilter fires={fireRows} generation={fireDataGeneration} onVisibleFiresChange={setVisibleFires} />
           <CanvasRedrawOnToggle flag={showFires} />
           {(showFires || showCar) && (
             <FireEventsHandler
@@ -1288,7 +1319,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           )}
           {showFires && (
             <>
-              {fireRenderList.map(({ fire, fullIdx }, visIdx) => (
+              {keyedFireRenderList.map(({ fire, fullIdx }) => (
                 <FireMarker
                   key={`f-${fullIdx}`}
                   fire={fire}
@@ -1404,7 +1435,15 @@ const DEFAULT_LON = -51.925;
 
 export default function Home() {
   const { t } = useI18n();
-  const [fires,          setFires]          = useState(null);
+  const [firesState,     setFiresState]     = useState({ fires: null, generation: 0 });
+  const fires = firesState.fires;
+  const setFires = useCallback((next) => {
+    if (next && typeof next === 'object' && 'fires' in next && 'generation' in next) {
+      setFiresState(next);
+    } else {
+      setFiresState(prev => ({ fires: next, generation: prev.generation }));
+    }
+  }, []);
   // Período dos focos (plan: sinaflor-fogo-permitido): null = 10k mais recentes;
   // 7/30/90/365 = janela ?days=N (revela focos antigos, ex: permitido).
   // Default 90 — durante a moratória (jul-out) os 10k mais recentes são todos
@@ -1428,6 +1467,10 @@ export default function Home() {
   const [activeBiome,    setActiveBiome]    = useState(null);
   const [biomeGeoJSON,   setBiomeGeoJSON]   = useState(null);
   const fireHoverOutTimeoutRef = useRef(null);
+  // Versão incremental para invalidar viewport-derived visibleFires quando o
+  // período muda. O array visibleFires pode reter objetos do período anterior,
+  // então bampeamos a geração até que o novo fetch re-popule fires.
+  const fireDataGenerationRef = useRef(0);
   const alertFlyToTimerRef  = useRef(null);
   const biomeHoverTimerRef  = useRef(null);
   const indiFetchedRef      = useRef(false);
@@ -1570,6 +1613,7 @@ export default function Home() {
   // and producing visible pop-in. Canvas renderer (preferCanvas on MapContainer) handles viewport clipping cheaply.
   useEffect(() => {
     const ac = new AbortController();
+    const generation = ++fireDataGenerationRef.current;
     const validFire = f => f.lat != null && f.lon != null;
     // Cache por período (chave inclui fireDays) — trocar o seletor não pode
     // servir o cache de outra janela.
@@ -1586,13 +1630,13 @@ export default function Home() {
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(d => {
         const f = asArray(d.fires).filter(validFire);
-        setFires(f);
+        setFires({ fires: f, generation });
         setCache(cacheKey, { fires: f, last_sync: d.last_sync });
       })
       .catch(err => {
         if (err.name !== 'AbortError') {
           console.error('Fires fetch error:', err);
-          if (!cached) setFires([]);
+          if (!cached) setFires({ fires: [], generation });
         }
       });
     return () => ac.abort();
@@ -1713,6 +1757,7 @@ export default function Home() {
         biomeGeoJSON={biomeGeoJSON}
         onBiomeHover={handleBiomeHover}
         focus={focus}
+        fireDataGeneration={fireDataGenerationRef.current}
       />
     </div>
   );
