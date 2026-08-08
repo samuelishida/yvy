@@ -10,16 +10,17 @@
 --   3. CAR / área privada        → moratória → crime; senão autorização → permitido; senão suspeito
 --   4. sem território            → moratória → suspeito; senão natural
 --
--- NATURE_VERSION: versão única da regra (env FIRE_NATURE_VERSION, default 1).
--- Bump manual (ex: 2) quando o CAR importa (Inc 6) ou a config de moratória
--- muda → o backfill reclassifica focos com nature_version < NATURE_VERSION.
+-- NATURE_VERSION: versão única da regra (env FIRE_NATURE_VERSION, default 3).
+-- Bump manual (ex: 3) quando o CAR importa, a config de moratória muda ou uma
+-- nova fonte de autorização (Sinaflor) entra → o backfill reclassifica focos
+-- com nature_version < NATURE_VERSION.
 
 require("app.env")
 
 local _M = {}
 
 -- Versão da regra — lida no require; usada pelo backfill (tools/classify_fires.lua)
-_M.NATURE_VERSION = tonumber(os.getenv("FIRE_NATURE_VERSION") or "2") or 2
+_M.NATURE_VERSION = tonumber(os.getenv("FIRE_NATURE_VERSION") or "3") or 3
 
 local DEFAULT_CONFIG = {
     thermal = {
@@ -35,7 +36,7 @@ local DEFAULT_CONFIG = {
         months = {7, 8, 9, 10},               -- janela padrão jul–out (decreto anual)
         by_state = {},                        -- override: { RO = {7,8,9,10}, ... }
     },
-    sinaflor = nil,  -- hook plugável: fn(car_prop, acq_date) -> bool|nil (sem dado → não autorizado)
+    sinaflor = nil,  -- hook plugável: fn(car_prop, acq_date) -> auth|false (objeto {nro,modo,data_inicio,data_fim} quando autorizado; sem dado → false)
 }
 
 -- Mescla um cfg parcial do usuário sobre DEFAULT_CONFIG (sub-seções thermal/
@@ -170,7 +171,10 @@ function _M.classify_fire(fire, territory, cfg)
             auth = c.sinaflor(territory.car, fire.acq_date) or false
         end
         if auth then
-            evidence.authorization = true
+            -- Objeto {nro, modo, data_inicio, data_fim} (não bool): o popup/dashboard
+            -- mostra o nº e o tipo da autorização. `true` (stub antigo) continua
+            -- truthy — compatível com o teste legado.
+            evidence.authorization = auth
             return { nature = "permitido", evidence = evidence }
         end
         evidence.no_authorization = true

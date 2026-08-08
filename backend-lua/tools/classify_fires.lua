@@ -40,6 +40,16 @@ local car = nil
 pcall(function() car = require("app.lookups.car_lookup") end)
 if car and car.load_car then pcall(car.load_car) end
 
+-- Sinaflor layer (plan: sinaflor-fogo-permitido): carrega as autorizações se
+-- disponíveis; sem sinaflor_lookup.lua/DB o sistema simplesmente não cruza com
+-- autorizações (cfg.sinaflor = nil → comportamento atual: suspeito).
+local sinaflor = nil
+pcall(function() sinaflor = require("app.lookups.sinaflor_lookup") end)
+if sinaflor and sinaflor.load_sinaflor then pcall(sinaflor.load_sinaflor) end
+-- Hook criado UMA vez (fora do loop de focos) — um closure por run, não por
+-- foco (evita ~N alocações em backfills de 150k+ focos).
+local sinaflor_hook = sinaflor and sinaflor.hook() or nil
+
 local BATCH = 500
 local t0 = os.time()
 local total = 0
@@ -60,7 +70,10 @@ while true do
             conservation = name_of(uc.classify_point(row.lon, row.lat)),
             car          = car and car.classify_point and car.classify_point(row.lon, row.lat) or nil,
         }
-        local res = fire_classify.classify_fire(row, territory)
+        -- Injeta o hook sinaflor via 3º arg cfg: focos em CAR com ASV/AUTESP
+        -- vigente na data (fora da moratória) viram `permitido`.
+        local cfg = sinaflor_hook and { sinaflor = sinaflor_hook } or nil
+        local res = fire_classify.classify_fire(row, territory, cfg)
         if res and res.nature then
             rows[#rows + 1] = {
                 id = row.id,

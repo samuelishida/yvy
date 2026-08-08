@@ -250,6 +250,15 @@ function FirePopupContent({ fire, fireAlert, t }) {
           <br />
         </>
       )}
+      {fire.nature_evidence?.authorization && (
+        <>
+          {t('home.authorization')}:{' '}
+          <span style={{ color: FIRE_NATURE_COLORS.permitido.color, fontWeight: 600 }}>
+            {fire.nature_evidence.authorization.nro} ({fire.nature_evidence.authorization.modo})
+          </span>
+          <br />
+        </>
+      )}
       {t('home.date')}: {fire.acq_date} {fire.acq_time}<br />
       {t('home.satellite')}: {fire.satellite}<br />
       {t('home.brightnessTemp')}: {fire.bright_ti4}K

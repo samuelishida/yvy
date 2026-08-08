@@ -514,6 +514,14 @@ local function rows_to_fires(rows)
             daynight = d.daynight,
             source = d.source,  -- Inc 10: origem (FIRMS / BdQueimadas)
             nature = r.nature or r["nature"],
+            -- Sinaflor (plan: sinaflor-fogo-permitido): expõe a evidência da
+            -- classificação (ex: authorization {nro,modo}) e a versão da regra
+            -- p/ o frontend mostrar a autorização no popup. nature_evidence é
+            -- JSONB binário → json() devolve texto; NULL → nil (nil-safe).
+            nature_evidence = r.nature_evidence_json
+                and utils.decode_jsonb(r.nature_evidence_json) or nil,
+            nature_version = r.nature_version ~= nil
+                and tonumber(r.nature_version) or nil,
         }
     end
     return result
@@ -530,7 +538,9 @@ function _M.find_fires(sw_lat, ne_lat, sw_lng, ne_lng, limit, brazil_only, sourc
     local db = pool_acquire()
 
     local sql = [[
-        SELECT lat, lon, acq_date, ingested_at, nature, nature_at, json(data) AS data_json
+        SELECT lat, lon, acq_date, ingested_at, nature, nature_at,
+               json(nature_evidence) AS nature_evidence_json, nature_version,
+               json(data) AS data_json
         FROM fire_data
         WHERE lat >= ? AND lat <= ? AND lon >= ? AND lon <= ?
     ]]
@@ -563,7 +573,9 @@ function _M.find_fires_since(days, sw_lat, ne_lat, sw_lng, ne_lng, limit, brazil
     local db = pool_acquire()
 
     local sql = [[
-        SELECT lat, lon, acq_date, ingested_at, nature, nature_at, json(data) AS data_json
+        SELECT lat, lon, acq_date, ingested_at, nature, nature_at,
+               json(nature_evidence) AS nature_evidence_json, nature_version,
+               json(data) AS data_json
         FROM fire_data
         WHERE lat >= ? AND lat <= ? AND lon >= ? AND lon <= ?
           AND acq_date >= ?

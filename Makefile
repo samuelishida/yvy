@@ -1,6 +1,6 @@
 # Yvy Makefile — Lua-only stack
 
-.PHONY: setup run lua stop test-lua migrate-lua sqlite-access setup-lua run-lua
+.PHONY: setup run lua stop test-lua migrate-lua sqlite-access setup-lua run-lua ingest-sinaflor sync-sinaflor
 
 # ── Setup ──────────────────────────────────────────────────────────────────────
 
@@ -33,3 +33,11 @@ stop:
 	@echo "Stopping Yvy processes..."
 	@bash scripts/dev/stop-lua-stack.sh
 	@echo "Local processes stopped."
+
+# ── Sinaflor (fogo permitido) ────────────────────────────────────────────────
+
+ingest-sinaflor:
+	python3 scripts/data/download_sinaflor_auth.py
+
+sync-sinaflor:
+	bash scripts/deploy/sync-sinaflor.sh

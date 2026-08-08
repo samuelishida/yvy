@@ -338,3 +338,48 @@ import, hook, deploy, testes, docs).
   data".
 - **Filtro de 2 anos vive no Python** (é `today`-relativo): testado via
   `--today`; alternativa futura é mover o corte para a query de carga.
+
+## Status — implementado em 2026-08-08 (via /implement-plan)
+
+Todos os increments concluídos e verificados localmente; PR único coeso.
+
+**Schema real descoberto no Inc 1 (common-mistake #4) — divergências do plano:
+- Separador é `;` em AMBOS os datasets (não `,`); detectado em runtime
+  (`detect_sep`), nunca assumido.
+- Datas: AUTESP é ISO `YYYY-MM-DD`; ASV é `DD/MM/YYYY` (4 dígitos). O parser
+  cobre ISO + DD/MM/YYYY + DD/MM/AA (pivot 00-69→20xx) — mais amplo que a
+  premissa original de só DD/MM/AA.
+- Coordenadas: AUTESP usa ponto decimal; ASV usa vírgula decimal
+  (`-15,504482`). `parse_float` normaliza vírgula→ponto.
+- `NRO_CAR_IMOVEL_RURAL` existe SÓ no ASV (16,4% das linhas; formato SICAR
+  43-char confirmado); AUTESP não tem → fallback espacial é o caminho primário
+  dele (confirmado).
+- `SITUACAO` existe nos dois e o domínio revelou cancelamento: `Cancelada`
+  (5346) + `Suspensa` (431) são FILTRADAS no import; `Vencida` é mantida (a
+  janela de 2 anos em `data_fim` já a limita). `Emitida`/`Retificada`/`Renovada`
+  mantidas.
+- ASV é `.csv` puro com BOM (content-type `application/octet-stream` — não dá
+  p/ confiar no content-type); AUTESP é ZIP real. `download_csv` detecta ZIP por
+  magic bytes (`PK\x03\x04`), nunca por extensão/content-type.
+
+**Resultados da verificação local:**
+- `download_sinaflor_auth.py --window 730` → `sinaflor_auth.db` com **11.193
+  linhas** (ASV 10.356 + AUTESP 837; 8.179 imóveis distintos; resolução CAR:
+  2.850 explícitos + 8.343 espaciais; 7.449 sem CAR descartadas com contagem).
+  `--today 2026-01-01` → min `data_fim` = `2024-01-02` (janela determinística).
+- `busted tests/*.lua` → **231 sucessos / 0 falhas** (test_sinaflor_lookup.lua
+  novo + test_fire_classify.lua estendido, NATURE_VERSION 2→3).
+- `luac -p` nos 4 .lua alterados/novos; `py_compile` no .py; `bash -n` +
+  `--dry-run` no sync-sinaflor.sh — todos verdes.
+- Backfill real local `FIRE_NATURE_VERSION=3 tools/classify_fires.lua 3` →
+  166.152 focos em 110s: **`permitido` = 2.035** (antes 0); `evidence.authorization`
+  = `{modo, nro, data_inicio, data_fim}` gravado em JSONB.
+- `/api/fires` (bbox) retorna `nature_evidence.authorization` + `nature_version`
+  (projeção nova em db.lua via `json(nature_evidence)`); `/api/fires/nature-stats`
+  mostra `classes.permitido = 2035`. Moratória jul-out → focos recentes são crime
+  (correto: o hook só é consultado fora da moratória).
+- `npm run build` frontend OK (Home.js mostra "Autorização: <nro> (<modo>)" na
+  cor do permitido; chaves i18n pt/en).
+
+**Pendente (manual, prod):** `bash scripts/deploy/sync-sinaflor.sh --dry-run`
+depois real (scp → `?version=N` monotônico → conferir `classes.permitido`).

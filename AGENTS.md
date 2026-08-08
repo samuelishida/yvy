@@ -55,6 +55,7 @@ Browser :5001 → C HTTP server (yvy-server.c)
 - **Rate limiting** uses Redis via `app/redis.lua` with connection pooling.
 - **ingest** via `app/ingest.lua` (Lua script, not Python).
 - **Protected-area crossing** (UC/TI): `/api/car/protected-overlap` (cache Redis `car:protected:<COD>` 24h); `tools/deter_protected_alerts.lua` grava `alerts:deter_protected` (scan noturno via `deter_daily.sh`).
+- **Sinaflor — fogo permitido** (ASV/AUTESP): `scripts/data/download_sinaflor_auth.py` baixa as autorizações do CKAN `dadosabertos.ibama.gov.br`, resolve o CAR offline (NRO_CAR do ASV + fallback espacial lat/lon→polígono) e grava `backend-lua/data/sinaflor/sinaflor_auth.db` (DB dedicado, troca atômica). O hook `app/lookups/sinaflor_lookup.lua` (lookup em memória) é injetado em `tools/classify_fires.lua` via `cfg.sinaflor`; focos em CAR com ASV/AUTESP vigente na data, fora da moratória, viram **`permitido`** (`evidence.authorization = {nro, modo, data_inicio, data_fim}`). Deploy: `scripts/deploy/sync-sinaflor.sh` (scp + reclassify `?version=N` monotônico).
 
 ### JSONB Schema
 
@@ -91,6 +92,19 @@ The migration script (`backend-lua/app/migrate.lua`):
 
 The app also auto-migrates on startup if legacy schema is detected.
 
+### Sinaflor (fogo permitido)
+
+Fonte: **CKAN Ibama** (`dadosabertos.ibama.gov.br`), datasets **ASV** (Autorização
+de Supressão de Vegetação, tem `NRO_CAR_IMOVEL_RURAL`) e **AUTESP** (Autorização
+Especial, sem CAR → fallback espacial). Atualização **semanal**. Não há dataset
+de "Queima Controlada" no portal — ASV/AUTESP são o proxy aceito de "Permitido".
+
+Fluxo: `download_sinaflor_auth.py` (download ZIP-aware + normalize datas/coords)
+→ resolve CAR offline → grava `sinaflor_auth.db` (dedicado, `<out>.tmp` +
+`os.replace` atômico) → `sync-sinaflor.sh` faz scp para prod e dispara
+`POST /api/admin/fires/classify?version=N` (versão monotônica em
+`.sync_version`) → focos em CAR com autorização vigente viram `permitido`.
+
 ## Key Environment Variables
 
 | Variable | Default | Notes |
@@ -110,6 +124,8 @@ The app also auto-migrates on startup if legacy schema is detected.
 | `PROTECTED_OVERLAP_MAX_SAMPLES` | `128` | Cap do refinamento adaptativo da grade |
 | `DETER_LARGE_CUT_KM2` | `5` | Área mínima p/ gate de cantos no scan DETER×UC/TI |
 | `DETER_CORNER_HITS` | `3` | Cantos do bbox dentro da área p/ incursão geométrica |
+| `FIRE_NATURE_VERSION` | `3` | Versão da regra de natureza; bump reclassifica focos com `nature_version < N` |
+| `SINAFLOR_DB_PATH` | `backend-lua/data/sinaflor/sinaflor_auth.db` | Caminho do DB dedicado de autorizações ASV/AUTESP |
 
 ## Deployment
 

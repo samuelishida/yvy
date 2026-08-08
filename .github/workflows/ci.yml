@@ -87,7 +87,8 @@ jobs:
                    scripts/backup/install-backup-cron.sh \
                    scripts/data/check_prodes_update.sh \
                    scripts/data/deter_daily.sh \
-                   scripts/dev/setup-python-env.sh; do
+                   scripts/dev/setup-python-env.sh \
+                   scripts/deploy/sync-sinaflor.sh; do
             if [ -f "$f" ]; then bash -n "$f" || exit 1; else echo "skip $f (not found)"; fi
           done
 
@@ -105,7 +106,7 @@ jobs:
             scripts/backup/prod-backup.sh scripts/backup/pull-prod-backups.sh \
             scripts/backup/install-backup-cron.sh \
             scripts/data/check_prodes_update.sh scripts/data/deter_daily.sh \
-            scripts/dev/setup-python-env.sh \
+            scripts/dev/setup-python-env.sh scripts/deploy/sync-sinaflor.sh \
           || true
 
       - name: Guard nginx gzip config (template)

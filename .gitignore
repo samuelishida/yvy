@@ -201,6 +201,8 @@ backend-lua/data/tiles_cerrado_veg.db
 # Yvy — dados locais / tooling (não versionar)
 # Dumps CAR (GeoJSON por UF, vários GB) — importar no servidor
 backend-lua/data/car/
+# Sinaflor (ASV/AUTESP) — DB dedicado de autorizações, gerado offline
+backend-lua/data/sinaflor/
 # Backups do SQLite (ex.: yvy.db.backup-*)
 backend-lua/data/*.db.backup*
 # DBs temporários criados pelos testes busted (ex.: yvy_car_route_*.db)
