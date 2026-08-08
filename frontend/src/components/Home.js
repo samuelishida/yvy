@@ -1333,6 +1333,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               position={carPos}
               autoClose
               closeOnClick={false}
+              className="car-popup-root"
             >
               {carInspect.imovel ? (
                 <div className="car-popup">

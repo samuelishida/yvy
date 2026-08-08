@@ -205,6 +205,31 @@
 .prodes-check-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* ── Popup CAR ────────────────────────────────────────── */
+/* Leaflet's default popup is white; theme the whole card dark so the
+   light-on-dark font (below) is readable and matches the app chrome. */
+.car-popup-root .leaflet-popup-content-wrapper {
+  background: rgba(13, 19, 16, 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(42, 53, 48, 1);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  color: #E8F0EC;
+}
+.car-popup-root .leaflet-popup-tip {
+  background: rgba(13, 19, 16, 0.96);
+  border: 1px solid rgba(42, 53, 48, 1);
+}
+.car-popup-root .leaflet-popup-content {
+  margin: 12px 14px;
+  line-height: 1.45;
+}
+.car-popup-root .leaflet-popup-close-button {
+  color: rgba(232, 240, 236, 0.65);
+}
+.car-popup-root .leaflet-popup-close-button:hover {
+  color: #E8F0EC;
+}
 .car-popup {
   font-family: var(--font-mono);
   font-size: 12px;
