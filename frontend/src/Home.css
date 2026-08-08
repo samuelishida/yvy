@@ -410,9 +410,8 @@
 /* ── Nature legend ────────────────────────────────────── */
 .nature-legend {
   position: absolute;
-  /* bottom: 92px — acima do controle de zoom (bottom-left), que ocupa
-     ~62px + margem de 14px. Antes ambos dividiam o canto e se sobrepunham. */
-  bottom: 92px;
+  /* Alinhado na base com o float panel (bottom: 20px); zoom removido do desktop. */
+  bottom: 20px;
   left: 20px;
   z-index: 400;
   display: flex;
