@@ -9,8 +9,21 @@ local auth  = require("app.middleware.auth")
 local rl    = require("app.middleware.rate_limit")
 local utils = require("app.utils")
 local cjson = require("cjson")
+local redis = require("app.redis")
+local state_lookup = require("app.lookups.state_lookup")
 
 local _M = {}
+
+-- Parse + valida `uf` (plan: dashboard-enhancement, Inc 5). Retorna a UF
+-- maiúscula ou nil; nil + err se for inválida.
+local function parse_uf(v)
+    local uf = (type(v) == "string" and v ~= "") and v:upper() or nil
+    if not uf then return nil end
+    for _, u in ipairs(state_lookup.list_ufs()) do
+        if u.sigla == uf then return uf end
+    end
+    return nil, "invalid uf"
+end
 
 -- Parse + valida o `limit` (Inc 10): <1 (incl. -1) → 400 invalid; >5000 → cap
 -- (R2). Retorna um limit válido ou nil+err.
@@ -55,8 +68,27 @@ function _M.get_stats(ctx)
     if days < 1 then days = 1 end
     if days > 3650 then days = 3650 end
 
+    local uf, uf_err = parse_uf(ctx.req.args.uf)
+    if uf_err then
+        ctx:error(400, uf_err)
+        return
+    end
+
+    -- Sem cache Redis antes do Inc 5 — todo request batia SQLite direto no
+    -- loop copas. Com o dashboard filtrando por estado, passa a ser cacheado.
+    local cache_key = "deter:stats:" .. days .. ":" .. (uf or "all")
+    local cached = redis.get(cache_key)
+    if cached then
+        ctx:set_header("Cache-Control", "public, max-age=300")
+        ctx:send(200, cached)
+        return
+    end
+
     local db = require("app.db")
-    ctx:json(200, db.get_deter_stats(days))
+    local body = cjson.encode(db.get_deter_stats(days, uf))
+    redis.set(cache_key, body, 300)
+    ctx:set_header("Cache-Control", "public, max-age=300")
+    ctx:send(200, body)
 end
 
 function _M.get_car_alerts(ctx)
@@ -93,8 +125,25 @@ function _M.get_car_alert_stats(ctx)
     if days < 1 then days = 1 end
     if days > 3650 then days = 3650 end
 
+    local uf, uf_err = parse_uf(ctx.req.args.uf)
+    if uf_err then
+        ctx:error(400, uf_err)
+        return
+    end
+
+    local cache_key = "deter:caralertstats:" .. days .. ":" .. (uf or "all")
+    local cached = redis.get(cache_key)
+    if cached then
+        ctx:set_header("Cache-Control", "public, max-age=300")
+        ctx:send(200, cached)
+        return
+    end
+
     local db = require("app.db")
-    ctx:json(200, db.get_car_alert_stats(days))
+    local body = cjson.encode(db.get_car_alert_stats(days, uf))
+    redis.set(cache_key, body, 300)
+    ctx:set_header("Cache-Control", "public, max-age=300")
+    ctx:send(200, body)
 end
 
 return _M

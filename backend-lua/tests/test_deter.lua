@@ -16,8 +16,20 @@ package.loaded["app.routes.deter"] = nil
 
 local db_mod = require("app.db")
 local deter_routes = require("app.routes.deter")
+local redis = require("app.redis")
 
 dofile("tests/helpers.lua")
+
+-- Rotas passam a cachear em Redis (plan: dashboard-enhancement, Inc 5) —
+-- stub get/set para não depender de Redis vivo. get→nil = miss sempre.
+local written_keys = {}
+local original_get, original_set = redis.get, redis.set
+redis.get = function() return nil end
+redis.set = function(key) written_keys[#written_keys + 1] = key end
+
+teardown(function()
+    redis.get, redis.set = original_get, original_set
+end)
 
 local function fake_ctx(args)
     return {
@@ -89,6 +101,27 @@ describe("deter", function()
         end
         ins:finalize()
         db2:close()
+
+        -- deter_car_alerts (para get_car_alert_stats / rota car-alert-stats)
+        local db3 = sqlite3.open(tmp_yvy_db)
+        local car_ins = db3:prepare([[
+            INSERT INTO deter_car_alerts
+                (cod_imovel, classname, view_date, uf, municipio, area_afetada_ha,
+                 fire_count, fire_dates, severity, ingested_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ]])
+        local car_rows = {
+            { "RO-0001", "DESMATAMENTO_VEG", days_ago(1), "RO", "Vilhena", 12.0, 3, cjson.encode({"a","b","c"}), "alto", os.date("!%Y-%m-%dT00:00:00Z", os.time()) },
+            { "RO-0002", "MINERACAO", days_ago(1), "RO", "Vilhena", 4.0, 1, cjson.encode({"a"}), "baixo", os.date("!%Y-%m-%dT00:00:00Z", os.time()) },
+            { "MT-0001", "DEGRADACAO", days_ago(2), "MT", "Cuiabá", 30.0, 5, cjson.encode({"a","b","c","d","e"}), "maximo", os.date("!%Y-%m-%dT00:00:00Z", os.time()) },
+        }
+        for _, c in ipairs(car_rows) do
+            car_ins:reset()
+            for i = 1, 10 do car_ins:bind(i, c[i]) end
+            car_ins:step()
+        end
+        car_ins:finalize()
+        db3:close()
     end)
 
     teardown(function()
@@ -179,8 +212,62 @@ describe("deter", function()
             local ctx = fake_ctx({ days = 30 })
             deter_routes.get_stats(ctx)
             assert.are_equal(200, ctx.status)
-            assert.is_not_nil(ctx.body.total_km2)
-            assert.is_not_nil(ctx.body.by_municipality)
+            local body = cjson.decode(ctx.body)  -- rota agora envia via ctx:send
+            assert.is_not_nil(body.total_km2)
+            assert.is_not_nil(body.by_municipality)
+        end)
+
+        it("GET /api/deter/stats filters by uf (Inc 5)", function()
+            local ctx = fake_ctx({ days = 30, uf = "RO" })
+            deter_routes.get_stats(ctx)
+            assert.are_equal(200, ctx.status)
+            local body = cjson.decode(ctx.body)
+            assert.is_true(math.abs(body.total_km2 - 8.0) < 0.001)  -- 5 + 3 (RO)
+            assert.are_equal(1, #body.by_uf)
+            assert.are_equal("RO", body.by_uf[1].uf)
+            assert.is_true(math.abs(body.by_uf[1].km2 - body.total_km2) < 0.001)
+        end)
+
+        it("GET /api/deter/stats rejects invalid uf (Inc 5)", function()
+            local ctx = fake_ctx({ days = 30, uf = "XX" })
+            deter_routes.get_stats(ctx)
+            assert.are_equal(400, ctx.status)
+            assert.are_equal("invalid uf", ctx.body.error)
+        end)
+
+        it("GET /api/deter/stats caches per (days, uf) (Inc 5)", function()
+            local before = #written_keys
+            local ctx = fake_ctx({ days = 30 })
+            deter_routes.get_stats(ctx)
+            local ctx_ro = fake_ctx({ days = 30, uf = "RO" })
+            deter_routes.get_stats(ctx_ro)
+            assert.are_equal(200, ctx_ro.status)
+            local seen_all, seen_ro = false, false
+            for i = before + 1, #written_keys do
+                if written_keys[i] == "deter:stats:30:all" then seen_all = true end
+                if written_keys[i] == "deter:stats:30:RO" then seen_ro = true end
+            end
+            assert.is_true(seen_all)
+            assert.is_true(seen_ro)
+        end)
+
+        it("GET /api/deter/car-alert-stats returns + filters by uf (Inc 5)", function()
+            local ctx = fake_ctx({ days = 7 })
+            deter_routes.get_car_alert_stats(ctx)
+            assert.are_equal(200, ctx.status)
+            local body = cjson.decode(ctx.body)
+            assert.are_equal(3, body.total)
+
+            local ctx_ro = fake_ctx({ days = 7, uf = "RO" })
+            deter_routes.get_car_alert_stats(ctx_ro)
+            local body_ro = cjson.decode(ctx_ro.body)
+            assert.are_equal(2, body_ro.total)
+            assert.are_equal(1, #body_ro.by_uf)
+
+            local ctx_bad = fake_ctx({ days = 7, uf = "XX" })
+            deter_routes.get_car_alert_stats(ctx_bad)
+            assert.are_equal(400, ctx_bad.status)
+            assert.are_equal("invalid uf", ctx_bad.body.error)
         end)
     end)
 end)

@@ -101,6 +101,12 @@ function _M.classify_point(lon, lat)
     return nil
 end
 
+-- Nº de anéis de bioma carregados — guard para o backfill de biome não marcar
+-- tudo como não-classificável quando o layer não carregou (plan: dashboard-enhancement, Inc 4).
+function _M.loaded_count()
+    return #biome_rings
+end
+
 function _M.get_geojson()
     if #biome_rings == 0 then
         return { type = "FeatureCollection", features = {} }

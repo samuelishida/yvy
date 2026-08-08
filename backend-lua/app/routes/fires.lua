@@ -270,6 +270,48 @@ function _M.get_fires_by_state(ctx)
     ctx:send(200, body)
 end
 
+-- ── GET /api/fires/by-biome (plan: dashboard-enhancement, Inc 4) ─────────
+
+-- Agregado por bioma (persistido em $.biome) com filtro de dias/estado —
+-- substitui o point-in-polygon do /api/biomes para o card filtrável.
+function _M.get_by_biome(ctx)
+    if not auth.enforce(ctx) then return end
+    if not rl.enforce(ctx) then return end
+
+    local args = ctx.req.args or {}
+    local days = tonumber(args.days)
+    if days == nil then days = 30 end
+    if days < 1 or days > 365 then
+        ctx:json(400, {error = "days must be between 1 and 365"})
+        return
+    end
+    local state = (type(args.state) == "string" and args.state ~= "") and args.state:upper() or nil
+    if state then
+        local found = false
+        for _, uf in ipairs(state_lookup.list_ufs()) do
+            if uf.sigla == state then found = true break end
+        end
+        if not found then
+            ctx:json(400, {error = "invalid state"})
+            return
+        end
+    end
+
+    local cache_key = "fires:bybiome:" .. days .. ":" .. (state or "all")
+    local cached = redis.get(cache_key)
+    if cached then
+        ctx:set_header("Cache-Control", "public, max-age=60")
+        ctx:send(200, cached)
+        return
+    end
+
+    local biomes, total = db.get_fires_by_biome(days, state)
+    local body = cjson.encode({days = days, state = state, total = total, biomes = biomes})
+    redis.set(cache_key, body, 120)
+    ctx:set_header("Cache-Control", "public, max-age=60")
+    ctx:send(200, body)
+end
+
 -- ── Fire nature stats (pure compute; rota em main.lua) ───────────────────
 
 function _M.get_fire_nature_stats(days, state)
@@ -370,10 +412,24 @@ function _M.get_fires_state_sparklines(ctx)
     if not auth.enforce(ctx) then return end
     if not rl.enforce(ctx) then return end
 
+    -- Inc 5: days era passado cru (sem validação) — clamp 1..90 + cache Redis.
     local days = tonumber(ctx.req.args.days) or 7
+    if days < 1 then days = 1 end
+    if days > 90 then days = 90 end
+
+    local cache_key = "fires:sparklines:" .. days
+    local cached = redis.get(cache_key)
+    if cached then
+        ctx:set_header("Cache-Control", "public, max-age=300")
+        ctx:send(200, cached)
+        return
+    end
+
     local sparklines = db.get_fires_state_sparklines(days)
+    local body = cjson.encode({ days = days, sparklines = sparklines })
+    redis.set(cache_key, body, 300)
     ctx:set_header("Cache-Control", "public, max-age=300")
-    ctx:json(200, { days = days, sparklines = sparklines })
+    ctx:send(200, body)
 end
 
 -- ── TI at-risk compute (runs off the copas loop) ─────────────────────────

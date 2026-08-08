@@ -146,4 +146,11 @@ end
 function _M.uf_name(uf) return UF_TO_NAME[uf] end
 function _M.uf_region(uf) return UF_REGION[uf] end
 
+-- Nº de conjuntos de polígonos carregados. Usado pelos loops de backfill para
+-- não rodar point-in-polygon (e marcar tudo como não-atribuível) quando o
+-- layer não carregou — causa raiz dos 40% de focos com state='' vistos em prod.
+function _M.loaded_count()
+    return #entries
+end
+
 return _M

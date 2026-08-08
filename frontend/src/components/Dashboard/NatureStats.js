@@ -1,6 +1,11 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../../i18n';
-import { cachedFetch } from '../../utils/apiCache';
+import { useDashboardFilters } from './DashboardFilters';
+import useCardData from './useCardData';
+import CardShell from './CardShell';
+import { mapUrlForState } from '../../utils/mapLinks';
+import { formatInt } from '../../utils/format';
 
 // Ordem de exibição das classes; cores espelham FIRE_NATURE_COLORS do mapa.
 const CLASS_ORDER = ['crime', 'suspeito', 'permitido', 'natural', 'unclassified'];
@@ -15,92 +20,99 @@ const CLASS_COLORS = {
 
 export default function NatureStats() {
   const { t } = useI18n();
-  const [data, setData] = useState(null);
+  const { lang } = useI18n();
+  const { days, state, queryString } = useDashboardFilters();
+  const navigate = useNavigate();
+  const scope = t('dashboard.scopeLabel', {
+    window: t(`dashboard.range${days}d`),
+    region: state || t('dashboard.allBrazil'),
+  });
 
-  useEffect(() => {
-    const ac = new AbortController();
-    const log = err => { if (err.name !== 'AbortError') console.error('NatureStats fetch error:', err); };
-    cachedFetch('/api/fires/nature-stats?days=7', { ttl: 120_000, signal: ac.signal })
-      .then(d => setData(d))
-      .catch(log);
-    return () => ac.abort();
-  }, []);
+  const url = `/api/fires/nature-stats?${queryString}`;
+  const { data, cardState, retry } = useCardData(url, {
+    ttl: 120_000,
+    isEmpty: (d) => !d || !d.classes,
+  });
 
-  const classes = useMemo(() => {
-    if (!data || !data.classes) return null;
-    return CLASS_ORDER
-      .map(key => ({ key, count: data.classes[key] || 0 }))
-      .filter(c => c.count > 0);
-  }, [data]);
+  const classes = useMemo(
+    () => CLASS_ORDER.map((k) => ({ key: k, count: (data && data.classes && data.classes[k]) || 0 })).filter((c) => c.count > 0),
+    [data],
+  );
+  const classMax = useMemo(() => Math.max(...classes.map((c) => c.count), 1), [classes]);
+  // by_state is null when a single state is selected (backend only returns the
+  // per-state breakdown for the national view).
+  const byState = useMemo(
+    () => (data && Array.isArray(data.by_state) ? data.by_state : null),
+    [data],
+  );
 
-  const classMax = useMemo(() => Math.max(...(classes || []).map(c => c.count), 1), [classes]);
-
-  const byState = useMemo(() => {
-    if (!data || !Array.isArray(data.by_state)) return null;
-    return data.by_state.slice(0, 10);
-  }, [data]);
+  const exportRows = [
+    ...classes.map((c) => ({ class: c.key, fires: c.count })),
+    ...(byState || []).map((st) => ({ state: st.state, total: st.total })),
+  ];
 
   return (
-    <div className="chart-card">
-      <div className="chart-card__header">
-        <h2>{t('dashboard.natureStats')}</h2>
-        <span className="chart-card__total">
-          {data ? `${(data.total || 0).toLocaleString('pt-BR')} · ${t('dashboard.natureStatsSub')}` : t('dashboard.loadingShort')}
-        </span>
+    <CardShell
+      title={t('dashboard.natureStats')}
+      subtitle={t('dashboard.natureStatsSub')}
+      state={cardState}
+      onRetry={retry}
+      freshness={{ windowLabel: scope }}
+      exportData={{ filename: `yvy-nature-detail-${queryString.replace(/[=&]/g, '-')}.csv`, rows: exportRows }}
+    >
+      <div className="nature-classes">
+        {classes.length === 0 ? (
+          <div className="dash-empty">{t('dashboard.noData')}</div>
+        ) : (
+          classes.map((c) => {
+            const pct = Math.max(2, (c.count / classMax) * 100);
+            return (
+              <div key={c.key} className="bar-row">
+                <div className="bar-swatch" style={{ background: CLASS_COLORS[c.key] }} />
+                <div className="bar-label">{t(`home.nature_${c.key}`)}</div>
+                <div className="bar-track">
+                  <div className="bar-fill" style={{ width: `${pct}%`, background: CLASS_COLORS[c.key] }} />
+                </div>
+                <div className="bar-nums">
+                  <span className="bar-count">{formatInt(c.count, lang)}</span>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
-      {!data ? (
-        <div className="dash-loading">{t('dashboard.loadingShort')}</div>
-      ) : (
-        <>
-          <div className="nature-classes">
-            {(!classes || classes.length === 0) ? (
-              <div className="dash-loading">{t('dashboard.noData')}</div>
-            ) : (
-              classes.map(c => {
-                const pct = Math.max(2, (c.count / classMax) * 100);
-                return (
-                  <div key={c.key} className="bar-row">
-                    <div className="bar-swatch" style={{ background: CLASS_COLORS[c.key] }} />
-                    <div className="bar-label">{t(`home.nature_${c.key}`)}</div>
-                    <div className="bar-track">
-                      <div className="bar-fill" style={{ width: `${pct}%`, background: CLASS_COLORS[c.key] }} />
-                    </div>
-                    <div className="bar-nums">
-                      <span className="bar-count">{c.count.toLocaleString('pt-BR')}</span>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-          {byState && byState.length > 0 && (
-            <div className="nature-by-state">
-              <div className="nature-by-state__title">{t('dashboard.natureByState')}</div>
-              {byState.map(st => {
-                const shares = CLASS_ORDER
-                  .filter(k => (st[k] || 0) > 0)
-                  .map(k => ({ key: k, count: st[k] || 0 }));
-                return (
-                  <div key={st.state} className="nature-state-row">
-                    <div className="nature-state-label">{st.state || '—'}</div>
-                    <div className="nature-state-track">
-                      {shares.map(s => (
-                        <div
-                          key={s.key}
-                          className="nature-state-seg"
-                          style={{ width: `${(s.count / st.total) * 100}%`, background: CLASS_COLORS[s.key] }}
-                          title={`${t(`home.nature_${s.key}`)}: ${s.count.toLocaleString('pt-BR')}`}
-                        />
-                      ))}
-                    </div>
-                    <div className="nature-state-total">{st.total.toLocaleString('pt-BR')}</div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
+      {byState && byState.length > 0 && (
+        <div className="nature-by-state">
+          <div className="nature-by-state__title">{t('dashboard.natureByState')}</div>
+          {byState.map((st) => {
+            const shares = CLASS_ORDER
+              .filter((k) => (st[k] || 0) > 0)
+              .map((k) => ({ key: k, count: st[k] || 0 }));
+            return (
+              <button
+                key={st.state}
+                type="button"
+                className="nature-state-row nature-state-row--btn"
+                onClick={() => navigate(mapUrlForState(st.state, days))}
+                title={t('dashboard.clickStateMap')}
+              >
+                <span className="nature-state-label">{st.state || '—'}</span>
+                <span className="nature-state-track">
+                  {shares.map((s) => (
+                    <span
+                      key={s.key}
+                      className="nature-state-seg"
+                      style={{ width: `${(s.count / st.total) * 100}%`, background: CLASS_COLORS[s.key] }}
+                      title={`${t(`home.nature_${s.key}`)}: ${formatInt(s.count, lang)}`}
+                    />
+                  ))}
+                </span>
+                <span className="nature-state-total">{formatInt(st.total, lang)}</span>
+              </button>
+            );
+          })}
+        </div>
       )}
-    </div>
+    </CardShell>
   );
 }

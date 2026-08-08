@@ -80,6 +80,35 @@ function _M.get_historical(ctx)
     ctx:send(200, body)
 end
 
+-- Último ano PRODES disponível + delta vs o ano anterior. Usado pelo summary
+-- do dashboard (plan: dashboard-enhancement, Inc 3). Reutiliza o mesmo
+-- leitor memoizado (load_body) — sem duplicar a leitura de arquivo.
+function _M.get_latest_prodes()
+    local body = load_body()
+    if not body then return nil end
+    local ok, data = pcall(cjson.decode, body)
+    if not ok or type(data) ~= "table" or type(data.yearly) ~= "table" then return nil end
+
+    local yearly = {}
+    for _, e in ipairs(data.yearly) do
+        if e.year then
+            yearly[#yearly + 1] = {
+                year = tonumber(e.year),
+                km2 = tonumber(e.amazon_km2 or e.area_km),
+            }
+        end
+    end
+    table.sort(yearly, function(a, b) return a.year > b.year end)
+    if #yearly == 0 then return nil end
+
+    local latest, prev = yearly[1], yearly[2]
+    local delta = nil
+    if prev and prev.km2 and latest.km2 and prev.km2 ~= 0 then
+        delta = math.floor((latest.km2 - prev.km2) / prev.km2 * 1000 + 0.5) / 10
+    end
+    return { year = latest.year, km2 = latest.km2, delta_pct = delta }
+end
+
 -- ── Territorial deforestation stats (plan: terrabrasilis-integration, Inc 7)
 --
 -- Os agregados são PRÉ-COMPUTADOS offline (scripts/precompute_deforestation_stats.py

@@ -183,8 +183,18 @@ end
 local function state_backfill_loop()
     copas.sleep(8)
     while true do
+        -- Guard (plan: dashboard-enhancement, Inc 2): se o layer de estados não
+        -- carregou, o point-in-polygon devolve nil para TUDO e o backfill
+        -- marcaria a tabela inteira como não-atribuível. Skip ruidoso em vez de
+        -- corromper a atribuição.
+        if states.loaded_count() == 0 then
+            logger.error("state backfill skipped — states_brazil.geojson not loaded (0 UF polygons); " ..
+                         "fix STATES_DATA_PATH and restart")
+            copas.sleep(600)
+        end
         local processed = 0
         local ok, err = pcall(function()
+            -- Pass 1: linhas sem a chave state
             local batch = db.iter_fires_for_backfill(500)
             for _, row in ipairs(batch) do
                 local uf = states.classify_point(row.lon, row.lat)
@@ -192,8 +202,24 @@ local function state_backfill_loop()
                     db.update_fire_state(row.id, uf)
                     processed = processed + 1
                 else
-                    -- mark with empty string so we don't keep scanning unattributable points
-                    db.update_fire_state(row.id, "")
+                    -- Fora de todo polígono de UF (ex: litoral): marca como
+                    -- reprocessado para nunca mais re-scanear. state_retry (não
+                    -- só state='') permite recuperar a linha se o layer mudar.
+                    db.mark_fire_state_unattributable(row.id)
+                end
+            end
+            -- Pass 2: linhas com sentinel '' gravadas por um run anterior que
+            -- rodou com o layer vazio — reprocessa (ex: 40% dos focos em prod).
+            if processed == 0 then
+                local retry = db.iter_fires_for_state_retry(500)
+                for _, row in ipairs(retry) do
+                    local uf = states.classify_point(row.lon, row.lat)
+                    if uf then
+                        db.update_fire_state(row.id, uf)
+                        processed = processed + 1
+                    else
+                        db.mark_fire_state_unattributable(row.id)
+                    end
                 end
             end
         end)
@@ -287,6 +313,42 @@ local function nature_backfill_loop()
     end
 end
 
+-- Backfill de biome (plan: dashboard-enhancement, Inc 4): persiste o bioma em
+-- $.biome para o card de biomas filtrar por dias/estado via SQL. Mesmo padrão
+-- do state_backfill_loop (batch + marcador de retry + guard de layer vazio).
+local function biome_backfill_loop()
+    copas.sleep(40)  -- stagger: não colide com o state_backfill_loop (sleep 8s)
+    while true do
+        if biome.loaded_count() == 0 then
+            logger.error("biome backfill skipped — biome data not loaded (0 rings); " ..
+                         "fix BIOME_DATA_PATH and restart")
+            copas.sleep(600)
+        end
+        local processed = 0
+        local ok, err = pcall(function()
+            local batch = db.iter_fires_for_biome_backfill(500)
+            for _, row in ipairs(batch) do
+                local name = biome.classify_point(row.lon, row.lat)
+                if name then
+                    db.update_fire_biome(row.id, name)
+                    processed = processed + 1
+                else
+                    db.mark_fire_biome_unattributable(row.id)
+                end
+            end
+        end)
+        if not ok then
+            logger.error("biome backfill error: " .. tostring(err))
+        end
+        if processed > 0 then
+            logger.info("biome backfill: " .. processed .. " fires attributed")
+            copas.sleep(2)
+        else
+            copas.sleep(600)
+        end
+    end
+end
+
 function _M.start_background_tasks()
     copas.addthread(fires_sync_loop)
     copas.addthread(news_sync_loop)
@@ -296,6 +358,7 @@ function _M.start_background_tasks()
     copas.addthread(news_prewarm_loop)
     copas.addthread(dashboard_prewarm_loop)
     copas.addthread(state_backfill_loop)
+    copas.addthread(biome_backfill_loop)
     copas.addthread(ti_at_risk_prewarm_loop)
     copas.addthread(nature_backfill_loop)
 end

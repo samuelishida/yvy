@@ -4,6 +4,7 @@ import { TreePine, Flame, ChevronDown } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { getCache, setCache } from '../utils/cache';
 import { cachedFetch, invalidateApiCache } from '../utils/apiCache';
+import { parseFocus, UF_CENTROIDS } from '../utils/mapLinks';
 import 'leaflet/dist/leaflet.css';
 import '../Home.css';
 import L from 'leaflet';
@@ -389,6 +390,20 @@ function CanvasRedrawOnToggle({ flag }) {
 
 // MapController handles pan-to-alert and smooth wheel zoom
 
+// Handles ?focus= from the dashboard drilldown (plan: dashboard-enhancement,
+// Inc 9). state:UF centers on the UF centroid; biome is handled by
+// BiomeHighlightLayer (it fits bounds once the boundaries load); land:* uses
+// the existing lat/lng/zoom params in MapController.
+function FocusController({ focus }) {
+  const map = useMapEvents({});
+  useEffect(() => {
+    if (!focus || focus.kind !== 'state') return;
+    const c = UF_CENTROIDS[focus.id];
+    if (c) map.setView(c, 6, { animate: true, duration: 0.8 });
+  }, [focus?.kind, focus?.id, map]);
+  return null;
+}
+
 function MapController({ activeAlert }) {
   const map = useMapEvents({});
 
@@ -771,7 +786,7 @@ const ProdesFlyTo = React.memo(function ProdesFlyTo({ bbox }) {
   return null;
 });
 
-const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, t, alerts, activeAlertId, flyToAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, airQuality, temperature, activeBiome, biomeGeoJSON, onBiomeHover }) {  const [satellite, setSatellite] = useState(true);
+const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, t, alerts, activeAlertId, flyToAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, airQuality, temperature, activeBiome, biomeGeoJSON, onBiomeHover, focus }) {  const [satellite, setSatellite] = useState(true);
   // Unique per-mount key prevents "Map container already initialized" on remount
   const [mapKey] = useState(() => ++_mapMountCounter);
   const [visibleFires, setVisibleFires] = useState([]);
@@ -1155,6 +1170,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               painel "Resumo do imóvel" (z-index Leaflet 1000 > painel 490). */}
           <ZoomControl position="bottomleft" />
           <MapController activeAlert={flyToAlert} />
+          <FocusController focus={focus} />
           <ProdesFlyTo bbox={prodesResult && prodesResult.data ? prodesResult.data.bbox : null} />
           <BiomeHighlightLayer activeBiome={activeBiome} biomeGeoJSON={biomeGeoJSON} />
           <FireHoverLock
@@ -1409,6 +1425,28 @@ export default function Home() {
 
   const activeAlertId = lockedFireAlertId || alertHoverId || fireAlertId;
 
+  // Drilldown target from the dashboard (?focus=state:UF|biome:NAME|land:NAME).
+  const focus = useMemo(() => {
+    try { return parseFocus(new URLSearchParams(window.location.search).get('focus')); }
+    catch { return null; }
+  }, []);
+
+  // Biome focus: fetch the boundaries eagerly (normally lazy on hover) and
+  // highlight the biome; BiomeHighlightLayer fits bounds once loaded.
+  useEffect(() => {
+    if (!focus || focus.kind !== 'biome' || !focus.id) return;
+    if (!biomeFetchedRef.current) {
+      biomeFetchedRef.current = true;
+      const ac = new AbortController();
+      biomeFetchAcRef.current = ac;
+      fetch('/api/biome-boundaries', { signal: ac.signal })
+        .then(r => r.json())
+        .then(d => setBiomeGeoJSON(d))
+        .catch(err => { if (err.name !== 'AbortError') console.error('Biome boundaries fetch error:', err); });
+    }
+    setActiveBiome(focus.id);
+  }, [focus]);
+
   const handleFireOver = useCallback((id, idx) => {
     if (lockedFireIdx != null && lockedFireIdx !== idx) return;
     if (fireHoverOutTimeoutRef.current) {
@@ -1651,6 +1689,7 @@ export default function Home() {
         activeBiome={activeBiome}
         biomeGeoJSON={biomeGeoJSON}
         onBiomeHover={handleBiomeHover}
+        focus={focus}
       />
     </div>
   );

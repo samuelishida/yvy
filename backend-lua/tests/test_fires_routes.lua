@@ -195,4 +195,49 @@ describe("fires routes", function()
             assert.is_nil(far.ams)
         end)
     end)
+
+    describe("state sparklines (plan: dashboard-enhancement, Inc 5)", function()
+        it("returns per-state series with non-nil dates", function()
+            local ctx = _G.fake_ctx({ days = 7 })
+            fires_routes.get_fires_state_sparklines(ctx)
+            assert.are_equal(200, ctx.status)
+            local body = cjson.decode(ctx.body)
+            assert.are_equal(7, body.days)
+            assert.is_not_nil(body.sparklines)
+            local found = false
+            for st, series in pairs(body.sparklines) do
+                if st == "RO" then
+                    found = true
+                    assert.is_true(#series >= 1)
+                    for _, pt in ipairs(series) do
+                        assert.is_not_nil(pt.date, "sparkline point must carry a date")
+                        assert.is_number(pt.count)
+                    end
+                end
+            end
+            assert.is_true(found, "RO should appear in sparklines")
+        end)
+
+        it("clamps days to [1, 90] and caches per days", function()
+            written_keys = {}
+            local ctx0 = _G.fake_ctx({ days = 0 })
+            fires_routes.get_fires_state_sparklines(ctx0)
+            assert.are_equal(200, ctx0.status)
+            local body0 = cjson.decode(ctx0.body)
+            assert.are_equal(1, body0.days)
+
+            local ctx999 = _G.fake_ctx({ days = 999 })
+            fires_routes.get_fires_state_sparklines(ctx999)
+            assert.are_equal(200, ctx999.status)
+            local body999 = cjson.decode(ctx999.body)
+            assert.are_equal(90, body999.days)
+
+            local seen1, seen90 = false, false
+            for _, k in ipairs(written_keys) do
+                if k == "fires:sparklines:1" then seen1 = true end
+                if k == "fires:sparklines:90" then seen90 = true end
+            end
+            assert.is_true(seen1 and seen90)
+        end)
+    end)
 end)

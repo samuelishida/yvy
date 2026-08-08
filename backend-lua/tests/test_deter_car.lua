@@ -16,8 +16,18 @@ package.loaded["app.routes.deter"] = nil
 
 local db_mod = require("app.db")
 local deter_routes = require("app.routes.deter")
+local redis = require("app.redis")
 
 dofile("tests/helpers.lua")
+
+-- get_car_alert_stats passou a cachear em Redis (plan: dashboard-enhancement, Inc 5)
+local original_get, original_set = redis.get, redis.set
+redis.get = function() return nil end
+redis.set = function() end
+
+teardown(function()
+    redis.get, redis.set = original_get, original_set
+end)
 
 local function fake_ctx(args)
     return {
@@ -152,15 +162,16 @@ describe("deter car alerts", function()
             local ctx = fake_ctx({ days = 7 })
             deter_routes.get_car_alert_stats(ctx)
             assert.are_equal(200, ctx.status)
-            assert.are_equal(4, ctx.body.total)
+            local body = cjson.decode(ctx.body)  -- rota envia via ctx:send
+            assert.are_equal(4, body.total)
             local sev = {}
-            for _, x in ipairs(ctx.body.by_severity) do sev[x.severity] = x.count end
+            for _, x in ipairs(body.by_severity) do sev[x.severity] = x.count end
             assert.are_equal(1, sev["maximo"])
             assert.are_equal(1, sev["alto"])
             assert.are_equal(1, sev["medio"])
             assert.are_equal(1, sev["baixo"])
             local ufs = {}
-            for _, x in ipairs(ctx.body.by_uf) do ufs[x.uf] = x.count end
+            for _, x in ipairs(body.by_uf) do ufs[x.uf] = x.count end
             assert.are_equal(1, ufs["RO"])
             assert.are_equal(1, ufs["AM"])
         end)
@@ -170,7 +181,7 @@ describe("deter car alerts", function()
             deter_routes.get_car_alert_stats(ctx)
             assert.are_equal(200, ctx.status)
             -- 99999 é clampado para 3650 → janela cobre até o alerta antigo
-            assert.are_equal(5, ctx.body.total)
+            assert.are_equal(5, cjson.decode(ctx.body).total)
         end)
     end)
 end)

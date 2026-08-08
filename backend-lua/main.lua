@@ -156,6 +156,7 @@ end)
 server.route("GET", "/api/fires", fires.get_fires)
 server.route("GET", "/api/fires/timeseries", fires.get_fires_timeseries)
 server.route("GET", "/api/fires/by-state", fires.get_fires_by_state)
+server.route("GET", "/api/fires/by-biome", fires.get_by_biome)
 server.route("GET", "/api/fires/state-sparklines", fires.get_fires_state_sparklines)
 server.route("GET", "/api/fires/protected-share", fires.get_protected_share)
 server.route("POST", "/api/fires/sync", fires.sync_fires)
@@ -338,7 +339,7 @@ server.route("GET", "/api/fires/nature-stats", function(ctx)
     if state then
         local found = false
         for _, uf in ipairs(state_lookup.list_ufs()) do
-            if uf == state then found = true break end
+            if uf.sigla == state then found = true break end
         end
         if not found then
             ctx:json(400, {error = "invalid state"})
@@ -405,6 +406,16 @@ server.route("GET", "/api/stats", function(ctx)
     redis.set("stats:all", body, 60)
     ctx:set_header("Cache-Control", "public, max-age=60")
     ctx:send(200, body)
+end)
+
+-- Dashboard aggregates (plan: dashboard-enhancement, Inc 3/8)
+server.route("GET", "/api/dashboard/summary", function(ctx)
+    local dash = require("app.routes.dashboard")
+    dash.get_summary(ctx)
+end)
+server.route("GET", "/api/dashboard/freshness", function(ctx)
+    local dash = require("app.routes.dashboard")
+    dash.get_freshness(ctx)
 end)
 
 -- ── Startup ──────────────────────────────────────────────────────────────

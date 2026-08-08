@@ -78,6 +78,7 @@ CREATE INDEX IF NOT EXISTS idx_news_page ON news(publishedAt DESC, ingested_at D
 CREATE INDEX IF NOT EXISTS idx_fire_confidence ON fire_data(json_extract(data, '$.confidence'));
 CREATE INDEX IF NOT EXISTS idx_fire_state ON fire_data(json_extract(data, '$.state'));
 CREATE INDEX IF NOT EXISTS idx_fire_fire_type ON fire_data(json_extract(data, '$.fire_type'));
+CREATE INDEX IF NOT EXISTS idx_fire_biome ON fire_data(json_extract(data, '$.biome'));
 CREATE INDEX IF NOT EXISTS idx_def_name ON deforestation_data(json_extract(data, '$.name'));
 CREATE INDEX IF NOT EXISTS idx_news_source ON news(json_extract(data, '$.source_name'));
 
@@ -687,13 +688,17 @@ function _M.count_fires_by_state_present()
     local row = fetch_one(db, [[
         SELECT
             COUNT(*) AS total,
-            SUM(CASE WHEN json_extract(data, '$.state') IS NULL THEN 1 ELSE 0 END) AS unattributed
+            SUM(CASE WHEN json_extract(data, '$.state') IS NULL THEN 1 ELSE 0 END) AS unattributed,
+            SUM(CASE WHEN json_extract(data, '$.state') = '' THEN 1 ELSE 0 END) AS sentinel_empty,
+            SUM(CASE WHEN json_extract(data, '$.state_retry') IS NOT NULL THEN 1 ELSE 0 END) AS retried
         FROM fire_data
     ]])
     pool_release(db)
     return {
         total = row and tonumber(row.total or row["total"] or 0) or 0,
         unattributed = row and tonumber(row.unattributed or row["unattributed"] or 0) or 0,
+        sentinel_empty = row and tonumber(row.sentinel_empty or row["sentinel_empty"] or 0) or 0,
+        retried = row and tonumber(row.retried or row["retried"] or 0) or 0,
     }
 end
 
@@ -718,7 +723,7 @@ function _M.get_fires_state_sparklines(days)
         if st ~= "" then
             if not result[st] then result[st] = {} end
             table.insert(result[st], {
-                date = r.date or r["date"],
+                date = r.acq_date or r["acq_date"],
                 count = tonumber(r.count or r["count"] or 0) or 0,
             })
         end
@@ -773,6 +778,224 @@ function _M.update_fire_state(id, state)
         error(err)
     end
     pool_release(db)
+end
+
+-- ── State attribution repair (plan: dashboard-enhancement, Inc 2) ────────
+--
+-- O backfill legado gravou state='' (sentinel) para focos que o
+-- point-in-polygon não conseguiu classificar — inclusive quando o layer de
+-- estados estava VAZIO (40% dos focos em prod ficaram com ''). Corrigir exige
+-- revisitar essas linhas, mas sem re-scanear para sempre os pontos que são
+-- genuinamente não-classificáveis (oceano). O marcador `state_retry` separa
+-- os dois casos: gravado quando o ponto foi reprocessado e continua sem UF.
+
+-- Lote de focos com sentinel '' que ainda não foram reprocessados.
+function _M.iter_fires_for_state_retry(batch_size)
+    batch_size = batch_size or 500
+    local db = pool_acquire()
+    local rows = fetch_all(db, [[
+        SELECT id, lat, lon
+        FROM fire_data
+        WHERE json_extract(data, '$.state') = ''
+          AND json_extract(data, '$.state_retry') IS NULL
+        LIMIT ?
+    ]], {batch_size})
+    pool_release(db)
+    local result = {}
+    for _, r in ipairs(rows) do
+        result[#result + 1] = {
+            id = tonumber(r.id or r["id"]),
+            lat = tonumber(r.lat or r["lat"]),
+            lon = tonumber(r.lon or r["lon"]),
+        }
+    end
+    return result
+end
+
+-- Marca um foco como reprocessado e não-classificável: mantém state='' (para
+-- consumidores verem que foi tentado) e grava state_retry para o loop nunca
+-- mais re-scanear a linha. Se o layer de estados for corrigido depois, um
+-- reset do marcador recupera a linha.
+function _M.mark_fire_state_unattributable(id)
+    local db = pool_acquire()
+    local ok, err = pcall(function()
+        db:exec("BEGIN")
+        local row = fetch_one(db, "SELECT json(data) AS data_json FROM fire_data WHERE id = ?", {id})
+        if row then
+            local current = utils.decode_jsonb(row.data_json or row["data_json"])
+            if type(current) ~= "table" or (next(current) == nil and row.data_json and row.data_json ~= "" and row.data_json ~= "{}") then
+                db:exec("ROLLBACK")
+                return
+            end
+            current.state = ""
+            current.state_retry = utils.now_iso()
+            local data_json = utils.encode_jsonb(current)
+            exec_write(db, "UPDATE fire_data SET data = jsonb(?) WHERE id = ?", {data_json, id})
+        end
+        db:exec("COMMIT")
+    end)
+    if not ok then
+        pcall(function() db:exec("ROLLBACK") end)
+        pool_release(db)
+        error(err)
+    end
+    pool_release(db)
+end
+
+-- ── Biome attribution (plan: dashboard-enhancement, Inc 4) ───────────────
+--
+-- O card de biomas precisa filtrar por dias/estado via SQL — hoje /api/biomes
+-- faz point-in-polygon sobre ≤10k focos e não aceita params. Persistimos o
+-- bioma em $.biome (mesmo padrão do backfill de state, com marcador
+-- biome_retry para não re-scanear pontos não-classificáveis).
+
+-- Aplica campos ao JSONB de um foco num único UPDATE transacional.
+local function patch_fire_jsonb(id, fields)
+    local db = pool_acquire()
+    local ok, err = pcall(function()
+        db:exec("BEGIN")
+        local row = fetch_one(db, "SELECT json(data) AS data_json FROM fire_data WHERE id = ?", {id})
+        if row then
+            local current = utils.decode_jsonb(row.data_json or row["data_json"])
+            if type(current) ~= "table" or (next(current) == nil and row.data_json and row.data_json ~= "" and row.data_json ~= "{}") then
+                db:exec("ROLLBACK")
+                return
+            end
+            for k, v in pairs(fields) do current[k] = v end
+            local data_json = utils.encode_jsonb(current)
+            exec_write(db, "UPDATE fire_data SET data = jsonb(?) WHERE id = ?", {data_json, id})
+        end
+        db:exec("COMMIT")
+    end)
+    if not ok then
+        pcall(function() db:exec("ROLLBACK") end)
+        pool_release(db)
+        error(err)
+    end
+    pool_release(db)
+end
+
+function _M.update_fire_biome(id, name)
+    patch_fire_jsonb(id, { biome = name })
+end
+
+function _M.mark_fire_biome_unattributable(id)
+    patch_fire_jsonb(id, { biome = "", biome_retry = utils.now_iso() })
+end
+
+-- Lote de focos sem bioma (e sem biome_retry) para o backfill.
+function _M.iter_fires_for_biome_backfill(batch_size)
+    batch_size = batch_size or 500
+    local db = pool_acquire()
+    local rows = fetch_all(db, [[
+        SELECT id, lat, lon
+        FROM fire_data
+        WHERE json_extract(data, '$.biome') IS NULL
+          AND json_extract(data, '$.biome_retry') IS NULL
+        LIMIT ?
+    ]], {batch_size})
+    pool_release(db)
+    local result = {}
+    for _, r in ipairs(rows) do
+        result[#result + 1] = {
+            id = tonumber(r.id or r["id"]),
+            lat = tonumber(r.lat or r["lat"]),
+            lon = tonumber(r.lon or r["lon"]),
+        }
+    end
+    return result
+end
+
+-- Contagem por bioma num período (e estado opcional). A % é sobre o total de
+-- focos COM bioma atribuído (honesta quanto à cobertura). Retorna (result, total).
+function _M.get_fires_by_biome(days, state)
+    days = tonumber(days) or 30
+    local cutoff = _M.days_ago_iso(days)
+    local db = pool_acquire()
+    local params = {cutoff}
+    local state_sql = ""
+    if state and state ~= "" then
+        state_sql = " AND json_extract(data, '$.state') = ?"
+        params[#params + 1] = state
+    end
+    local rows = fetch_all(db, [[
+        SELECT json_extract(data, '$.biome') AS biome, COUNT(*) AS cnt
+        FROM fire_data
+        WHERE acq_date IS NOT NULL AND acq_date >= ?
+          AND json_extract(data, '$.biome') IS NOT NULL
+          AND json_extract(data, '$.biome') != ''
+    ]] .. state_sql .. [[
+        GROUP BY biome ORDER BY cnt DESC
+    ]], params)
+    pool_release(db)
+
+    local result = {}
+    local total = 0
+    for _, r in ipairs(rows) do
+        local b = r.biome or r["biome"]
+        local cnt = tonumber(r.cnt or r["cnt"]) or 0
+        if b and b ~= "" then
+            result[#result + 1] = { name = b, count = cnt }
+            total = total + cnt
+        end
+    end
+    for _, rec in ipairs(result) do
+        rec.pct = total > 0 and (math.floor(rec.count / total * 1000 + 0.5) / 10) or 0
+    end
+    return result, total
+end
+
+-- Cobertura de atribuição de bioma (para o painel de freshness).
+function _M.count_fires_by_biome_present()
+    local db = pool_acquire()
+    local row = fetch_one(db, [[
+        SELECT COUNT(*) AS total,
+               SUM(CASE WHEN json_extract(data, '$.biome') IS NULL OR json_extract(data, '$.biome') = '' THEN 1 ELSE 0 END) AS unattributed
+        FROM fire_data
+    ]])
+    pool_release(db)
+    return {
+        total = row and tonumber(row.total or row["total"] or 0) or 0,
+        unattributed = row and tonumber(row.unattributed or row["unattributed"] or 0) or 0,
+    }
+end
+
+-- Cobertura de classificação de natureza (painel de freshness).
+function _M.count_fires_by_nature_present()
+    local db = pool_acquire()
+    local row = fetch_one(db, [[
+        SELECT COUNT(*) AS total,
+               SUM(CASE WHEN nature IS NULL THEN 1 ELSE 0 END) AS unclassified
+        FROM fire_data
+    ]])
+    pool_release(db)
+    return {
+        total = row and tonumber(row.total or row["total"] or 0) or 0,
+        unclassified = row and tonumber(row.unclassified or row["unclassified"] or 0) or 0,
+    }
+end
+
+-- Freshness por fonte: última ingestão (MAX ingested_at) + nº de linhas.
+-- Chaves de resposta = ids de fonte (firms/news/deter/deter_car/ams).
+function _M.get_ingest_freshness()
+    local db = pool_acquire()
+    local source_map = {
+        fire_data = "firms",
+        news = "news",
+        deter_polygons = "deter",
+        deter_car_alerts = "deter_car",
+        ams_risk = "ams",
+    }
+    local res = {}
+    for tbl, id in pairs(source_map) do
+        local row = fetch_one(db, "SELECT COUNT(*) AS c, MAX(ingested_at) AS m FROM " .. tbl)
+        res[id] = {
+            rows = row and tonumber(row.c or row["c"]) or 0,
+            last_ingested_at = row and (row.m or row["m"]) or nil,
+        }
+    end
+    pool_release(db)
+    return res
 end
 
 -- ── Fire nature classification ───────────────────────────────────────────
@@ -946,6 +1169,107 @@ function _M.count_fires_by_nature_by_state(days)
     for _, rec in pairs(by_state) do list[#list + 1] = rec end
     table.sort(list, function(a, b) return a.total > b.total end)
     return list
+end
+
+-- ── Dashboard aggregates (plan: dashboard-enhancement, Inc 3) ────────────
+--
+-- KPIs período-a-período numa única varredura: janela atual vs anterior são
+-- separadas por um CASE WHEN no acq_date (sem overlap — o dia pivô pertence à
+-- janela atual). Um scan só, usando idx_fire_acqdate_nature (acq_date, nature).
+
+-- Contagens atuais e anteriores (total + por classe de natureza).
+-- Retorna { fires={current,previous}, crime={...}, suspeito={...},
+--           permitido={...}, natural={...}, unclassified={...} }.
+function _M.get_dashboard_kpis(days, state)
+    days = tonumber(days) or 30
+    local cur_start = _M.days_ago_iso(days - 1)
+    local prev_start = _M.days_ago_iso(days * 2 - 1)
+    local db = pool_acquire()
+    local params = {cur_start, prev_start}
+    local state_sql = ""
+    if state and state ~= "" then
+        state_sql = " AND json_extract(data, '$.state') = ?"
+        params[#params + 1] = state
+    end
+
+    local rows = fetch_all(db, [[
+        SELECT
+            CASE WHEN acq_date >= ? THEN 'current' ELSE 'previous' END AS period,
+            COALESCE(nature, 'unclassified') AS nature,
+            COUNT(*) AS cnt
+        FROM fire_data
+        WHERE acq_date IS NOT NULL AND acq_date >= ?
+    ]] .. state_sql .. [[
+        GROUP BY period, nature
+    ]], params)
+    pool_release(db)
+
+    local res = {
+        fires = {current = 0, previous = 0},
+        crime = {current = 0, previous = 0},
+        suspeito = {current = 0, previous = 0},
+        permitido = {current = 0, previous = 0},
+        natural = {current = 0, previous = 0},
+        unclassified = {current = 0, previous = 0},
+    }
+    for _, r in ipairs(rows) do
+        local period = r.period or r["period"]
+        local nature = r.nature or r["nature"] or "unclassified"
+        local cnt = tonumber(r.cnt or r["cnt"]) or 0
+        if res[nature] and res[nature][period] ~= nil then
+            res[nature][period] = res[nature][period] + cnt
+        end
+        res.fires[period] = res.fires[period] + cnt
+    end
+    return res
+end
+
+-- Dias distintos com fogo em cada janela — usado para o flag `complete` do
+-- summary (janela com cobertura curta = dados parciais → delta não confiável).
+function _M.count_distinct_fire_days(days, state)
+    days = tonumber(days) or 30
+    local cur_start = _M.days_ago_iso(days - 1)
+    local prev_start = _M.days_ago_iso(days * 2 - 1)
+    local db = pool_acquire()
+    local params = {cur_start, prev_start}
+    local state_sql = ""
+    if state and state ~= "" then
+        state_sql = " AND json_extract(data, '$.state') = ?"
+        params[#params + 1] = state
+    end
+
+    local rows = fetch_all(db, [[
+        SELECT
+            CASE WHEN acq_date >= ? THEN 'current' ELSE 'previous' END AS period,
+            COUNT(DISTINCT acq_date) AS days
+        FROM fire_data
+        WHERE acq_date IS NOT NULL AND acq_date >= ?
+    ]] .. state_sql .. [[
+        GROUP BY period
+    ]], params)
+    pool_release(db)
+
+    local res = {current = 0, previous = 0}
+    for _, r in ipairs(rows) do
+        res[r.period or r["period"]] = tonumber(r.days or r["days"]) or 0
+    end
+    return res
+end
+
+-- Soma de área DETER (km²) numa janela deslocada: [today-(offset+days-1),
+-- today-(offset-1)). current = offset 0; previous = offset = days.
+function _M.get_deter_total_window(days, offset_days)
+    days = tonumber(days) or 30
+    offset_days = tonumber(offset_days) or 0
+    local start = _M.days_ago_iso(offset_days + days - 1)
+    local finish = _M.days_ago_iso(offset_days - 1)
+    local db = pool_acquire()
+    local row = fetch_one(db, [[
+        SELECT COALESCE(SUM(area_km2), 0) AS s FROM deter_polygons
+        WHERE view_date >= ? AND view_date < ?
+    ]], {start, finish})
+    pool_release(db)
+    return tonumber(row and (row.s or row["s"])) or 0
 end
 
 -- ── Deforestation data ───────────────────────────────────────────────────
@@ -1711,45 +2035,58 @@ end
 -- Estatísticas DETER agregadas num período. `by_municipality` lê `deter_alerts`
 -- (histórico completo backfilled + rollup diário); o resto lê a janela de
 -- polígonos (`deter_polygons`, retenção ~90 dias — R2).
-function _M.get_deter_stats(days)
+-- `uf` opcional (plan: dashboard-enhancement, Inc 5) filtra por estado.
+function _M.get_deter_stats(days, uf)
     days = days or 30
     local cutoff = _M.days_ago_iso(days)
     local db = pool_acquire()
 
+    local uf_where = ""
+    local params = {cutoff}
+    if uf and uf ~= "" then
+        uf_where = " AND uf = ?"
+        params[#params + 1] = uf
+    end
+
     local total = 0
-    local row = fetch_one(db, "SELECT COALESCE(SUM(area_km2), 0) AS s FROM deter_polygons WHERE view_date >= ?", {cutoff})
+    local row = fetch_one(db, "SELECT COALESCE(SUM(area_km2), 0) AS s FROM deter_polygons WHERE view_date >= ?" .. uf_where, params)
     total = tonumber(row and (row.s or row["s"])) or 0
 
     local by_class = {}
     for _, r in ipairs(fetch_all(db, [[
         SELECT classname AS name, SUM(area_km2) AS km2 FROM deter_polygons
-        WHERE view_date >= ? GROUP BY classname ORDER BY km2 DESC
-    ]], {cutoff})) do
+        WHERE view_date >= ? ]] .. uf_where .. [[ GROUP BY classname ORDER BY km2 DESC
+    ]], params)) do
         by_class[#by_class + 1] = { name = r.name, km2 = tonumber(r.km2) or 0 }
     end
 
     local by_uf = {}
-    for _, r in ipairs(fetch_all(db, [[
-        SELECT uf, SUM(area_km2) AS km2 FROM deter_polygons
-        WHERE view_date >= ? AND uf IS NOT NULL GROUP BY uf ORDER BY km2 DESC
-    ]], {cutoff})) do
-        by_uf[#by_uf + 1] = { uf = r.uf, km2 = tonumber(r.km2) or 0 }
+    if uf and uf ~= "" then
+        -- com UF filtrada, by_uf colapsa para uma entrada consistente com total
+        by_uf[1] = { uf = uf, km2 = total }
+    else
+        for _, r in ipairs(fetch_all(db, [[
+            SELECT uf, SUM(area_km2) AS km2 FROM deter_polygons
+            WHERE view_date >= ? AND uf IS NOT NULL GROUP BY uf ORDER BY km2 DESC
+        ]], {cutoff})) do
+            by_uf[#by_uf + 1] = { uf = r.uf, km2 = tonumber(r.km2) or 0 }
+        end
     end
 
     local by_day = {}
     for _, r in ipairs(fetch_all(db, [[
         SELECT view_date AS date, SUM(area_km2) AS km2 FROM deter_polygons
-        WHERE view_date >= ? GROUP BY view_date ORDER BY view_date
-    ]], {cutoff})) do
+        WHERE view_date >= ? ]] .. uf_where .. [[ GROUP BY view_date ORDER BY view_date
+    ]], params)) do
         by_day[#by_day + 1] = { date = r.date, km2 = tonumber(r.km2) or 0 }
     end
 
     local by_municipality = {}
     for _, r in ipairs(fetch_all(db, [[
         SELECT mun_geocod, MAX(municipality) AS name, SUM(area_km2) AS km2
-        FROM deter_alerts WHERE view_date >= ? AND mun_geocod IS NOT NULL
+        FROM deter_alerts WHERE view_date >= ? ]] .. uf_where .. [[ AND mun_geocod IS NOT NULL
         GROUP BY mun_geocod ORDER BY km2 DESC LIMIT 50
-    ]], {cutoff})) do
+    ]], params)) do
         by_municipality[#by_municipality + 1] = {
             mun_geocod = r.mun_geocod, name = r.name, km2 = tonumber(r.km2) or 0,
         }
@@ -1867,29 +2204,40 @@ function _M.get_car_alerts(uf, municipio, severity, days, page, page_size)
     return { alerts = alerts, total = total, page = page, page_size = page_size }
 end
 
-function _M.get_car_alert_stats(days)
+function _M.get_car_alert_stats(days, uf)
     days = days or 7
     local cutoff = _M.days_ago_iso(days)
     local db = pool_acquire()
 
+    local uf_where = ""
+    local params = {cutoff}
+    if uf and uf ~= "" then
+        uf_where = " AND uf = ?"
+        params[#params + 1] = uf
+    end
+
     local total = 0
-    local crow = fetch_one(db, "SELECT COUNT(*) AS c FROM deter_car_alerts WHERE view_date >= ?", {cutoff})
+    local crow = fetch_one(db, "SELECT COUNT(*) AS c FROM deter_car_alerts WHERE view_date >= ?" .. uf_where, params)
     total = tonumber(crow and (crow.c or crow["c"])) or 0
 
     local by_severity = {}
     for _, r in ipairs(fetch_all(db, [[
         SELECT severity, COUNT(*) AS cnt FROM deter_car_alerts
-        WHERE view_date >= ? AND severity IS NOT NULL GROUP BY severity
-    ]], {cutoff})) do
+        WHERE view_date >= ? ]] .. uf_where .. [[ AND severity IS NOT NULL GROUP BY severity
+    ]], params)) do
         by_severity[#by_severity + 1] = { severity = r.severity, count = r.cnt }
     end
 
     local by_uf = {}
-    for _, r in ipairs(fetch_all(db, [[
-        SELECT uf, COUNT(*) AS cnt FROM deter_car_alerts
-        WHERE view_date >= ? AND uf IS NOT NULL GROUP BY uf ORDER BY cnt DESC
-    ]], {cutoff})) do
-        by_uf[#by_uf + 1] = { uf = r.uf, count = r.cnt }
+    if uf and uf ~= "" then
+        by_uf[1] = { uf = uf, count = total }
+    else
+        for _, r in ipairs(fetch_all(db, [[
+            SELECT uf, COUNT(*) AS cnt FROM deter_car_alerts
+            WHERE view_date >= ? AND uf IS NOT NULL GROUP BY uf ORDER BY cnt DESC
+        ]], {cutoff})) do
+            by_uf[#by_uf + 1] = { uf = r.uf, count = r.cnt }
+        end
     end
 
     pool_release(db)
