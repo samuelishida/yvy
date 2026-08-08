@@ -44,6 +44,21 @@ def deter_db_path() -> str:
     return os.path.join("backend-lua", "data", "yvy.db")
 
 
+# GeoServer upstream (TerraBrasilis) can return HTTP 200 with an XML
+# `ows:ExceptionReport` (e.g. "Cannot get a connection, pool error Timeout
+# waiting for idle object") instead of a JSON FeatureCollection. That is a
+# transient server-side overload, not a schema change — retry with a longer
+# backoff instead of failing the whole run. (common-mistake #4: still reject
+# non-FeatureCollection loudly after retries, never silently truncate.)
+MAX_ATTEMPTS = 5
+BACKOFF_BASE = 5  # seconds; attempts sleep 5, 10, 20, 40 (total ~75s)
+
+
+def _is_exception_report(text: str) -> bool:
+    """True if the body is a GeoServer ows:ExceptionReport (XML), not JSON."""
+    return bool(text) and "<ows:ExceptionReport" in text
+
+
 def fetch_page(ws: str, layer: str, start_date: str, end_date: str, start: int) -> list:
     params = {
         "service": "WFS", "version": "1.1.0", "request": "GetFeature",
@@ -51,11 +66,25 @@ def fetch_page(ws: str, layer: str, start_date: str, end_date: str, start: int) 
         "maxFeatures": str(PAGE), "startIndex": str(start),
         "CQL_FILTER": CQL_FILTER_TMPL.format(start=start_date, end=end_date),
     }
-    for attempt in range(3):
+    last_exc = None
+    for attempt in range(MAX_ATTEMPTS):
         try:
             r = requests.get(BASE.format(ws=ws), params=params, timeout=180,
                              headers={"User-Agent": UA})
             r.raise_for_status()
+            text = r.text
+            # Transient GeoServer pool overload → XML ExceptionReport. Retry
+            # with backoff; only give up after MAX_ATTEMPTS.
+            if _is_exception_report(text):
+                last_exc = ValueError(
+                    f"GeoServer returned ows:ExceptionReport (server overload) "
+                    f"for {ws}:{layer} {start_date}..{end_date} page {start}"
+                )
+                print(f"  WARN {last_exc} — retry {attempt + 1}/{MAX_ATTEMPTS}", file=sys.stderr)
+                if attempt == MAX_ATTEMPTS - 1:
+                    raise last_exc
+                time.sleep(BACKOFF_BASE * (2 ** attempt))
+                continue
             data = r.json()
             # Reject non-FeatureCollection pages loudly — never silently
             # truncate (e.g. a WFS error/exception document parsed as JSON).
@@ -68,9 +97,10 @@ def fetch_page(ws: str, layer: str, start_date: str, end_date: str, start: int) 
                 )
             return data["features"]
         except Exception as exc:  # retry with backoff
-            if attempt == 2:
+            last_exc = exc
+            if attempt == MAX_ATTEMPTS - 1:
                 raise
-            time.sleep(2 ** attempt)
+            time.sleep(BACKOFF_BASE * (2 ** attempt))
 
 def _num(v):
     try:
