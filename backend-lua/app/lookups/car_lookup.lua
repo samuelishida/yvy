@@ -238,6 +238,72 @@ function _M.count()
     return n
 end
 
+-- Haversine distance (meters) between two WGS84 points.
+local function haversine_m(lat1, lon1, lat2, lon2)
+    local r = 6371000 -- Earth radius in meters
+    local dlat = math.rad(lat2 - lat1)
+    local dlon = math.rad(lon2 - lon1)
+    local a = math.sin(dlat / 2) ^ 2
+        + math.cos(math.rad(lat1)) * math.cos(math.rad(lat2)) * math.sin(dlon / 2) ^ 2
+    local c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return r * c
+end
+
+-- Approximate degree deltas for a given east/north distance (meters) at a
+-- given latitude. Returned as {dlon, dlat} so callers can grow a WGS84 bbox.
+local function meters_to_degrees(lat, meters)
+    local lat_rad = math.rad(lat)
+    local m_per_deg_lat = 111132.92 - 559.82 * math.cos(2 * lat_rad) + 1.175 * math.cos(4 * lat_rad)
+    local m_per_deg_lon = 111412.84 * math.cos(lat_rad) - 93.5 * math.cos(3 * lat_rad)
+    return meters / m_per_deg_lon, meters / m_per_deg_lat
+end
+
+-- Find the nearest point on a line segment (lat1,lon1)-(lat2,lon2) to the
+-- test point (lat,lon). Returns {lat, lon} of the closest point.
+local function nearest_point_on_segment(lat, lon, lat1, lon1, lat2, lon2)
+    -- Project onto segment using dot product; clamp to endpoints.
+    local dx = lon2 - lon1
+    local dy = lat2 - lat1
+    local len2 = dx * dx + dy * dy
+    if len2 == 0 then return {lat = lat1, lon = lon1} end
+    local t = math.max(0, math.min(1, ((lon - lon1) * dx + (lat - lat1) * dy) / len2))
+    return {lat = lat1 + t * dy, lon = lon1 + t * dx}
+end
+
+-- Distance (meters) from a WGS84 point to the nearest point on the exterior
+-- rings of a decoded geometry. Interior rings (holes) are ignored — for a click
+-- on a hole we still snap to the surrounding polygon, which is the desired UX.
+local function distance_to_geom_m(lat, lon, geom)
+    if type(geom) ~= "table" or type(geom.coordinates) ~= "table" then return nil end
+
+    local polys
+    if geom.type == "Polygon" then
+        polys = {geom.coordinates}
+    elseif geom.type == "MultiPolygon" then
+        polys = geom.coordinates
+    else
+        return nil
+    end
+
+    local best = math.huge
+    for _, poly in ipairs(polys) do
+        for ridx, ring in ipairs(poly) do
+            if ridx > 1 then break end -- only exterior ring
+            for i = 1, #ring - 1 do
+                local pt1 = ring[i]
+                local pt2 = ring[i + 1]
+                local near = nearest_point_on_segment(
+                    lat, lon, tonumber(pt1[2]), tonumber(pt1[1]), tonumber(pt2[2]), tonumber(pt2[1])
+                )
+                local d = haversine_m(lat, lon, near.lat, near.lon)
+                if d < best then best = d end
+            end
+        end
+    end
+    return best == math.huge and nil or best
+end
+
+-- Exact point-in-polygon CAR lookup (legacy behavior).
 function _M.classify_point(lon, lat)
     if not car_conn then return nil end
     lon, lat = tonumber(lon), tonumber(lat)
@@ -281,6 +347,80 @@ function _M.classify_point(lon, lat)
 
     if not best then return nil end
     return {id = best.id, name = best.name, uf = best.uf}
+end
+
+-- Tolerant point lookup: first tries exact point-in-polygon; if that misses,
+-- searches imóveis whose bbox is within `tolerance_m` of the point and returns
+-- the one with the smallest distance to its exterior ring, preferring larger
+-- area as a tie-breaker. This compensates for the raster CAR tile overshoot:
+-- tiles are generated from bbox intersection, so a magenta pixel may be slightly
+-- outside the actual polygon.
+function _M.classify_point_with_tolerance(lon, lat, tolerance_m)
+    tolerance_m = tonumber(tolerance_m) or 200
+    if tolerance_m <= 0 then
+        return _M.classify_point(lon, lat)
+    end
+
+    -- 1. Try exact first.
+    local exact = _M.classify_point(lon, lat)
+    if exact then return exact end
+
+    if not car_conn then return nil end
+    lon, lat = tonumber(lon), tonumber(lat)
+    if not lon or not lat then return nil end
+
+    -- 2. Build a bbox around the point with the requested tolerance.
+    local dlon, dlat = meters_to_degrees(lat, tolerance_m)
+    local min_lon, max_lon = lon - dlon, lon + dlon
+    local min_lat, max_lat = lat - dlat, lat + dlat
+
+    local ids = {}
+    local stmt = car_conn:prepare(
+        "SELECT id FROM car_rtree WHERE minLon<=? AND maxLon>=? AND minLat<=? AND maxLat>=?"
+    )
+    stmt:bind(1, max_lon); stmt:bind(2, min_lon)
+    stmt:bind(3, max_lat); stmt:bind(4, min_lat)
+    for row in stmt:nrows() do
+        ids[#ids + 1] = tonumber(row.id)
+    end
+    stmt:finalize()
+    if #ids == 0 then return nil end
+
+    -- 3. Decode candidates, compute distance to exterior ring, pick nearest
+    -- (larger area wins ties so small slivers don't steal clicks).
+    local ph = {}
+    for _ = 1, #ids do ph[#ph + 1] = "?" end
+    local s2 = car_conn:prepare(GET_PREFIX .. table.concat(ph, ",") .. ")")
+    for i, id in ipairs(ids) do s2:bind(i, id) end
+
+    local best
+    for row in s2:nrows() do
+        local g = row.g or row["g"]
+        if g and g ~= "" then
+            local geom = _M.decode_geometry(g)
+            if geom then
+                local d = distance_to_geom_m(lat, lon, geom)
+                if d and d <= tolerance_m then
+                    local area = tonumber(row.area) or 0
+                    if not best
+                        or d < best.distance
+                        or (d == best.distance and area > best.area) then
+                        best = {
+                            id = row.cod_imovel,
+                            name = row.municipio,
+                            uf = row.uf,
+                            area = area,
+                            distance = d,
+                        }
+                    end
+                end
+            end
+        end
+    end
+    s2:finalize()
+
+    if not best then return nil end
+    return {id = best.id, name = best.name, uf = best.uf, distance_m = math.floor(best.distance + 0.5)}
 end
 
 function _M.is_private(lon, lat)

@@ -27,9 +27,24 @@ function _M.get_lookup(ctx)
         return
     end
 
+    -- Tolerance (meters) for click-to-CAR snapping. The raster CAR overlay is
+    -- rendered from exact polygons, but small rasterization shifts and the
+    -- user's click precision mean a magenta pixel can be a few meters outside
+    -- the actual imóvel. Allow up to 2 km snapping on map clicks; the default
+    -- for exact callers remains 0.
+    local tolerance = tonumber(ctx.req.args.tolerance) or 0
+    if tolerance < 0 or tolerance > 2000 then
+        tolerance = 0
+    end
+
     local car = require("app.lookups.car_lookup")
     car.load_car()
-    local hit = car.classify_point(lon, lat)   -- {id=cod_imovel, name=municipio, uf} | nil
+    local hit
+    if tolerance > 0 then
+        hit = car.classify_point_with_tolerance(lon, lat, tolerance)
+    else
+        hit = car.classify_point(lon, lat)
+    end
     ctx:json(200, { imovel = hit or cjson.null })
 end
 

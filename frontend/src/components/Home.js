@@ -984,7 +984,11 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
       // Não cacheamos lookup por clique: cada clique é uma coordenada única
       // e cachear com TTL fazia o popup reter respostas antigas (ex. miss de
       // polígono) quando o usuário clicava num ponto próximo que deveria ter CAR.
-      const url = `/api/car/lookup?lat=${latlng.lat}&lon=${latlng.lng}`;
+      // The CAR overlay tiles are now rasterized from the exact polygons, but
+      // a rasterized edge can still shift a few pixels. Use a 1 km snapping
+      // tolerance so clicks on visible magenta pixels resolve to the nearest
+      // imóvel without matching a far-away property.
+      const url = `/api/car/lookup?lat=${latlng.lat}&lon=${latlng.lng}&tolerance=1000`;
       if (process.env.NODE_ENV === 'development') {
         // eslint-disable-next-line no-console
         console.log('[CAR click]', latlng.lat, latlng.lng);
