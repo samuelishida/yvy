@@ -112,6 +112,43 @@ function _M.delete_car_protected_for_uf(conn, uf)
     stmt:finalize()
 end
 
+-- Tabela de pré-cálculo CAR × PRODES (plan: precompute-car-prodes).
+-- Guarda o resultado determinístico da verificação PRODES por imóvel; PK = cod_imovel.
+function _M.create_car_prodes_schema(conn)
+    conn:exec([[
+        CREATE TABLE IF NOT EXISTS car_prodes (
+            cod_imovel TEXT PRIMARY KEY,
+            found INTEGER NOT NULL DEFAULT 1,
+            has_prodes INTEGER NOT NULL DEFAULT 0,
+            prodes_area_ha REAL NOT NULL DEFAULT 0,
+            property_area_ha REAL NOT NULL DEFAULT 0,
+            pct_deforested REAL NOT NULL DEFAULT 0,
+            years TEXT NOT NULL DEFAULT '[]',
+            classes TEXT NOT NULL DEFAULT '[]',
+            regrowth INTEGER NOT NULL DEFAULT 0,
+            sampled INTEGER NOT NULL DEFAULT 0,
+            bbox TEXT NOT NULL,
+            area_estimate TEXT NOT NULL DEFAULT 'pixel-based',
+            version_key TEXT NOT NULL,
+            computed_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_car_prodes_computed_at ON car_prodes(computed_at);
+        CREATE INDEX IF NOT EXISTS idx_car_prodes_version_key ON car_prodes(version_key);
+    ]])
+end
+
+-- Apaga pré-cálculo PRODES dos imóveis de uma UF antes de reimportá-la.
+function _M.delete_car_prodes_for_uf(conn, uf)
+    if not uf or uf == "" then return end
+    local stmt = conn:prepare([[
+        DELETE FROM car_prodes WHERE cod_imovel IN (SELECT cod_imovel FROM car_data WHERE uf = ?)
+    ]])
+    if not stmt then return end
+    stmt:bind(1, uf)
+    stmt:step()
+    stmt:finalize()
+end
+
 -- Importa um arquivo GeoJSON FeatureCollection para car.db (na conexão dada).
 -- `start_id` = nº de imóveis já inseridos (offset global de id), evitando
 -- colisão de PK entre arquivos. Retorna o nº de imóveis inseridos (0 em

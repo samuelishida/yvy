@@ -238,6 +238,11 @@ function _M.count()
     return n
 end
 
+-- Exposta para car_prodes.lua reutilizar a conexão query-only de runtime.
+function _M._read_only_conn()
+    return car_conn
+end
+
 -- Haversine distance (meters) between two WGS84 points.
 local function haversine_m(lat1, lon1, lat2, lon2)
     local r = 6371000 -- Earth radius in meters

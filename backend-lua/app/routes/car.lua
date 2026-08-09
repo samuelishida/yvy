@@ -14,6 +14,7 @@ local cjson      = require("cjson")
 local logger     = require("app.logger")
 local car_lookup = require("app.lookups.car_lookup")
 local car_protected = require("app.lookups.car_protected_overlap")
+local car_prodes = require("app.lookups.car_prodes")
 
 local _M = {}
 
@@ -56,9 +57,11 @@ end
 -- Resultado cacheado em Redis `car:prodes:<COD>` (TTL 86400) com flag `cached`.
 
 -- Padding ~30m em graus (30m ≈ 0.00027° no equador; 0.0003 cobre margem).
-local PAD_DEG = 0.0003
-local PIXEL_HA = 0.09  -- pixel PRODES 30m x 30m
-local CANDIDATE_LIMIT = 50000
+-- Lidos de env para alimentarem o version_key do pré-cálculo car_prodes:
+-- mudar qualquer um invalida o cache pré-calculado (plan: precompute-car-prodes).
+local PAD_DEG = tonumber(env.get("PRODES_PAD_DEG", "0.0003")) or 0.0003
+local PIXEL_HA = tonumber(env.get("PRODES_PIXEL_HA", "0.09")) or 0.09  -- pixel PRODES 30m x 30m
+local CANDIDATE_LIMIT = tonumber(env.get("PRODES_CANDIDATE_LIMIT", "50000")) or 50000
 
 function _M.get_prodes_status(ctx)
     if not auth.enforce(ctx) then return end
@@ -84,6 +87,16 @@ function _M.get_prodes_status(ctx)
         end
     end
 
+    -- Fast path: resultado pré-calculado no car.db (plan: precompute-car-prodes).
+    -- Só consulta o banco se não houver cache Redis; o cache continua sendo
+    -- populado pelo caminho lento abaixo para amortizar futuros misses.
+    local cached_row = car_prodes.get(cod)
+    if cached_row then
+        cached_row.cached = true
+        ctx:json(200, { ok = true, cached = true, precomputed = true, data = cached_row })
+        return
+    end
+
     local car = require("app.lookups.car_lookup")
     car.load_car()
     if not car.is_loaded() then
@@ -97,6 +110,21 @@ function _M.get_prodes_status(ctx)
         return
     end
 
+    local result = _M.compute_prodes_for_property(prop)
+    if not result then
+        ctx:json(200, { cod_imovel = cod, found = false, reason = "not_found" })
+        return
+    end
+
+    redis.set(cache_key, cjson.encode(result), 86400)
+    ctx:json(200, { ok = true, cached = false, data = result })
+end
+
+-- Cálculo CAR × PRODES em tempo real. Extraído para reutilização no warm
+-- offline e como fallback quando a tabela car_prodes ainda não tem a row.
+function _M.compute_prodes_for_property(prop)
+    if not prop or not prop.bbox then return nil end
+
     local bbox = prop.bbox
     local db = require("app.db")
     local points = db.get_deforestation_in_bbox(
@@ -108,7 +136,7 @@ function _M.get_prodes_status(ctx)
     -- Imóveis grandes geram muitos candidatos → ray-cast CPU-bound no event
     -- loop. Loga para observabilidade (cache miss é o cold path).
     if #points > 10000 then
-        logger.warn("car/prodes slow path: " .. #points .. " candidates for " .. cod)
+        logger.warn("car/prodes slow path: " .. #points .. " candidates for " .. tostring(prop.id))
     end
 
     local sampled = #points >= CANDIDATE_LIMIT
@@ -122,7 +150,7 @@ function _M.get_prodes_status(ctx)
 
     -- (c) Decodifica a geometria do imóvel UMA vez e reusa em todos os pontos
     -- (antes: point_in_geojson re-decodificava o JSON por candidato — até 50k×).
-    local prop_geom = car.decode_geometry(prop.geom)
+    local prop_geom = car_lookup.decode_geometry(prop.geom)
 
     for _, p in ipairs(points) do
         -- (d) bbox-prefilter: descarta pontos fora do bbox exato do imóvel
@@ -130,7 +158,7 @@ function _M.get_prodes_status(ctx)
         if prop_geom
            and p.lat >= bbox.min_lat and p.lat <= bbox.max_lat
            and p.lon >= bbox.min_lon and p.lon <= bbox.max_lon
-           and car.point_in_geom(p.lon, p.lat, prop_geom) then
+           and car_lookup.point_in_geom(p.lon, p.lat, prop_geom) then
             local ck = (p.class_name or "unknown") .. ":" .. (p.type or "")
             if not class_key[ck] then
                 class_key[ck] = true
@@ -164,7 +192,7 @@ function _M.get_prodes_status(ctx)
         pct = math.floor((prodes_area_ha / property_area_ha) * 1000 + 0.5) / 10
     end
 
-    local result = {
+    return {
         cod_imovel = prop.id,
         found = true,
         has_prodes = def_count > 0,
@@ -184,9 +212,6 @@ function _M.get_prodes_status(ctx)
             max_lat = math.floor(bbox.max_lat * 1e5 + 0.5) / 1e5,
         },
     }
-
-    redis.set(cache_key, cjson.encode(result), 86400)
-    ctx:json(200, { ok = true, cached = false, data = result })
 end
 
 -- ── Sobreposição CAR × UC/TI (plan: protected-area-crossing, Inc 1)

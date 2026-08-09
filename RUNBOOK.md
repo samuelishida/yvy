@@ -57,6 +57,69 @@ grava de volta de forma throttled.
 - Warm muito lento: paralelize por UF (comando acima). Não adicionamos
   paralelismo in-process no script; subprocessos são crash-safe.
 
+## Pré-cálculo CAR × PRODES
+
+O endpoint `/api/car/prodes?cod_imovel=` (verificação de desmatamento por recibo
+CAR) lê resultados prontos da tabela `car_prodes` no `car.db`. A rota consulta,
+em ordem: cache Redis `car:prodes:<COD>` (24h) → tabela `car_prodes` (se a row
+existir e o `version_key` bater) → fallback live (ray-cast PRODES × polígono).
+O fallback live continua gravando o cache Redis, então o pré-cálculo só remove
+o custo CPU do ray-cast nos misses subsequentes.
+
+Só são gravadas rows com `has_prodes=true` (ponto PRODES dentro do imóvel).
+Imóveis sem PRODES continuam resolvidos pelo fallback live sem ocupar espaço
+na tabela.
+
+### Quando regenerar
+
+1. **Após reimportar CAR** (`lua5.1 tools/import_car.lua <UF>`): o import apaga
+   o pré-cálculo **apenas da UF reimportada** (`delete_car_prodes_for_uf`).
+   Re-execute o warm para a UF afetada.
+2. **Após atualizar `deforestation_data` (PRODES)**: o `version_key` muda
+   (COUNT/MIN/MAX year + hash de amostra dos pontos + config). Rows antigas
+   são tratadas como stale pela rota (fallback live) até o warm re-rodar.
+
+### Como rodar
+
+Sequencial (todas as UFs):
+```bash
+cd backend-lua
+make warm-car-prodes
+```
+
+Paralelo por UF com clones (recomendado em produção — cada UF num clone do
+`car.db`, warm independente, depois merge com validação de `version_key`):
+```bash
+cd backend-lua
+make clone-car-prodes-workers
+bash tools/clone_car_prodes_worker.sh data/car/car.db /tmp/yvy-prodes-workers 8
+# o script faz: stop backend → checkpoint WAL → clones → warm paralelo → merge
+```
+
+Se o backend roda via systemd e o script não parar o serviço, pare manualmente
+antes para garantir checkpoint consistente:
+```bash
+sudo systemctl stop yvy-backend
+```
+
+### Env vars relevantes
+
+- `CAR_PRODES_MIN_AREA_HA` (default `10`): imóveis com `area_ha` abaixo desse
+  valor são pulados no batch warm.
+- `PRODES_VERSION` (default vazio): rótulo do dataset PRODES ingerido; entra no
+  `version_key` e invalida o pré-cálculo quando alterado.
+- `PAD_DEG`, `PIXEL_HA`, `CANDIDATE_LIMIT` (runtime, em `routes/car.lua`):
+  config da verificação live; entram no `version_key` — mudá-los invalida o
+  pré-cálculo.
+
+### Backup e storage
+
+- O merge `make merge-car-prodes` valida `version_key` consistente entre clones
+  e aborta se houver divergência (sinal de dataset desatualizado/parcial).
+- A tabela pode adicionar centenas de MB ao `car.db` (só imóveis com PRODES).
+  Monitore com `ls -lh backend-lua/data/car/car.db` e valide com
+  `sqlite3 backend-lua/data/car/car.db 'SELECT count(*) FROM car_prodes;'`.
+
 ## Backups
 
 ### Local (dev machine)

@@ -1880,6 +1880,26 @@ function _M.count_deforestation()
     return row and tonumber(row.cnt or row["cnt"] or 0) or 0
 end
 
+-- Estatísticas globais de deforestation_data para versionamento do cache
+-- pré-calculado CAR × PRODES (plan: precompute-car-prodes).
+function _M.get_deforestation_stats()
+    local db = pool_acquire()
+    local row = fetch_one(db, [[
+        SELECT
+            COUNT(*) AS cnt,
+            MIN(year) AS min_year,
+            MAX(year) AS max_year
+        FROM deforestation_data
+    ]])
+    pool_release(db)
+    if not row then return nil end
+    return {
+        count = tonumber(row.cnt or row["cnt"] or 0),
+        min_year = tonumber(row.min_year or row["min_year"]) or nil,
+        max_year = tonumber(row.max_year or row["max_year"]) or nil,
+    }
+end
+
 function _M.get_stats()
     local db = pool_acquire()
     local fire_count = fetch_one(db, "SELECT COUNT(*) AS cnt FROM fire_data")
