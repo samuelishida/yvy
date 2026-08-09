@@ -41,10 +41,7 @@ conn:exec("PRAGMA synchronous=OFF")   -- bulk load
 conn:exec("PRAGMA cache_size=-200000")
 conn:exec("PRAGMA temp_store=MEMORY")
 car_import.create_schema(conn)
-
--- Reimport idempotente
-conn:exec("DELETE FROM car_data")
-conn:exec("DELETE FROM car_rtree")
+car_import.create_car_protected_schema(conn)
 
 local args = {...}
 local targets = {}
@@ -55,8 +52,13 @@ else
 end
 table.sort(targets)
 
+-- Reimport idempotente por UF: apaga pré-cálculo da UF ANTES de apagar os
+-- dados, evitando overlaps órfãos (plan: car-protected-optimize).
 local total = 0
 for _, uf in ipairs(targets) do
+    car_import.delete_car_protected_for_uf(conn, uf)
+    conn:exec("DELETE FROM car_data WHERE uf = '" .. uf .. "'")
+    conn:exec("DELETE FROM car_rtree WHERE id IN (SELECT id FROM car_data WHERE uf = '" .. uf .. "')")
     local n = car_import.import_file(conn, data_dir .. "/" .. uf .. ".json", total)
     total = total + n
 end

@@ -11,6 +11,52 @@
 - Frontend: `curl -f http://localhost:5001/health`
 - SQLite: `sqlite3 backend-lua/data/yvy.db ".tables"`
 
+## Pré-cálculo CAR × UC/TI
+
+O endpoint `/api/car/protected-overlap` lê resultados pré-calculados da tabela
+`car_protected_overlap` no `car.db`. Se a row estiver ausente, stale ou com
+`version_key` desatualizado, a rota recalcula on-the-fly (Monte-Carlo) e
+grava de volta de forma throttled.
+
+### Quando regenerar
+
+1. **Após reimportar CAR** (`lua5.1 tools/import_car.lua <UF>`):
+   o import apaga o pré-cálculo **apenas da UF reimportada**. Re-execute:
+   ```bash
+   cd backend-lua
+   make warm-car-protected   # todas as UFs, sequential
+   # ou, com paralelismo por UF (recomendado em produção):
+   printf '%s\n' AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO \
+     | xargs -P 8 -I{} lua5.1 tools/warm_car_protected_overlap.lua {}
+   ```
+
+2. **Após atualizar `conservation_units.json` / `indigenous_lands.json`**:
+   o `version_key` muda; o próximo request de cada imóvel cairá no fallback
+   live até o warm re-rodar. Re-execute o comando acima.
+
+### Env vars relevantes
+
+- `PROTECTED_OVERLAP_MIN_AREA_HA` (default `1.0`): imóveis com `area_ha` abaixo
+  desse valor são pulados no batch e nunca auto-reparados pela rota.
+- `PROTECTED_OVERLAP_STALE_DAYS` (default `30`): rows mais antigas que isso
+  são tratadas como stale e recalculadas no primeiro request.
+- `PROTECTED_OVERLAP_SAMPLES` entra no `version_key`; mudá-lo invalida o
+  pré-cálculo existente.
+
+### Backup e storage
+
+- Na primeira execução (quando a tabela ainda não existe), o batch faz uma
+  cópia do `car.db` para `car.db.warm-backup-YYYYMMDD-HHMMSS` antes de escrever.
+- A tabela pode adicionar 100–500 MB ao `car.db` (estimativa: 100k imóveis ×
+  1–5 KB de JSON por row). Monitore com `ls -lh backend-lua/data/car/car.db`.
+
+### Troubleshooting
+
+- `source="live"` em todos os requests: verifique se `warm_car_protected_overlap`
+  rodou e se a coluna `version_key` bate com a das geometrias atuais.
+- Warm muito lento: paralelize por UF (comando acima). Não adicionamos
+  paralelismo in-process no script; subprocessos são crash-safe.
+
 ## Backups
 
 ### Local (dev machine)

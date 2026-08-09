@@ -79,6 +79,39 @@ function _M.create_schema(conn)
     ]])
 end
 
+-- Tabela de pré-cálculo CAR × UC/TI (plan: car-protected-optimize).
+-- Guarda resultado determinístico da amostragem por grade; PK = cod_imovel.
+function _M.create_car_protected_schema(conn)
+    conn:exec([[
+        CREATE TABLE IF NOT EXISTS car_protected_overlap (
+            cod_imovel TEXT PRIMARY KEY,
+            sampled INTEGER NOT NULL,
+            overlaps TEXT NOT NULL,
+            status TEXT NOT NULL,
+            max_pct REAL NOT NULL,
+            threshold REAL NOT NULL,
+            version_key TEXT NOT NULL,
+            computed_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_car_protected_computed_at
+            ON car_protected_overlap(computed_at);
+    ]])
+end
+
+-- Apaga pré-cálculo dos imóveis de uma UF antes de reimportá-la.
+-- Deve rodar dentro da mesma transação/conn do import_car para evitar overlaps órfãos.
+function _M.delete_car_protected_for_uf(conn, uf)
+    if not uf or uf == "" then return end
+    local stmt = conn:prepare([[
+        DELETE FROM car_protected_overlap
+        WHERE cod_imovel IN (SELECT cod_imovel FROM car_data WHERE uf = ?)
+    ]])
+    if not stmt then return end
+    stmt:bind(1, uf)
+    stmt:step()
+    stmt:finalize()
+end
+
 -- Importa um arquivo GeoJSON FeatureCollection para car.db (na conexão dada).
 -- `start_id` = nº de imóveis já inseridos (offset global de id), evitando
 -- colisão de PK entre arquivos. Retorna o nº de imóveis inseridos (0 em

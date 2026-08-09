@@ -25,4 +25,9 @@ clean:
 run: $(TARGET)
 	./$(TARGET) --port 5001 --backend 127.0.0.1 --static ../frontend/build
 
-.PHONY: all clean run
+.PHONY: all clean run warm-car-protected
+
+warm-car-protected: $(TARGET)
+	@echo 'Re-gera pré-cálculo CAR x UC/TI no car.db.'
+	@echo 'Rode após importar CAR novo ou atualizar conservation_units.json / indigenous_lands.json.'
+	cd .. && lua5.1 backend-lua/tools/warm_car_protected_overlap.lua

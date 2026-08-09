@@ -1,7 +1,7 @@
-/* yvy-server.c — Robust single-threaded HTTP frontend server for Yvy
+/* yvy-server.c — Single-threaded HTTP frontend server for Yvy
  *
  * Serves static files (React build) + proxies /api paths to Lua backend.
- * Nginx handles SSL termination in front of this server.
+ * Nginx handles everything in production, this is a drop in replacement for development.
  *
  * Improvements over original:
  *   - sendfile() on Linux for zero-copy static file serving

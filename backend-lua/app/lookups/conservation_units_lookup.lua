@@ -97,6 +97,7 @@ function _M.load_conservation_units()
 end
 
 function _M.count() return #units end
+function _M.units() return units end
 
 function _M.classify_point(lon, lat)
     for _, entry in ipairs(units) do

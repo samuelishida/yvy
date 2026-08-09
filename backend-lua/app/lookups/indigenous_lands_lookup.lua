@@ -96,6 +96,7 @@ function _M.load_indigenous_lands()
 end
 
 function _M.count() return #lands end
+function _M.lands() return lands end
 
 function _M.classify_point(lon, lat)
     for _, entry in ipairs(lands) do

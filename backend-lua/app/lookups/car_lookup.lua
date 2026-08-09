@@ -25,6 +25,10 @@ local CAR_DB_PATH = env.get("CAR_DB_PATH") or env.first_with_existing_parent({
     "/opt/yvy/backend-lua/data/car/car.db",
 }) or "backend-lua/data/car/car.db"
 
+function _M.db_path()
+    return CAR_DB_PATH
+end
+
 local car_conn = nil
 local RTree_SQL = "SELECT id FROM car_rtree WHERE minLon<=? AND maxLon>=? AND minLat<=? AND maxLat>=?"
 local GET_PREFIX = "SELECT cod_imovel, uf, municipio, area, json(geom) AS g FROM car_data WHERE id IN ("

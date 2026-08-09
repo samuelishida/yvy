@@ -283,6 +283,25 @@ function _M.hours_between(iso1, iso2)
     return math.abs(os.difftime(ts2, ts1)) / 3600
 end
 
+-- Julian Day Number (proleptic Gregorian). Used for timezone-safe day deltas.
+local function jdn(y, m, d)
+    local a = math.floor((14 - m) / 12)
+    local y1 = y + 4800 - a
+    local m1 = m + 12 * a - 3
+    return d + math.floor((153 * m1 + 2) / 5)
+        + 365 * y1 + math.floor(y1 / 4) - math.floor(y1 / 100) + math.floor(y1 / 400) - 32045
+end
+
+-- Day delta between two ISO date strings (date-only prefix is enough).
+-- Returns integer days (date2 - date1) in UTC, independent of local timezone.
+-- Non-ISO inputs return nil.
+function _M.days_between_iso(date1, date2)
+    local y1, m1, d1 = tostring(date1):match("^(....)-(..)-(..)")
+    local y2, m2, d2 = tostring(date2):match("^(....)-(..)-(..)")
+    if not y1 or not y2 then return nil end
+    return jdn(tonumber(y2), tonumber(m2), tonumber(d2)) - jdn(tonumber(y1), tonumber(m1), tonumber(d1))
+end
+
 function _M.load_dotenv(path)
     return env.load_dotenv(path)
 end

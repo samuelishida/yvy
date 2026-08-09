@@ -7,10 +7,12 @@
 require("app.env")
 local env        = require("app.env")
 local geo        = require("app.geo")
+local utils      = require("app.utils")
 local auth       = require("app.middleware.auth")
 local rl         = require("app.middleware.rate_limit")
 local cjson      = require("cjson")
 local car_lookup = require("app.lookups.car_lookup")
+local car_protected = require("app.lookups.car_protected_overlap")
 
 local _M = {}
 
@@ -171,10 +173,10 @@ end
 -- Dado o recibo (cod_imovel), estima a fração do imóvel que cai dentro de UCs
 -- e TIs (Monte-Carlo: grade de pontos dentro do polígono CAR × ray-cast contra
 -- os candidatos). Status "suspeito" quando qualquer sobreposição ≥
--- PROTECTED_OVERLAP_SUSPECT (default 0.8 — regra do usuário). Cache Redis
+-- PROTECTED_OVERLAP_SUSPECT (default 0.5 — regra do usuário). Cache Redis
 -- `car:protected:<COD>` TTL 86400, igual ao car:prodes:<COD>.
 
-local OVERLAP_SUSPECT = tonumber(env.get("PROTECTED_OVERLAP_SUSPECT", "0.8")) or 0.8
+local OVERLAP_SUSPECT = tonumber(env.get("PROTECTED_OVERLAP_SUSPECT", "0.5")) or 0.5
 local OVERLAP_SAMPLES = tonumber(env.get("PROTECTED_OVERLAP_SAMPLES", "32")) or 32
 local OVERLAP_MAX_SAMPLES = tonumber(env.get("PROTECTED_OVERLAP_MAX_SAMPLES", "128")) or 128
 local OVERLAP_MARGIN = 0.05      -- faixa (fração) perto do threshold → refina a grade
@@ -247,6 +249,33 @@ local function sample_overlap(prop_geom, bbox, uc_candidates, ti_candidates, sam
     return { overlaps = overlaps, sampled = interior, status = status, max_pct = max_pct }
 end
 
+
+
+-- Re-avalia status a partir de max_pct e do threshold atual. O pré-cálculo
+-- guarda o threshold que vigorava no momento; se o operador mudar
+-- PROTECTED_OVERLAP_SUSPECT, recalculamos só o rótulo sem refazer Monte-Carlo.
+local function reclassify_status(max_pct)
+    if max_pct / 100 >= OVERLAP_SUSPECT then
+        return "suspeito"
+    else
+        return "ok"
+    end
+end
+
+-- Gravação throttled no SQLite para auto-repair. Só a primeira request
+-- consegue o lock Redis; as demais retornam sem escrever.
+local function throttled_upsert(cod, prop, live_result)
+    local min_precompute_ha = tonumber(env.get("PROTECTED_OVERLAP_MIN_AREA_HA", "1.0")) or 1.0
+    if (prop.area_ha or 0) < min_precompute_ha then return end
+    local lock_key = "car:protected:repair_lock:" .. cod:upper()
+    local redis = require("app.redis")
+    local got = redis.setnx(lock_key, "1", 300)
+    if not got then return end
+    pcall(function()
+        car_protected.upsert(cod, live_result)
+    end)
+end
+
 function _M.get_protected_overlap(ctx)
     if not auth.enforce(ctx) then return end
     if not rl.enforce(ctx) then return end
@@ -282,25 +311,72 @@ function _M.get_protected_overlap(ctx)
         return
     end
 
+    -- Caminho rápido: se o bbox do imóvel não intersecta nenhuma UC/TI,
+    -- não há sobreposição possível. Evita Monte-Carlo para ~97% dos imóveis.
+    local uc = require("app.lookups.conservation_units_lookup")
+    local ti = require("app.lookups.indigenous_lands_lookup")
+    pcall(uc.load_conservation_units)
+    pcall(ti.load_indigenous_lands)
+    local b = prop.bbox
+    local uc_candidates = uc.candidates_in_bbox(b.min_lon, b.min_lat, b.max_lon, b.max_lat)
+    local ti_candidates = ti.candidates_in_bbox(b.min_lon, b.min_lat, b.max_lon, b.max_lat)
+    if #uc_candidates == 0 and #ti_candidates == 0 then
+        local result = {
+            cod_imovel = prop.id,
+            found = true,
+            sampled = 0,
+            overlaps = {},
+            status = "ok",
+            threshold = OVERLAP_SUSPECT,
+            max_pct = 0,
+            estimate = "bbox-filter",
+            cached = false,
+            source = "bbox-filter",
+        }
+        redis.set(cache_key, cjson.encode(result), CACHE_TTL)
+        ctx:json(200, { ok = true, cached = false, data = result })
+        return
+    end
+
+    -- Tentativa de leitura do pré-cálculo (cache permanente no car.db)
+    local pre = car_protected.get(cod)
+    if pre then
+        local age_days = nil
+        if pre.computed_at and #pre.computed_at >= 10 then
+            local today_utc = os.date("!%Y-%m-%d", os.time())
+            age_days = utils.days_between_iso(pre.computed_at, today_utc)
+        end
+        local current_key = car_protected.current_version_key()
+        local stale_days = tonumber(env.get("PROTECTED_OVERLAP_STALE_DAYS", "30")) or 30
+        local fresh = (pre.version_key == current_key) and (not age_days or age_days < stale_days)
+        if fresh then
+            local result = {
+                cod_imovel = prop.id,
+                found = true,
+                sampled = pre.sampled,
+                overlaps = pre.overlaps,
+                status = reclassify_status(pre.max_pct),
+                threshold = OVERLAP_SUSPECT,
+                max_pct = pre.max_pct,
+                estimate = "grid-sampling",
+                cached = false,
+                source = "precomputed",
+                version_key = pre.version_key,
+            }
+            redis.set(cache_key, cjson.encode(result), CACHE_TTL)
+            ctx:json(200, { ok = true, cached = false, data = result })
+            return
+        end
+    end
+
+    -- Fallback: Monte-Carlo on-the-fly (mesmo algoritmo de antes).
+    -- UC/TI já carregados e candidatos já filtrados acima.
     local prop_geom = car.decode_geometry(prop.geom)
     if not prop_geom then
         ctx:json(200, { cod_imovel = cod, found = false, reason = "invalid_geometry" })
         return
     end
 
-    -- Lookups UC/TI (idempotentes; pcall para um lookup ausente não derrubar a rota)
-    local uc = require("app.lookups.conservation_units_lookup")
-    local ti = require("app.lookups.indigenous_lands_lookup")
-    pcall(uc.load_conservation_units)
-    pcall(ti.load_indigenous_lands)
-
-    -- Seleção por bbox do imóvel = superconjunto do polígono (nada pode escapar)
-    local b = prop.bbox
-    local uc_candidates = uc.candidates_in_bbox(b.min_lon, b.min_lat, b.max_lon, b.max_lat)
-    local ti_candidates = ti.candidates_in_bbox(b.min_lon, b.min_lat, b.max_lon, b.max_lat)
-
-    -- Amostragem adaptativa: refina a grade se o resultado cair na margem do
-    -- threshold ou se a contagem interior for baixa (cap PROTECTED_OVERLAP_MAX_SAMPLES)
     local samples = OVERLAP_SAMPLES
     local res
     while samples <= OVERLAP_MAX_SAMPLES do
@@ -317,10 +393,17 @@ function _M.get_protected_overlap(ctx)
         overlaps = res.overlaps,
         status = res.status,
         threshold = OVERLAP_SUSPECT,
+        max_pct = res.max_pct,
         estimate = "grid-sampling",
         cached = false,
+        source = "live",
     }
+
     redis.set(cache_key, cjson.encode(result), CACHE_TTL)
+
+    -- Auto-repair throttled: imóvel novo ou stale -> grava de volta no SQLite.
+    throttled_upsert(cod, prop, result)
+
     ctx:json(200, { ok = true, cached = false, data = result })
 end
 
