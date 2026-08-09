@@ -18,6 +18,7 @@ infra/.terraform.lock.hcl
 infra/oci_api_key.pem
 infra/oci_ssh_key*
 ansible/inventory.ini
+ansible/inventory.oci.yml
 ansible/*.retry
 scripts/oci_api_key.pem
 # Byte-compiled / optimized / DLL files
