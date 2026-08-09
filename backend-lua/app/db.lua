@@ -1438,8 +1438,10 @@ end
 -- rótulo — não ancorado em início/fim (Inc 1: o regex âncora
 -- `^([dr])(%d%d%d%d)$` nunca casava com labels com prefixo → type/year nil).
 -- Retorna `type` ("d"|"r") e `year` (string), ou `nil` se não houver match.
+-- Aceita labels com prefixo numérico do TerraBrasilis, ex. "7 d2007", "21 r2014".
 local function parse_prodes_label(name)
     if type(name) ~= "string" then return nil end
+    -- procura por d/r seguido de 4 dígitos em qualquer posição
     local t, yyyy = name:match("([dr])(%d%d%d%d)")
     if not t then return nil end
     return t, yyyy
