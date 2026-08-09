@@ -25,9 +25,14 @@ clean:
 run: $(TARGET)
 	./$(TARGET) --port 5001 --backend 127.0.0.1 --static ../frontend/build
 
-.PHONY: all clean run warm-car-protected
+.PHONY: all clean run warm-car-protected backfill-prodes
 
 warm-car-protected: $(TARGET)
 	@echo 'Re-gera pré-cálculo CAR x UC/TI no car.db.'
 	@echo 'Rode após importar CAR novo ou atualizar conservation_units.json / indigenous_lands.json.'
 	cd .. && lua5.1 backend-lua/tools/warm_car_protected_overlap.lua
+
+backfill-prodes:
+	@echo 'Backfill das colunas year/class_type em deforestation_data (2M rows).'
+	@echo 'Rode ANTES do deploy, com o backend parado (operação offline no DB).'
+	cd .. && lua5.1 scripts/deploy/backfill_prodes_columns.lua

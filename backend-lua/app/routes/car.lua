@@ -11,6 +11,7 @@ local utils      = require("app.utils")
 local auth       = require("app.middleware.auth")
 local rl         = require("app.middleware.rate_limit")
 local cjson      = require("cjson")
+local logger     = require("app.logger")
 local car_lookup = require("app.lookups.car_lookup")
 local car_protected = require("app.lookups.car_protected_overlap")
 
@@ -103,6 +104,12 @@ function _M.get_prodes_status(ctx)
         bbox.min_lon - PAD_DEG, bbox.max_lon + PAD_DEG,
         CANDIDATE_LIMIT
     )
+
+    -- Imóveis grandes geram muitos candidatos → ray-cast CPU-bound no event
+    -- loop. Loga para observabilidade (cache miss é o cold path).
+    if #points > 10000 then
+        logger.warn("car/prodes slow path: " .. #points .. " candidates for " .. cod)
+    end
 
     local sampled = #points >= CANDIDATE_LIMIT
     local regrowth = false

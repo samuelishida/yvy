@@ -114,6 +114,49 @@ describe("car prodes", function()
             end
             assert.is_true(has_d2020 and has_d2024 and has_r2014)
         end)
+
+        it("returns year as number and type as deforestation/regrowth (native columns)", function()
+            local pts = db_mod.get_deforestation_in_bbox(-11, -10, -61, -60)
+            for _, p in ipairs(pts) do
+                if p.class_name == "d2020" then
+                    assert.are_equal(2020, p.year)
+                    assert.are_equal("deforestation", p.type)
+                elseif p.class_name == "d2024" then
+                    assert.are_equal(2024, p.year)
+                    assert.are_equal("deforestation", p.type)
+                elseif p.class_name == "r2014" then
+                    assert.are_equal(2014, p.year)
+                    assert.are_equal("regrowth", p.type)
+                end
+            end
+        end)
+
+        it("falls back to parse_prodes_label when year column is NULL (legacy rows)", function()
+            -- Insere uma linha legada diretamente com year/class_type NULL
+            -- (simula linha pre-backfill) e verifica o fallback no runtime.
+            -- Usa coordenadas FORA do bbox RO-1 para não interferir nos testes
+            -- de rota (que esperam exatamente 2 pixels d* e years [2020, 2024]).
+            db_mod.bulk_upsert_deforestation({
+                { lat = -25.0, lon = -45.0, name = "d2019" },
+            })
+            -- Força year/class_type para NULL simulando uma linha não-backfilled
+            local sqlite = require("lsqlite3")
+            local dbpath = env.get("SQLITE_PATH")
+            local raw = sqlite.open(dbpath)
+            raw:exec("UPDATE deforestation_data SET year=NULL, class_type=NULL WHERE json_extract(data,'$.name')='d2019'")
+            raw:close()
+
+            local pts = db_mod.get_deforestation_in_bbox(-26, -24, -46, -44)
+            local found_fallback = false
+            for _, p in ipairs(pts) do
+                if p.class_name == "d2019" then
+                    found_fallback = true
+                    assert.are_equal(2019, p.year)
+                    assert.are_equal("deforestation", p.type)
+                end
+            end
+            assert.is_true(found_fallback)
+        end)
     end)
 
     describe("routes /api/car/prodes", function()

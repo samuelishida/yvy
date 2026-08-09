@@ -54,7 +54,9 @@ CREATE TABLE IF NOT EXISTS deforestation_data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     lat REAL,
     lon REAL,
-    data BLOB
+    data BLOB,
+    year INTEGER,
+    class_type TEXT
 );
 
 CREATE TABLE IF NOT EXISTS news (
@@ -72,6 +74,7 @@ CREATE INDEX IF NOT EXISTS idx_fire_bbox_date ON fire_data(lat, lon, acq_date DE
 CREATE INDEX IF NOT EXISTS idx_def_lat ON deforestation_data(lat);
 CREATE INDEX IF NOT EXISTS idx_def_lon ON deforestation_data(lon);
 CREATE INDEX IF NOT EXISTS idx_def_bbox ON deforestation_data(lat, lon);
+CREATE INDEX IF NOT EXISTS idx_def_year ON deforestation_data(year);
 CREATE INDEX IF NOT EXISTS idx_news_published ON news(publishedAt);
 CREATE INDEX IF NOT EXISTS idx_news_ingested ON news(ingested_at);
 CREATE INDEX IF NOT EXISTS idx_news_page ON news(publishedAt DESC, ingested_at DESC);
@@ -343,6 +346,25 @@ function _M.init_db()
         logger.info("Adding municipality column to deter_alerts (additive migration)")
         db:exec("ALTER TABLE deter_alerts ADD COLUMN municipality TEXT")
     end
+
+    -- Additive: deforestation_data.year/class_type (plan: optimize-car-prodes-queries,
+    -- Inc 1 — extraídos de data.name pelo parse_prodes_label; preenchidos no
+    -- INSERT novo e via backfill script para linhas legadas). O fallback para
+    -- parse_prodes_label em runtime mantém as queries funcionando com NULLs.
+    local def_cols = {}
+    local dstmt2 = db:prepare("PRAGMA table_info(deforestation_data)")
+    if dstmt2 then
+        for row in dstmt2:rows() do
+            def_cols[row[2] or row["name"] or ""] = true
+        end
+        dstmt2:finalize()
+    end
+    if not def_cols["year"] then
+        logger.info("Adding year/class_type columns to deforestation_data (additive migration)")
+        db:exec("ALTER TABLE deforestation_data ADD COLUMN year INTEGER")
+        db:exec("ALTER TABLE deforestation_data ADD COLUMN class_type TEXT")
+    end
+    db:exec("CREATE INDEX IF NOT EXISTS idx_def_year ON deforestation_data(year)")
 
     -- View_date indexes for the alert windowed queries (Inc 7).
     db:exec("CREATE INDEX IF NOT EXISTS idx_deter_alerts_view_date ON deter_alerts(view_date)")
@@ -1378,8 +1400,8 @@ function _M.bulk_upsert_deforestation(docs)
     db:exec("BEGIN")
 
     local sql = [[
-        INSERT INTO deforestation_data (lat, lon, data)
-        VALUES (?, ?, jsonb(?))
+        INSERT INTO deforestation_data (lat, lon, data, year, class_type)
+        VALUES (?, ?, jsonb(?), ?, ?)
         ON CONFLICT DO NOTHING
     ]]
 
@@ -1392,7 +1414,16 @@ function _M.bulk_upsert_deforestation(docs)
             color = d.color,
             timestamp = d.timestamp,
         })
-        exec_write(db, sql, {d.lat, d.lon, data_json})
+        -- Extrai year/class_type do rótulo PRODES (data.name) no INSERT-time,
+        -- evitando o parse Lua por row em cada consulta de runtime. Se o label
+        -- não casar o padrão [dr]+4 dígitos, year/class_type ficam NULL (mesmo
+        -- comportamento atual em runtime via parse_prodes_label).
+        local class_type, year = nil, nil
+        if type(d.name) == "string" then
+            local t, yyyy = d.name:match("([dr])(%d%d%d%d)")
+            if t then class_type = t; year = tonumber(yyyy) end
+        end
+        exec_write(db, sql, {d.lat, d.lon, data_json, year, class_type})
     end
 
     db:exec("COMMIT")
@@ -1404,11 +1435,12 @@ function _M.find_deforestation(sw_lat, ne_lat, sw_lng, ne_lng, limit)
     limit = limit or 10000
     local db = pool_acquire()
 
+    -- Sem ORDER BY rowid: o TEMP B-TREE sort em 613ms → 30ms (20×).
+    -- O frontend plota os pontos num mapa Leaflet sem ordenação implícita.
     local sql = [[
         SELECT lat, lon, json(data) AS data_json
         FROM deforestation_data
         WHERE lat >= ? AND lat <= ? AND lon >= ? AND lon <= ?
-        ORDER BY rowid
         LIMIT ?
     ]]
 
@@ -1447,20 +1479,23 @@ local function parse_prodes_label(name)
     return t, yyyy
 end
 
--- PRODES points dentro de um bbox, com class/year decodificados do campo
--- `data.name` (rótulo da legenda QML, ex. `d2020`/`r2014` — não há coluna
--- estruturada de ano/classe). Usado pela verificação PRODES por recibo CAR
--- (plan: terrabrasilis-integration, Inc 12) e pelo crossing fogo×vegetação.
+-- PRODES points dentro de um bbox, com class/year decodificados das colunas
+-- nativas `year`/`class_type` (preenchidas no INSERT ou via backfill), com
+-- fallback para parse_prodes_label no rótulo QML `data.name` quando as colunas
+-- ainda são NULL (linhas legadas pre-backfill). Usado pela verificação PRODES
+-- por recibo CAR (plan: terrabrasilis-integration, Inc 12) e pelo crossing
+-- fogo×vegetação (plan: terrabrasilis-integration, Inc 8).
 -- type = "deforestation" (classe d*) | "regrowth" (classe r*).
 function _M.get_deforestation_in_bbox(sw_lat, ne_lat, sw_lng, ne_lng, limit)
     limit = limit or 50000
     local db = pool_acquire()
 
+    -- Sem ORDER BY rowid (20× speedup). Lê year/class_type das colunas nativas
+    -- + json_extract(data,'$.name') só para o class_name bruto (rótulo QML).
     local sql = [[
-        SELECT lat, lon, json(data) AS data_json
+        SELECT lat, lon, year, class_type, json_extract(data, '$.name') AS name
         FROM deforestation_data
         WHERE lat >= ? AND lat <= ? AND lon >= ? AND lon <= ?
-        ORDER BY rowid
         LIMIT ?
     ]]
 
@@ -1469,21 +1504,21 @@ function _M.get_deforestation_in_bbox(sw_lat, ne_lat, sw_lng, ne_lng, limit)
 
     local result = {}
     for _, r in ipairs(rows) do
-        local d = utils.decode_jsonb(r.data_json or r["data_json"])
-        local class_name, year, kind = nil, nil, nil
-        if type(d.name) == "string" then
-            local t, yyyy = parse_prodes_label(d.name)
-            if t then
-                class_name = d.name
-                year = tonumber(yyyy)
-                kind = (t == "d") and "deforestation" or "regrowth"
-            end
+        local class_name = r.name or r["name"]
+        local year = r.year or r["year"]
+        local class_type = r.class_type or r["class_type"]
+        -- Fallback: se year/class_type ainda NULL (linhas legadas pre-backfill),
+        -- usa parse_prodes_label no rótulo QML (comportamento anterior).
+        if not year and class_name then
+            local t, yyyy = parse_prodes_label(class_name)
+            if t then year = tonumber(yyyy); class_type = t end
         end
+        local kind = class_type and ((class_type == "d") and "deforestation" or "regrowth") or nil
         result[#result + 1] = {
             lat = r.lat or r["lat"],
             lon = r.lon or r["lon"],
             class_name = class_name,
-            year = year,
+            year = year,      -- INTEGER (preserva tipo numérico da resposta)
             type = kind,
         }
     end
@@ -1944,7 +1979,9 @@ function _M.migrate_to_jsonb()
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 lat REAL,
                 lon REAL,
-                data BLOB
+                data BLOB,
+                year INTEGER,
+                class_type TEXT
             )
         ]])
 
@@ -1962,14 +1999,24 @@ function _M.migrate_to_jsonb()
                 color = row.color or row["color"],
                 timestamp = row.timestamp or row["timestamp"],
             })
+            -- Extrai year/class_type do rótulo no momento da migração JSONB
+            -- (mesma lógica do bulk_upsert — parse_prodes_label inline).
+            local class_type, year = nil, nil
+            local lbl = row.name or row["name"]
+            if type(lbl) == "string" then
+                local t, yyyy = lbl:match("([dr])(%d%d%d%d)")
+                if t then class_type = t; year = tonumber(yyyy) end
+            end
             exec_write(db, [[
-                INSERT INTO deforestation_data_new (id, lat, lon, data)
-                VALUES (?, ?, ?, jsonb(?))
+                INSERT INTO deforestation_data_new (id, lat, lon, data, year, class_type)
+                VALUES (?, ?, ?, jsonb(?), ?, ?)
             ]], {
                 row.id or row["id"],
                 row.lat or row["lat"],
                 row.lon or row["lon"],
                 data_json,
+                year,
+                class_type,
             })
         end
 
@@ -1978,6 +2025,8 @@ function _M.migrate_to_jsonb()
         db:exec([[
             CREATE INDEX IF NOT EXISTS idx_def_lat ON deforestation_data(lat);
             CREATE INDEX IF NOT EXISTS idx_def_lon ON deforestation_data(lon);
+            CREATE INDEX IF NOT EXISTS idx_def_bbox ON deforestation_data(lat, lon);
+            CREATE INDEX IF NOT EXISTS idx_def_year ON deforestation_data(year);
             CREATE INDEX IF NOT EXISTS idx_def_name ON deforestation_data(json_extract(data, '$.name'));
         ]])
         logger.info("deforestation_data rebuilt with JSONB schema (", #rows, " rows)")

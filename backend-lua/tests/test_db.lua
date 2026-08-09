@@ -310,6 +310,34 @@ describe("db", function()
             assert.is_true(cols["nature_version"])
         end)
 
+        it("init_db cria colunas year/class_type em deforestation_data", function()
+            local db = sqlite3.open(test_db_path)
+            local cols = {}
+            local stmt = db:prepare("PRAGMA table_info(deforestation_data)")
+            for row in stmt:rows() do
+                cols[row[2] or row["name"] or ""] = true
+            end
+            stmt:finalize()
+            db:close()
+            assert.is_true(cols["year"])
+            assert.is_true(cols["class_type"])
+        end)
+
+        it("init_db é idempotente — rodar 2× não erro (colunas já existem)", function()
+            -- init_db já rodou no setup; chamar de novo não deve falhar
+            db_mod.init_db()
+            local db = sqlite3.open(test_db_path)
+            local cols = {}
+            local stmt = db:prepare("PRAGMA table_info(deforestation_data)")
+            for row in stmt:rows() do
+                cols[row[2] or row["name"] or ""] = true
+            end
+            stmt:finalize()
+            db:close()
+            assert.is_true(cols["year"])
+            assert.is_true(cols["class_type"])
+        end)
+
         it("update_fire_natures round-trip (batch, JSONB evidence + version)", function()
             local doc = {
                 lat = -21.0, lon = -62.0, confidence = "high",

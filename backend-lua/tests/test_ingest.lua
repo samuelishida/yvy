@@ -68,6 +68,21 @@ describe("ingest", function()
         assert.are_equal(2, def_count())
     end)
 
+    it("bulk_upsert_deforestation populates year/class_type from data.name", function()
+        -- Linhas já ingeridas no setup: "d2020" e "d2024"
+        local sqlite = require("lsqlite3")
+        local dbpath = env.get("SQLITE_PATH")
+        local raw = sqlite.open(dbpath)
+        local stmt = raw:prepare("SELECT year, class_type FROM deforestation_data WHERE json_extract(data,'$.name')='d2020'")
+        local r = nil
+        for row in stmt:nrows() do r = row break end
+        stmt:finalize()
+        raw:close()
+        assert.is_not_nil(r)
+        assert.are_equal(2020, r.year)
+        assert.are_equal("d", r.class_type)
+    end)
+
     it("PRODES_FORCE_UPDATE truncates, backs up and re-ingests", function()
         env.set("PRODES_FORCE_UPDATE", "1")
         local n = ingest.run()
