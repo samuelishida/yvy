@@ -981,7 +981,11 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
     // do lookup resolver.
     carInspectOpenRef.current = true;
     try {
-      const d = await cachedFetch(`/api/car/lookup?lat=${latlng.lat}&lon=${latlng.lng}`, { ttl: 60_000 });
+      // Não cacheamos lookup por clique: cada clique é uma coordenada única
+      // e cachear com TTL fazia o popup reter respostas antigas (ex. miss de
+      // polígono) quando o usuário clicava num ponto próximo que deveria ter CAR.
+      const d = await fetch(`/api/car/lookup?lat=${latlng.lat}&lon=${latlng.lng}`)
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
       if (seq !== carInspectSeqRef.current) return; // lookup superado, descarta
       const imovel = (d && d.imovel) || null;
       if (!imovel && !isInBrazil(latlng.lat, latlng.lng)) {
