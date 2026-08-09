@@ -814,7 +814,13 @@ const CONSERVATION_STYLE = { color: '#4ade80', fillColor: '#4ade80', fillOpacity
 // o único controle de transparência. CAR_TILES_VERSION é bumped ao regenerar os
 // tiles (busta caches).
 const CAR_COLOR = '#FF84FF';
-const CAR_TILES_VERSION = '1';
+// CAR tiles are served with Cache-Control: no-store (see tiles.lua
+// serve_png_no_cache) so the browser always re-fetches from the backend — the
+// rasterized pixel positions shift whenever car.db is re-imported, so a long
+// immutable cache made browsers keep stale bbox tiles. The version param is
+// kept only to force one fresh fetch for browsers that cached the old v=1
+// tiles before no-store shipped; it is otherwise ignored by the backend.
+const CAR_TILES_VERSION = '2';
 
 // Bounds do Brasil para o popup "sem imóvel" (mesmo clamp do backend).
 const BR_BOUNDS = { swLat: -34.0, neLat: 5.5, swLng: -74.0, neLng: -34.0 };

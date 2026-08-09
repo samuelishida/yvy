@@ -168,6 +168,18 @@ local function serve_png(ctx, data)
     ctx:send(200, data, "image/png")
 end
 
+-- CAR tiles are served WITHOUT browser caching: the overlay is a live
+-- precomputed cache whose content can change when car.db is re-imported, and
+-- the rasterized pixel positions shift between regenerations. A 30-day
+-- immutable cache made browsers keep stale bbox tiles (the "Sem imóvel CAR
+-- aqui" bug). Always re-fetch from the backend so the visible magenta pixels
+-- always match the current lookup data.
+local function serve_png_no_cache(ctx, data)
+    ctx:set_header("Cache-Control", "no-store")
+    set_cors_headers(ctx)
+    ctx:send(200, data, "image/png")
+end
+
 -- Shared cache-miss handler: try the nearest cached ANCESTOR tile (keeps the
 -- layer visible while the offline warm is mid-flight) with a short max-age;
 -- otherwise serve the shared transparent PNG. `try_ancestor=false` (CAR — fully
@@ -253,14 +265,17 @@ function _M.get_tile_car(ctx)
     if db then
         local data = lookup_tile(CAR_TILES_DB, db, z, x, y)
         if data then
-            serve_png(ctx, data)
+            serve_png_no_cache(ctx, data)
             return
         end
     end
 
     -- Cache miss: CAR is fully precomputed (no live upstream to backfill) —
-    -- no ancestor fallback, transparent PNG (graceful).
-    serve_miss(ctx, CAR_TILES_DB, db, z, x, y, false, 300)
+    -- no ancestor fallback, transparent PNG (graceful). No browser caching
+    -- either, so a miss never sticks.
+    ctx:set_header("Cache-Control", "no-store")
+    set_cors_headers(ctx)
+    ctx:send(200, EMPTY_PNG, "image/png")
 end
 
 return _M
