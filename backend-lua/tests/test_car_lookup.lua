@@ -67,6 +67,121 @@ describe("car_lookup", function()
         assert.is_true(car.is_private(-54.5, -12.5))
         assert.is_false(car.is_private(-70.0, -5.0))
     end)
+
+    it("classify_point_with_tolerance: exact hit inside polygon reports source=exact", function()
+        local r = car.classify_point_with_tolerance(-54.5, -12.5, 200)
+        assert.is_not_nil(r)
+        assert.are_equal("MT-1", r.id)
+        assert.are_equal("exact", r.source)
+        assert.is_nil(r.distance_m)
+    end)
+
+    it("classify_point_with_tolerance: snap to nearest property within 200 m", function()
+        -- Ligeiramente fora do quadrado MT-1 (a oeste de -55.0, -12.5):
+        -- -55.0015 ≈ 163 m a oeste da borda → snap dentro de 200 m
+        local r = car.classify_point_with_tolerance(-55.0015, -12.5, 200)
+        assert.is_not_nil(r)
+        assert.are_equal("MT-1", r.id)
+        assert.are_equal("snap", r.source)
+        assert.is_number(r.distance_m)
+        assert.is_true(r.distance_m <= 200)
+    end)
+
+    it("classify_point_with_tolerance: misses beyond 200 m", function()
+        assert.is_nil(car.classify_point_with_tolerance(-55.5, -12.5, 200))
+    end)
+
+    it("classify_point_with_tolerance: exact wins over a nearby ring", function()
+        -- (-60.2, -10.2) está dentro de RO-2 e perto da borda de RO-1
+        local r = car.classify_point_with_tolerance(-60.2, -10.2, 200)
+        assert.is_not_nil(r)
+        assert.are_equal("RO-2", r.id)
+        assert.are_equal("exact", r.source)
+    end)
+
+    it("classify_point_with_tolerance: tie-break by larger area when distances equal", function()
+        -- Ponto simétrico entre os centros de RO-1 e RO-2 sobrepostos: os
+        -- centros estão a mesma distância, RO-2 é maior.
+        local r = car.classify_point_with_tolerance(-60.5, -10.5, 200)
+        assert.is_not_nil(r)
+        assert.are_equal("RO-2", r.id)
+        assert.are_equal("exact", r.source)
+    end)
+
+    it("classify_point_with_tolerance: zero tolerance falls back to exact", function()
+        local r = car.classify_point_with_tolerance(-54.5, -12.5, 0)
+        assert.is_not_nil(r)
+        assert.are_equal("MT-1", r.id)
+        assert.is_nil(r.source)
+        assert.is_nil(r.distance_m)
+    end)
+
+    it("classify_point_with_tolerance: rejects non-numeric tolerance gracefully", function()
+        local r = car.classify_point_with_tolerance(-54.5, -12.5, "abc")
+        assert.is_not_nil(r)
+        assert.are_equal("MT-1", r.id)
+    end)
+end)
+
+describe("car_lookup com geometria com buraco", function()
+    local hole_db = "./yvy_car_hole_" .. tostring(os.time()) .. ".db"
+    local hole_file = "./yvy_car_hole_fixture_" .. tostring(os.time()) .. ".json"
+
+    local function write_hole_fixture()
+        -- Polígono quadrado 2x2 graus com um buraco 1x1 centralizado.
+        -- Exterior: (-62,-12) → (-60,-12) → (-60,-10) → (-62,-10) → (-62,-12)
+        -- Buraco:   (-61,-11) → (-61,-11) → (-61,-11) → (-61,-11) → (-61,-11) (fallback)
+        -- Usamos buraco real 0.5 graus: (-61.25,-11.25) → (-60.75,-11.25) → (-60.75,-10.75) → (-61.25,-10.75)
+        local json = [==[
+{"type":"FeatureCollection","features":[
+  {"type":"Feature","properties":{"cod_imovel":"HO-1","uf":"HO","municipio":"Buraco","area":1000},"geometry":{"type":"Polygon","coordinates":[[[-62.0,-12.0],[-60.0,-12.0],[-60.0,-10.0],[-62.0,-10.0],[-62.0,-12.0]],[[-61.25,-11.25],[-60.75,-11.25],[-60.75,-10.75],[-61.25,-10.75],[-61.25,-11.25]]]}}
+]}
+]==]
+        local f = io.open(hole_file, "w")
+        f:write(json)
+        f:close()
+    end
+
+    local hole_car
+
+    setup(function()
+        write_hole_fixture()
+        env.set("CAR_DB_PATH", hole_db)
+        local conn = sqlite3.open(hole_db)
+        conn:exec("PRAGMA journal_mode=WAL")
+        car_import.create_schema(conn)
+        local n = car_import.import_file(conn, hole_file)
+        assert.are_equal(1, n)
+        conn:close()
+        package.loaded["app.lookups.car_lookup"] = nil
+        hole_car = require("app.lookups.car_lookup")
+        hole_car.load_car()
+    end)
+
+    teardown(function()
+        package.loaded["app.lookups.car_lookup"] = nil
+        env.set("CAR_DB_PATH", tmp_car_db)
+        os.remove(hole_db)
+        os.remove(hole_db .. "-wal")
+        os.remove(hole_db .. "-shm")
+        os.remove(hole_file)
+    end)
+
+    it("ponto dentro do buraco → nil (não snap para o polígono circundante)", function()
+        -- Centro do buraco
+        local r = hole_car.classify_point_with_tolerance(-61.0, -11.0, 200)
+        assert.is_nil(r)
+    end)
+
+    it("ponto fora mas perto da borda externa → snap", function()
+        -- Fora do quadrado, mas dentro de 200 m da borda oeste (-62.0):
+        -- -62.0015 ≈ 164 m a oeste → snap dentro de 200 m
+        local r = hole_car.classify_point_with_tolerance(-62.0015, -11.0, 200)
+        assert.is_not_nil(r)
+        assert.are_equal("HO-1", r.id)
+        assert.are_equal("snap", r.source)
+        assert.is_true(r.distance_m <= 200)
+    end)
 end)
 
 describe("car_import multi-arquivo (ids sem colisão)", function()

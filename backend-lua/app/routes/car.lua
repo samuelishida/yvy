@@ -31,11 +31,10 @@ function _M.get_lookup(ctx)
     -- rendered from exact polygons, but small rasterization shifts and the
     -- user's click precision mean a magenta pixel can be a few meters outside
     -- the actual imóvel. Allow up to 2 km snapping on map clicks; the default
-    -- for exact callers remains 0.
+    -- for exact callers remains 0. Out-of-range values are clamped rather than
+    -- silently falling back to exact mode, so the caller intent is respected.
     local tolerance = tonumber(ctx.req.args.tolerance) or 0
-    if tolerance < 0 or tolerance > 2000 then
-        tolerance = 0
-    end
+    tolerance = math.max(0, math.min(tolerance, 2000))
 
     local car = require("app.lookups.car_lookup")
     car.load_car()

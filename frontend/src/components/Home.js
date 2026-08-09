@@ -820,7 +820,7 @@ const CAR_COLOR = '#FF84FF';
 // immutable cache made browsers keep stale bbox tiles. The version param is
 // kept only to force one fresh fetch for browsers that cached the old v=1
 // tiles before no-store shipped; it is otherwise ignored by the backend.
-const CAR_TILES_VERSION = '2';
+const CAR_TILES_VERSION = '4';
 
 // Bounds do Brasil para o popup "sem imóvel" (mesmo clamp do backend).
 const BR_BOUNDS = { swLat: -34.0, neLat: 5.5, swLng: -74.0, neLng: -34.0 };
@@ -976,6 +976,12 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
   const carInspectSeqRef = useRef(0);
   const carInspectOpenRef = useRef(false);
   const onCarInspect = async (latlng) => {
+    // Guard against bogus or swapped coordinates from synthetic click events.
+    const lat = latlng?.lat;
+    const lng = latlng?.lng;
+    if (typeof lat !== 'number' || typeof lng !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return;
+    }
     const seq = ++carInspectSeqRef.current;
     if (carInspectOpenRef.current) {
       // Toggle: fecha.
@@ -994,7 +1000,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
       // a rasterized edge can still shift a few pixels. Use a 200 m snapping
       // tolerance so clicks on visible magenta pixels resolve to the nearest
       // imóvel without matching a far-away property.
-      const url = `/api/car/lookup?lat=${latlng.lat}&lon=${latlng.lng}&tolerance=200`;
+      const url = `/api/car/lookup?lat=${lat}&lon=${lng}&tolerance=200`;
       if (process.env.NODE_ENV === 'development') {
         // eslint-disable-next-line no-console
         console.log('[CAR click]', latlng.lat, latlng.lng);
@@ -1007,12 +1013,12 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
       }
       if (seq !== carInspectSeqRef.current) return; // lookup superado, descarta
       const imovel = (d && d.imovel) || null;
-      if (!imovel && !isInBrazil(latlng.lat, latlng.lng)) {
+      if (!imovel && !isInBrazil(lat, lng)) {
         carInspectOpenRef.current = false;
         setCarInspect(null);
         return;
       }
-      setCarInspect({ lat: latlng.lat, lng: latlng.lng, imovel });
+      setCarInspect({ lat: lat, lng: lng, imovel });
     } catch (e) {
       carInspectOpenRef.current = false;
       // silencioso — sem popup em falha de lookup
@@ -1360,13 +1366,11 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               url={`/api/tiles/car?z={z}&x={x}&y={y}&v=${CAR_TILES_VERSION}`}
               opacity={0.5}
               tileSize={256}
-              maxNativeZoom={12}
-              minNativeZoom={6}
+              maxNativeZoom={14}
               minZoom={2}
               keepBuffer={4}
               updateWhenZooming={false}
               updateWhenIdle={false}
-              fadeIn={150}
               attribution="&copy; SICAR"
               zIndex={90}
             />

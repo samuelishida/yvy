@@ -270,9 +270,43 @@ local function nearest_point_on_segment(lat, lon, lat1, lon1, lat2, lon2)
     return {lat = lat1 + t * dy, lon = lon1 + t * dx}
 end
 
+-- Returns true if the point is inside any interior ring (hole) of the geometry.
+local function point_in_any_hole(lon, lat, geom)
+    if type(geom) ~= "table" or type(geom.coordinates) ~= "table" then return false end
+
+    local polys
+    if geom.type == "Polygon" then
+        polys = {geom.coordinates}
+    elseif geom.type == "MultiPolygon" then
+        polys = geom.coordinates
+    else
+        return false
+    end
+
+    for _, poly in ipairs(polys) do
+        local rings = {}
+        for _, ring in ipairs(poly) do
+            local r = {}
+            for _, pt in ipairs(ring) do
+                r[#r + 1] = {tonumber(pt[1]), tonumber(pt[2])}
+            end
+            rings[#rings + 1] = r
+        end
+        if #rings > 1 and geo.point_in_ring(lon, lat, rings[1]) then
+            for i = 2, #rings do
+                if geo.point_in_ring(lon, lat, rings[i]) then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
 -- Distance (meters) from a WGS84 point to the nearest point on the exterior
--- rings of a decoded geometry. Interior rings (holes) are ignored — for a click
--- on a hole we still snap to the surrounding polygon, which is the desired UX.
+-- rings of a decoded geometry. Interior rings (holes) are intentionally ignored.
+-- This function is used for snapping to the nearest imóvel when the point is
+-- outside the polygon; it never scans holes for performance.
 local function distance_to_geom_m(lat, lon, geom)
     if type(geom) ~= "table" or type(geom.coordinates) ~= "table" then return nil end
 
@@ -352,9 +386,9 @@ end
 -- Tolerant point lookup: first tries exact point-in-polygon; if that misses,
 -- searches imóveis whose bbox is within `tolerance_m` of the point and returns
 -- the one with the smallest distance to its exterior ring, preferring larger
--- area as a tie-breaker. This compensates for the raster CAR tile overshoot:
--- tiles are generated from bbox intersection, so a magenta pixel may be slightly
--- outside the actual polygon.
+-- area as a tie-breaker. This compensates for rasterization shifts in the CAR
+-- overlay tiles. A point inside a hole of a polygon is NOT snapped to that
+-- polygon; it may only snap to a different imóvel's exterior ring within range.
 function _M.classify_point_with_tolerance(lon, lat, tolerance_m)
     tolerance_m = tonumber(tolerance_m) or 200
     if tolerance_m <= 0 then
@@ -363,7 +397,10 @@ function _M.classify_point_with_tolerance(lon, lat, tolerance_m)
 
     -- 1. Try exact first.
     local exact = _M.classify_point(lon, lat)
-    if exact then return exact end
+    if exact then
+        exact.source = "exact"
+        return exact
+    end
 
     if not car_conn then return nil end
     lon, lat = tonumber(lon), tonumber(lat)
@@ -386,8 +423,11 @@ function _M.classify_point_with_tolerance(lon, lat, tolerance_m)
     stmt:finalize()
     if #ids == 0 then return nil end
 
-    -- 3. Decode candidates, compute distance to exterior ring, pick nearest
-    -- (larger area wins ties so small slivers don't steal clicks).
+    -- 3. Decode candidates. A point inside the exterior ring but inside a hole
+    -- is treated as "not in this property" and does not snap to it. Otherwise,
+    -- when the point is outside the polygon, the distance to the exterior ring
+    -- is computed for snapping. Larger area wins ties within a 0.1 m epsilon.
+    local TIE_EPS = 0.1
     local ph = {}
     for _ = 1, #ids do ph[#ph + 1] = "?" end
     local s2 = car_conn:prepare(GET_PREFIX .. table.concat(ph, ",") .. ")")
@@ -398,13 +438,14 @@ function _M.classify_point_with_tolerance(lon, lat, tolerance_m)
         local g = row.g or row["g"]
         if g and g ~= "" then
             local geom = _M.decode_geometry(g)
-            if geom then
+            if geom and not point_in_any_hole(lon, lat, geom) then
+                -- hole-contained points are not snapped to this property
                 local d = distance_to_geom_m(lat, lon, geom)
                 if d and d <= tolerance_m then
                     local area = tonumber(row.area) or 0
                     if not best
-                        or d < best.distance
-                        or (d == best.distance and area > best.area) then
+                        or d < best.distance - TIE_EPS
+                        or (math.abs(d - best.distance) <= TIE_EPS and area > best.area) then
                         best = {
                             id = row.cod_imovel,
                             name = row.municipio,
@@ -420,7 +461,7 @@ function _M.classify_point_with_tolerance(lon, lat, tolerance_m)
     s2:finalize()
 
     if not best then return nil end
-    return {id = best.id, name = best.name, uf = best.uf, distance_m = math.floor(best.distance + 0.5)}
+    return {id = best.id, name = best.name, uf = best.uf, distance_m = math.floor(best.distance + 0.5), source = "snap"}
 end
 
 function _M.is_private(lon, lat)

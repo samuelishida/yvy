@@ -25,9 +25,17 @@
 
 /* CAR tiles are baked lime-green (#a3e635) opaque PNGs; hue-shift to magenta
    (#FF84FF rendered) so the overlay contrasts with the warm-toned PRODES / fire
-   layers when everything is on. */
-.car-tiles {
+   layers when everything is on. Leaflet's default tile fade-in sets an inline
+   opacity of 0 on each <img> and animates it to 1; at low zoom that can get
+   stuck or leave the tile layer invisible. We disable Leaflet's tile fade-in
+   for this layer (fadeIn is not passed) and force the container and tile images
+   to the desired overlay opacity via CSS, which wins over inline styles. */
+.leaflet-layer.car-tiles {
   filter: hue-rotate(240deg) saturate(1.8);
+  opacity: 0.5 !important;
+}
+.leaflet-layer.car-tiles img.leaflet-tile {
+  opacity: 0.5 !important;
 }
 
 /* ── Leaflet zoom control ───────────────────────────────
