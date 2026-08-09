@@ -527,6 +527,48 @@ for metric in cpu:
         print(f"    {dp.timestamp.strftime('%H:%M')} -> {dp.value:.2f}%")
 ```
 
+## Getting Live Memory on a VM
+
+SSH into a running VM to get real-time RAM stats:
+
+```bash
+ssh -i ~/.ssh/oci_yvy -o StrictHostKeyChecking=no ubuntu@<VM_PUBLIC_IP> "free -m && echo '---' && cat /proc/meminfo | head -5"
+```
+
+Typical output summary (formatted):
+
+| Metric       | Value            |
+|-------------|------------------|
+| **Total**    | 956 MB           |
+| **Used**     | 212 MB (22%)     |
+| **Free**     | 222 MB           |
+| **Buff/Cache**| 522 MB          |
+| **Available**| 585 MB (61%)     |
+| **Swap Used**| 102 MB / 2047 MB |
+
+## Getting VM Public IPs
+
+The VM IP is not stored in the skill. Find it with one of:
+
+**OCI CLI — list all VNIC attachments and their public IPs:**
+```bash
+oci compute vnic-attachment list -c $C --region $REGION \
+  --instance-id <INSTANCE_OCID> | jq '.data[].`vnic-id`'
+VNIC_ID=$(...)
+oci network vnic get --vnic-id $VNIC_ID --region $REGION \
+  --query 'data."public-ip"' --raw-output
+```
+
+**Ansible inventory (if deployed via Terraform):**
+```bash
+grep -A2 '<instance-name>' ansible/inventory.oci.yml
+```
+
+**SSH config:**
+```bash
+grep -A3 "Host yvy" ~/.ssh/config
+```
+
 ## Available Metrics (oci_computeagent namespace)
 - `CpuUtilization` — CPU usage percentage
 - `MemoryUtilization` — Memory usage percentage
