@@ -984,8 +984,17 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
       // Não cacheamos lookup por clique: cada clique é uma coordenada única
       // e cachear com TTL fazia o popup reter respostas antigas (ex. miss de
       // polígono) quando o usuário clicava num ponto próximo que deveria ter CAR.
-      const d = await fetch(`/api/car/lookup?lat=${latlng.lat}&lon=${latlng.lng}`)
+      const url = `/api/car/lookup?lat=${latlng.lat}&lon=${latlng.lng}`;
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.log('[CAR click]', latlng.lat, latlng.lng);
+      }
+      const d = await fetch(url)
         .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.log('[CAR lookup]', d);
+      }
       if (seq !== carInspectSeqRef.current) return; // lookup superado, descarta
       const imovel = (d && d.imovel) || null;
       if (!imovel && !isInBrazil(latlng.lat, latlng.lng)) {
@@ -997,6 +1006,10 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
     } catch (e) {
       carInspectOpenRef.current = false;
       // silencioso — sem popup em falha de lookup
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.error('[CAR lookup error]', e);
+      }
     }
   };
 
