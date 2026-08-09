@@ -196,9 +196,6 @@ server.route("GET", "/api/tiles/prodes", tiles.get_tile)
 -- CAR tiles (precomputed raster overlay — Inc 2, .plans/car-overlay)
 server.route("GET", "/api/tiles/car", tiles.get_tile_car)
 
--- Cerrado vegetation tiles (Inc 9)
-server.route("GET", "/api/tiles/cerrado-veg", tiles.get_tile_cerrado_veg)
-
 -- CAR point lookup (clique-para-inspecionar do overlay)
 server.route("GET", "/api/car/lookup", function(ctx)
     local car_routes = require("app.routes.car")

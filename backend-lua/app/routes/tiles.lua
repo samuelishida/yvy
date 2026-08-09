@@ -263,39 +263,4 @@ function _M.get_tile_car(ctx)
     serve_miss(ctx, CAR_TILES_DB, db, z, x, y, false, 300)
 end
 
--- ── Cerrado vegetation tiles (plan: terrabrasilis-integration, Inc 9)
---
--- Same cold-cache invariant as PRODES/CAR: DB pre-warmed offline by a single
--- Python writer (scripts/data/download_cerrado_veg.py); runtime is read-only
--- (query_only=ON via open_tiles_db). Env override (CERRADO_VEG_TILES_DB) lets
--- ops/tests point elsewhere.
-
--- Servidor genérico de tile para um DB de tiles (chave z,x,y).
-local function serve_layer_tile(ctx, env_override, default_name)
-    local z = tonumber(ctx.req.args.z)
-    local x = tonumber(ctx.req.args.x)
-    local y = tonumber(ctx.req.args.y)
-    if not z or not x or not y then
-        ctx:error(400, "Missing z/x/y params")
-        return
-    end
-
-    local path, db = resolve_generic_db(env_override, default_name)
-    if db then
-        local data = lookup_tile(path, db, z, x, y)
-        if data then
-            serve_png(ctx, data)
-            return
-        end
-    end
-
-    -- Cache miss: same ancestor-then-empty policy as PRODES.
-    serve_miss(ctx, path, db, z, x, y, true, 300)
-end
-
--- /api/tiles/cerrado-veg?z=&x=&y= — tiles_cerrado_veg.db chave (z,x,y).
-function _M.get_tile_cerrado_veg(ctx)
-    serve_layer_tile(ctx, "CERRADO_VEG_TILES_DB", "tiles_cerrado_veg.db")
-end
-
 return _M

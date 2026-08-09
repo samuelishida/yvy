@@ -809,10 +809,10 @@ const CONSERVATION_STYLE = { color: '#4ade80', fillColor: '#4ade80', fillOpacity
 // CAR overlay: tiles são PNGs opacos pré-renderizados em lime (#a3e635, ver
 // scripts/data/render_car_tiles.py). O TileLayer .car-tiles aplica um filtro
 // CSS hue-rotate(240deg) saturate(1.8) que recolore para magenta (#FF84FF) —
-// contrasta com os tons quentes (Cerrado Veg/PRODES/focos) quando tudo está
-// ligado. O dot da layer bar (CAR_COLOR) espelha a cor renderizada. TileLayer
-// opacity=0.5 é o único controle de transparência. CAR_TILES_VERSION é bumped
-// ao regenerar os tiles (busta caches).
+// contrasta com os tons quentes (PRODES/focos) quando tudo está ligado. O dot
+// da layer bar (CAR_COLOR) espelha a cor renderizada. TileLayer opacity=0.5 é
+// o único controle de transparência. CAR_TILES_VERSION é bumped ao regenerar os
+// tiles (busta caches).
 const CAR_COLOR = '#FF84FF';
 const CAR_TILES_VERSION = '1';
 
@@ -903,8 +903,6 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
   // CAR overlay (Inc 3): showCar toggle (padrão ON) + carInspect popup state (local ao card).
   const [showCar, setShowCar] = useState(true);
   const [carInspect, setCarInspect] = useState(null);
-  // Cerrado vegetation overlay (Inc 9): opcional, padrão OFF.
-  const [showCerradoVeg, setShowCerradoVeg] = useState(false);
   // Verificação PRODES por recibo CAR (plan: terrabrasilis-integration, Inc 12).
   const [prodesInput, setProdesInput] = useState('');
   const [prodesResult, setProdesResult] = useState(null);
@@ -1156,12 +1154,6 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           >
             <span className="lt-dot" style={{ background: CAR_COLOR }} /> {t('home.layerCar')}<span className="lt-sub">CAR</span>
           </button>
-          <button
-            className={`layer-toggle${showCerradoVeg ? ' active' : ''}`}
-            onClick={() => setShowCerradoVeg(!showCerradoVeg)}
-          >
-            <span className="lt-dot" style={{ background: '#a3e635' }} /> {t('home.layerCerradoVeg')}
-          </button>
         </div>
       </div>
 
@@ -1350,23 +1342,6 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               fadeIn={150}
               attribution="&copy; SICAR"
               zIndex={90}
-            />
-          )}
-          {showCerradoVeg && (
-            <TileLayer
-              key="cerrado-veg-tiles"
-              url="/api/tiles/cerrado-veg?z={z}&x={x}&y={y}"
-              opacity={0.7}
-              tileSize={256}
-              maxNativeZoom={9}
-              minNativeZoom={6}
-              minZoom={2}
-              keepBuffer={4}
-              updateWhenZooming={false}
-              updateWhenIdle={false}
-              fadeIn={150}
-              attribution="&copy; INPE Cerrado Veg"
-              zIndex={85}
             />
           )}
           {showFires && activeAlert?.center && (

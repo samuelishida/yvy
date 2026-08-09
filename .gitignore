@@ -196,7 +196,6 @@ backend-lua/data/*.db-wal
 backend-lua/data/prodes_*/
 backend-lua/data/.prodes_version
 backend-lua/data/tiles_prodes.db
-backend-lua/data/tiles_cerrado_veg.db
 
 # Yvy — dados locais / tooling (não versionar)
 # Dumps CAR (GeoJSON por UF, vários GB) — importar no servidor

@@ -24,8 +24,8 @@
 }
 
 /* CAR tiles are baked lime-green (#a3e635) opaque PNGs; hue-shift to magenta
-   (#FF84FF rendered) so the overlay contrasts with the warm-toned Cerrado Veg
-   / PRODES / fire layers when everything is on. */
+   (#FF84FF rendered) so the overlay contrasts with the warm-toned PRODES / fire
+   layers when everything is on. */
 .car-tiles {
   filter: hue-rotate(240deg) saturate(1.8);
 }
