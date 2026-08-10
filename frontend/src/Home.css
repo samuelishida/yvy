@@ -840,6 +840,14 @@
     cursor: pointer;
     box-shadow: 0 4px 16px rgba(0,0,0,0.35);
   }
+  /* Esconde o FAB "VERIFICAR IMÓVEL" quando um overlay sobe por cima dele:
+     o painel flutuante de alertas (bottom sheet) ou qualquer popup do mapa
+     (Leaflet marca .leaflet-popup-open no container). Sem isso o botão ficava
+     sobreposto ao conteúdo do painel (ex.: lista de biomas). */
+  .map-stage--mobile:has(.float-panel--open) .prodes-check-toggle,
+  .map-stage--mobile:has(.leaflet-popup-open) .prodes-check-toggle {
+    display: none;
+  }
   .prodes-check-form { margin: 0; }
   .prodes-check-header {
     display: flex;
