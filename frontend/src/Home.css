@@ -84,7 +84,7 @@
   padding: 0 16px;
   z-index: 500;
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(10, 15, 13, 0.85) 0%, transparent 100%);
+  background: linear-gradient(180deg, var(--canvas) 0%, transparent 100%);
 }
 
 .layer-toggles {
@@ -107,7 +107,7 @@
   cursor: pointer;
   transition: color 0.15s ease-out, background 0.15s ease-out, border-color 0.15s ease-out;
   border: 1px solid transparent;
-  background: rgba(10, 15, 13, 0.6);
+  background: rgba(13, 19, 16, 0.6);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   font-family: var(--font-mono);
@@ -150,7 +150,7 @@
   top: 60px;
   left: 16px;
   z-index: 490;
-  width: 340px;
+  width: 255px; /* 340px − 25% */
   max-width: calc(100vw - 32px);
   display: flex;
   flex-direction: column;
@@ -162,10 +162,8 @@
   flex-direction: column;
   gap: 6px;
   padding: 10px 12px;
-  background: rgba(13, 19, 16, 0.92);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(42, 53, 48, 1);
+  background: var(--surface-100);
+  border: 1px solid var(--border);
   border-radius: 12px;
   pointer-events: auto;
 }
@@ -175,7 +173,7 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #00C97A;
+  color: var(--signal);
 }
 .prodes-check-row {
   display: flex;
@@ -187,23 +185,21 @@
   min-width: 0;
   padding: 9px 14px;
   border-radius: 9999px;
-  border: 1px solid rgba(42, 53, 48, 1);
-  background: rgba(10, 15, 13, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  color: #E8F0EC;
+  border: 1px solid var(--border);
+  background: var(--canvas);
+  color: var(--ink);
   font-family: var(--font-mono);
   font-size: 12px;
   outline: none;
 }
-.prodes-check-input::placeholder { color: rgba(232, 240, 236, 0.35); }
-.prodes-check-input:focus { border-color: rgba(0, 201, 122, 0.4); }
+.prodes-check-input::placeholder { color: var(--ink-faint); }
+.prodes-check-input:focus { border-color: var(--signal-dim); }
 .prodes-check-btn {
   padding: 9px 16px;
   border-radius: 9999px;
-  border: 1px solid rgba(0, 201, 122, 0.45);
-  background: rgba(0, 201, 122, 0.16);
-  color: #00C97A;
+  border: 1px solid var(--signal-dim);
+  background: var(--surface-300);
+  color: var(--signal);
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
@@ -213,7 +209,7 @@
   white-space: nowrap;
   transition: background 0.15s ease-out, border-color 0.15s ease-out, transform 0.08s ease-out;
 }
-.prodes-check-btn:hover { background: rgba(0, 201, 122, 0.26); border-color: rgba(0, 201, 122, 0.6); }
+.prodes-check-btn:hover { background: rgba(0, 201, 122, 0.26); border-color: var(--signal-dim); }
 .prodes-check-btn:active { transform: translateY(1px); }
 .prodes-check-btn:disabled { opacity: 0.5; cursor: default; }
 
@@ -228,13 +224,23 @@
 }
 .days-chips {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  /* fade right edge to hint scroll */
+  mask-image: linear-gradient(to right, black 88%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black 88%, transparent 100%);
+  padding-bottom: 2px;
 }
+.days-chips::-webkit-scrollbar { display: none; }
 .days-chip {
-  background: rgba(13, 19, 16, 0.92);
-  color: rgba(232, 240, 236, 0.75);
-  border: 1px solid rgba(42, 53, 48, 1);
+  flex-shrink: 0;
+  background: var(--surface-100);
+  color: var(--ink-muted);
+  border: 1px solid var(--border);
   border-radius: 999px;
   font-size: 10px;
   font-family: var(--font-mono);
@@ -244,20 +250,20 @@
   transition: background 0.15s ease-out, border-color 0.15s ease-out, color 0.15s ease-out;
 }
 .days-chip:hover {
-  background: rgba(0, 201, 122, 0.12);
-  border-color: rgba(0, 201, 122, 0.45);
-  color: #e8f0ec;
+  background: var(--surface-200);
+  border-color: var(--signal-dim);
+  color: var(--ink);
 }
 .days-chip--active {
-  background: rgba(0, 201, 122, 0.18);
-  border-color: rgba(0, 201, 122, 0.6);
-  color: #00C97A;
+  background: var(--surface-300);
+  border-color: var(--signal-dim);
+  color: var(--signal);
   font-weight: 600;
 }
 .days-select {
-  background: rgba(13, 19, 16, 0.92);
-  color: #e8f0ec;
-  border: 1px solid rgba(42, 53, 48, 1);
+  background: var(--surface-100);
+  color: var(--ink);
+  border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 11px;
   font-family: var(--font-mono);
@@ -266,24 +272,22 @@
   cursor: pointer;
   pointer-events: auto;  /* herda de .nature-legend-period, mas garante no select nativo */
 }
-.days-select:focus { outline: none; border-color: rgba(34, 197, 94, 0.6); }
-.days-select option { background: #0d1310; color: #e8f0ec; }
+.days-select:focus { outline: none; border-color: var(--signal-dim); }
+.days-select option { background: var(--canvas); color: var(--ink); }
 
 /* ── Leaflet popups — Yvy dark theme (CAR, fogo, TI, UC) ──
    Leaflet's default popup is white; theme every map card dark so the
-   light-on-dark font is readable and matches the app chrome. */
+   light-on-dark font is readable and matches the app chrome. Elevação via
+   border (elevation.panel) — sem glass nem drop-shadow. */
 .map-stage .leaflet-popup-content-wrapper {
-  background: rgba(13, 19, 16, 0.96);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(42, 53, 48, 1);
+  background: var(--surface-100);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
-  color: #E8F0EC;
+  color: var(--ink);
 }
 .map-stage .leaflet-popup-tip {
-  background: rgba(13, 19, 16, 0.96);
-  border: 1px solid rgba(42, 53, 48, 1);
+  background: var(--surface-100);
+  border: 1px solid var(--border);
 }
 .map-stage .leaflet-popup-content {
   margin: 12px 14px;
@@ -332,14 +336,12 @@
 .car-popup-btn:disabled { opacity: 0.5; cursor: default; }
 .prodes-result {
   padding: 10px 12px;
-  background: rgba(13, 19, 16, 0.92);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(42, 53, 48, 1);
+  background: var(--surface-100);
+  border: 1px solid var(--border);
   border-radius: 10px;
   font-family: var(--font-mono);
   font-size: 12px;
-  color: rgba(232, 240, 236, 0.85);
+  color: var(--ink-muted);
   pointer-events: auto;
 }
 .prodes-result-header {
@@ -359,9 +361,9 @@
   height: 20px;
   padding: 0;
   border-radius: 50%;
-  border: 1px solid rgba(232, 240, 236, 0.2);
-  background: rgba(232, 240, 236, 0.06);
-  color: rgba(232, 240, 236, 0.6);
+  border: 1px solid var(--border);
+  background: var(--surface-200);
+  color: var(--ink-muted);
   font-size: 13px;
   line-height: 1;
   font-family: var(--font-mono);
@@ -369,9 +371,9 @@
   transition: color 0.15s ease-out, background 0.15s ease-out, border-color 0.15s ease-out;
 }
 .prodes-result-close:hover {
-  color: #E8F0EC;
-  background: rgba(232, 240, 236, 0.14);
-  border-color: rgba(232, 240, 236, 0.35);
+  color: var(--ink);
+  background: var(--surface-300);
+  border-color: var(--border);
 }
 .prodes-result-title {
   font-size: 10px;
@@ -418,7 +420,8 @@
 /* ── Nature legend ────────────────────────────────────── */
 .nature-legend {
   position: absolute;
-  /* Alinhado na base com o float panel (bottom: 20px); zoom removido do desktop. */
+  /* Alinhado na base com o float panel (bottom: 20px); zoom removido do desktop.
+     Elevação via border (elevation.panel) — sem drop-shadow nem glass. */
   bottom: 20px;
   left: 20px;
   z-index: 400;
@@ -426,14 +429,12 @@
   flex-direction: column;
   gap: 4px;
   padding: 8px 10px;
-  background: rgba(13, 19, 16, 0.88);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(42, 53, 48, 1);
+  background: var(--surface-100);
+  border: 1px solid var(--border);
   border-radius: 10px;
   font-family: var(--font-mono);
   font-size: 11px;
-  color: rgba(232, 240, 236, 0.75);
+  color: var(--ink-muted);
   pointer-events: none;
 }
 .nature-legend-title {
@@ -443,6 +444,30 @@
   opacity: 0.55;
   margin-bottom: 2px;
 }
+.nature-legend-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  pointer-events: auto;
+  transition: opacity 0.15s ease-out;
+}
+.nature-legend-summary:hover .nature-legend-title { opacity: 0.85; }
+.nature-legend-summary .nature-legend-title { margin-bottom: 0; }
+.nature-legend-chevron {
+  color: var(--ink-muted);
+  flex-shrink: 0;
+  transition: transform 0.2s ease-out;
+}
+.nature-legend-chevron--open { transform: rotate(180deg); }
 .nature-legend-item {
   display: flex;
   align-items: center;
@@ -459,7 +484,7 @@
 /* Second group: confidence fallback (fires without nature classification) */
 .nature-legend-sep {
   height: 1px;
-  background: rgba(42, 53, 48, 1);
+  background: var(--border);
   margin: 4px 0 2px;
 }
 .nature-legend-gradient {
@@ -467,7 +492,7 @@
   height: 6px;
   border-radius: 3px;
   overflow: hidden;
-  border: 1px solid rgba(42, 53, 48, 1);
+  border: 1px solid var(--border);
 }
 .nature-legend-gradient > span {
   flex: 1 1 0;
@@ -485,13 +510,11 @@
   right: 20px;
   z-index: 450;
   width: 272px;
-  background: rgba(13, 19, 16, 0.93);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(42, 53, 48, 1);
+  background: var(--surface-100);
+  border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
-  color: #E8F0EC;
+  color: var(--ink);
 }
 
 .fp-summary {
@@ -519,19 +542,20 @@
 }
 
 .fp-count {
+  /* data-large: hero number, tabular, 28px */
   font-family: var(--font-display, 'IBM Plex Sans');
   font-size: 28px;
   font-weight: 600;
-  line-height: 1;
+  line-height: 1.1;
   letter-spacing: -0.02em;
-  color: #E8F0EC;
+  color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
 
 .fp-unit {
   font-family: var(--font-body);
   font-size: 12px;
-  color: rgba(138, 158, 147, 1);
+  color: var(--ink-muted);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -544,18 +568,20 @@
 }
 
 .fp-badge {
+  /* data-small: 13px tabular badges */
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: 13px;
   padding: 2px 6px;
   border-radius: 4px;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
 }
-.fp-badge--crit   { background: rgba(198,40,40,0.15); color: #EF5350; border: 1px solid rgba(198,40,40,0.28); }
-.fp-badge--warn   { background: rgba(255,98,0,0.12);  color: #FF6200; border: 1px solid rgba(255,98,0,0.22); }
+.fp-badge--crit   { background: rgba(198,40,40,0.15); color: var(--ember-high); border: 1px solid rgba(198,40,40,0.28); }
+.fp-badge--warn   { background: rgba(255,98,0,0.12);  color: var(--ember-mid); border: 1px solid rgba(255,98,0,0.22); }
 .fp-badge--region { background: rgba(100,120,140,0.15); color: rgba(180,200,215,0.9); border: 1px solid rgba(100,120,140,0.28); }
 
-.fp-chevron { color: rgba(138,158,147,1); flex-shrink: 0; transition: transform 0.2s ease-out; }
+.fp-chevron { color: var(--ink-muted); flex-shrink: 0; transition: transform 0.2s ease-out; }
 .fp-chevron--open { transform: rotate(180deg); }
 
 .fp-body { display: flex; flex-direction: column; max-height: 420px; }
@@ -563,7 +589,7 @@
 .fp-tabs {
   display: flex;
   justify-content: center;
-  border-bottom: 1px solid rgba(42, 53, 48, 1);
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
@@ -575,7 +601,7 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: rgba(138, 158, 147, 1);
+  color: var(--ink-muted);
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
@@ -584,8 +610,8 @@
   transition: color 0.15s ease-out, border-color 0.15s ease-out;
   min-height: 44px;
 }
-.fp-tab:hover { color: #E8F0EC; }
-.fp-tab--active { color: #00C97A; border-bottom-color: #00C97A; }
+.fp-tab:hover { color: var(--ink); }
+.fp-tab--active { color: var(--signal); border-bottom-color: var(--signal); }
 
 .fp-content {
   flex: 1;
@@ -624,13 +650,13 @@
   border-left: 2px solid transparent;
 }
 .alert-row:hover { background: rgba(255,255,255,0.02); }
-.alert-row--active { background: rgba(255,255,255,0.04); border-left-color: #00C97A; }
+.alert-row--active { background: rgba(255,255,255,0.04); border-left-color: var(--signal); }
 .alert-row + .alert-row { border-top: 1px solid rgba(42,53,48,0.8); }
 
-.alert-tick { width: 3px; flex-shrink: 0; border-radius: 3px; background: #FF6200; align-self: stretch; }
-.alert-tick.crit { background: #C62828; }
-.alert-tick.warn { background: #FF6200; }
-.alert-tick.info { background: #00C97A; }
+.alert-tick { width: 3px; flex-shrink: 0; border-radius: 3px; background: var(--ember-mid); align-self: stretch; }
+.alert-tick.crit { background: var(--ember-high); }
+.alert-tick.warn { background: var(--ember-mid); }
+.alert-tick.info { background: var(--signal); }
 
 .alert-body { flex: 1; min-width: 0; }
 
@@ -678,11 +704,11 @@
   transition: background 0.15s ease-out;
 }
 .biome-row:hover { background: rgba(255,255,255,0.04); }
-.biome-row--active { background: rgba(255,255,255,0.04); border-left: 2px solid #00C97A; }
+.biome-row--active { background: rgba(255,255,255,0.04); border-left: 2px solid var(--signal); }
 .alert-row--active,
 .biome-row--active { scroll-margin: 8px 0; }
 .biome-row + .biome-row { border-top: 1px solid rgba(42,53,48,0.6); }
-.biome-name  { color: #E8F0EC; font-weight: 500; font-size: 12px; }
+.biome-name  { color: var(--ink); font-weight: 500; font-size: 12px; }
 .biome-bar   { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.06); overflow: hidden; }
 .biome-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s cubic-bezier(0.4,0,0.2,1); }
 .biome-val   { font-family: var(--font-mono); font-size: 12px; text-align: right; letter-spacing: 0.02em; color: rgba(138,158,147,1); }
@@ -749,6 +775,91 @@
 .fire-land-tag.night-fire   { background: rgba(167,139,250,0.15); color: #a78bfa; border: 1px solid rgba(167,139,250,0.28); }
 .fire-land-tag.prodes       { background: rgba(0,201,122,0.1);    color: #00C97A; border: 1px solid rgba(0,201,122,0.2); }
 
+/* ── Overlays legend (top-right, aligned with "Verificar imóvel") ─────
+   Plan: overlay-legend. Posicionado no canto superior direito, alinhado
+   horizontalmente com o prodes-check ("Verificar imóvel", top:60px/left:16px):
+   top:60px, right:16px. Mantém o mesmo chrome (largura, borda, radius,
+   fundo, chevron) dos demais cards do mapa. */
+.overlays-legend {
+  position: absolute;
+  right: 16px;
+  top: 60px;
+  z-index: 440;
+  width: 224px; /* acomoda o rótulo "Cadastro Ambiental Rural" sem cortar */
+  background: var(--surface-100);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  transition: width 0.2s ease-out;
+}
+/* Colapsado: reduz ainda mais a largura (só o título + chevron), mas com
+   folga suficiente para o título "SOBREPOSIÇÕES" e a seta de dropdown não
+   colidirem nem a seta ser escondida. */
+.overlays-legend:not(.overlays-legend--open) {
+  width: 172px;
+}
+.overlays-legend-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  gap: 12px;
+  transition: background 0.15s ease-out;
+  min-height: 44px;
+  color: inherit;
+  font-family: inherit;
+}
+.overlays-legend-summary:hover { background: rgba(255,255,255,0.02); }
+.overlays-legend--open .overlays-legend-summary { border-bottom-color: var(--border); }
+.overlays-legend-title {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.overlays-legend-chevron {
+  color: var(--ink-muted);
+  flex-shrink: 0;
+  transition: transform 0.2s ease-out;
+}
+.overlays-legend--open .overlays-legend-chevron { transform: rotate(180deg); }
+.overlays-legend-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 16px 12px;
+}
+.overlays-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  transition: opacity 0.15s ease-out;
+}
+.overlays-legend-row--off { opacity: 0.35; }
+.overlays-legend-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  /* background setado inline por linha com a cor do outline da camada */
+}
+.overlays-legend-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
 /* ── Responsive ───────────────────────────────────────── */
 @media (max-width: 720px) {
   .map-stage { min-height: 300px; }
@@ -757,7 +868,7 @@
   .layer-bar {
     padding: 0;
     height: 44px;
-    background: linear-gradient(180deg, rgba(10, 15, 13, 0.9) 0%, transparent 100%);
+    background: linear-gradient(180deg, var(--canvas) 0%, transparent 100%);
   }
 
   .layer-toggles {
@@ -778,251 +889,17 @@
     padding: 4px 9px;
     font-size: 11px;
     gap: 4px;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    background: rgba(10, 15, 13, 0.82);
+    background: rgba(13, 19, 16, 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
   }
 
   .lt-sub { display: none; }
 
-  /* PRODES check becomes a floating action button on the left. Resultado vira
-     card flutuante compacto após o CHECAR; input fica num modal fullscreen. */
-  .prodes-check--mobile:not(.prodes-check--mobile-open) {
-    pointer-events: none;
-    top: auto;
-    left: 8px;
-    right: auto;
-    bottom: 58px;
-    width: auto;
-    z-index: 560;
-    /* Card de resultado cresce PARA CIMA do botão, não para baixo. */
-    flex-direction: column-reverse;
-    align-items: flex-start;
-    gap: 8px;
-  }
-  /* Quando há resultado, sobe o conjunto para não ser coberto pelo float panel. */
-  .prodes-check--mobile.prodes-check--mobile-has-result:not(.prodes-check--mobile-open) {
-    bottom: 118px;
-  }
-  .prodes-check--mobile-open {
-    position: fixed;
-    inset: 0;
-    width: 100%;
-    max-width: none;
-    z-index: 600;
-    background: rgba(10, 15, 13, 0.65);
-    justify-content: flex-start;
-    align-items: center;
-    padding: 90px 12px 12px;
-    pointer-events: auto;
-  }
-  .prodes-check--mobile .prodes-check-toggle,
-  .prodes-check--mobile .prodes-check-form,
-  .prodes-check--mobile .prodes-error,
-  .prodes-check--mobile .prodes-result {
-    pointer-events: auto;
-  }
-  .prodes-check-toggle {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 12px;
-    min-height: 40px;
-    border-radius: 9999px;
-    border: 1px solid rgba(0, 201, 122, 0.45);
-    background: rgba(0, 201, 122, 0.16);
-    color: #00C97A;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    cursor: pointer;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
-  }
-  /* Esconde o FAB "VERIFICAR IMÓVEL" quando um overlay sobe por cima dele:
-     o painel flutuante de alertas (bottom sheet) ou qualquer popup do mapa
-     (Leaflet marca .leaflet-popup-open no container). Sem isso o botão ficava
-     sobreposto ao conteúdo do painel (ex.: lista de biomas). */
-  .map-stage--mobile:has(.float-panel--open) .prodes-check-toggle,
-  .map-stage--mobile:has(.leaflet-popup-open) .prodes-check-toggle {
-    display: none;
-  }
-  .prodes-check-form { margin: 0; }
-  .prodes-check-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .prodes-check--mobile-open .prodes-check-form {
-    width: 100%;
-    max-width: 420px;
-    background: rgba(13, 19, 16, 0.96);
-    border-radius: 14px;
-    padding: 14px;
-    border: 1px solid rgba(42, 53, 48, 1);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.45);
-  }
-  .prodes-check--mobile-open .prodes-check-row { flex-direction: column; gap: 10px; }
-  .prodes-check--mobile-open .prodes-check-input { width: 100%; }
-  .prodes-check--mobile-open .prodes-check-btn { width: 100%; }
-
-  /* Resultado/erro no mobile: card flutuante compacto quando o input está fechado. */
-  .prodes-check--mobile .prodes-error,
-  .prodes-check--mobile .prodes-result {
-    margin-top: 10px;
-    width: 100%;
-    max-width: 420px;
-  }
-  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-error,
-  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-result {
-    margin-top: 8px;
-    width: calc(100vw - 130px);
-    max-width: 320px;
-    border-radius: 12px;
-    font-size: 12px;
-    padding: 10px 12px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
-  }
-  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-result-header,
-  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-error {
-    align-items: flex-start;
-    gap: 10px;
-  }
-  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-result-title,
-  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-result-code,
-  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-result-yes,
-  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-result-no,
-  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-result-meta,
-  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-fraud,
-  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-fraud-detail {
-    font-size: 12px;
-  }
-  .prodes-check--mobile:not(.prodes-check--mobile-open) .prodes-result-close {
-    width: 22px;
-    height: 22px;
-    font-size: 14px;
-    flex-shrink: 0;
-  }
-
-  /* Nature legend on mobile: a small pill toggle in the bottom-right. When
-     opened it becomes a centered modal so it never overlaps PRODES/zoom/float. */
-  .nature-legend--mobile {
-    bottom: 58px;
-    left: auto;
-    right: 8px;
-    padding: 0;
-    background: transparent;
-    border: none;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    pointer-events: none;
-    gap: 0;
-    z-index: 420;
-  }
-  .nature-legend--mobile .nature-legend-toggle,
-  .nature-legend--mobile .nature-legend-card {
-    pointer-events: auto;
-  }
-  .nature-legend-toggle {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 12px;
-    min-height: 40px;
-    border-radius: 9999px;
-    border: 1px solid rgba(42, 53, 48, 1);
-    background: rgba(13, 19, 16, 0.92);
-    color: #E8F0EC;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    cursor: pointer;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
-  }
-  .nature-legend-toggle-dots {
-    display: flex;
-    gap: 3px;
-    align-items: center;
-  }
-  .nature-legend-toggle-dots .nature-legend-dot { width: 7px; height: 7px; }
-
-  /* Opened state: modal overlay with a centered card. */
-  .nature-legend--mobile.nature-legend--mobile-open {
-    position: fixed;
-    inset: 0;
-    bottom: auto;
-    right: auto;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 12px;
-    background: rgba(10, 15, 13, 0.65);
-    z-index: 600;
-  }
-  .nature-legend--mobile-open .nature-legend-toggle { display: none; }
-  .nature-legend-card {
-    width: 100%;
-    max-width: 420px;
-    max-height: calc(100vh - 24px);
-    overflow-y: auto;
-  }
-  .nature-legend-card-inner {
-    background: rgba(13, 19, 16, 0.96);
-    border: 1px solid rgba(42, 53, 48, 1);
-    border-radius: 14px;
-    padding: 14px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.45);
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .nature-legend-card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 2px;
-  }
-  .nature-legend-card-close {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    border-radius: 50%;
-    border: 1px solid rgba(232, 240, 236, 0.2);
-    background: rgba(232, 240, 236, 0.06);
-    color: rgba(232, 240, 236, 0.6);
-    font-size: 16px;
-    line-height: 1;
-    font-family: var(--font-mono);
-    cursor: pointer;
-    transition: color 0.15s ease-out, background 0.15s ease-out, border-color 0.15s ease-out;
-  }
-  .nature-legend-card-close:hover {
-    color: #E8F0EC;
-    background: rgba(232, 240, 236, 0.14);
-    border-color: rgba(232, 240, 236, 0.35);
-  }
-
-  /* Days chips scroll horizontally inside the modal. */
-  .nature-legend--mobile .nature-legend-period { margin-top: 0; }
-  .nature-legend--mobile .days-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-  .nature-legend--mobile .days-chips::-webkit-scrollbar { display: none; }
-  .nature-legend--mobile .days-chip { flex-shrink: 0; }
-
-  /* Float panel becomes a small anchored bar when closed and a bottom sheet
-     when open. When closed it must not cover the map or other controls. */
+  /* Float panel becomes the single anchored bottom sheet when open (mobile).
+     Colapsada mostra só a barra de alertas; aberta vira o sheet com abas
+     internas (alertas/biomas/clima + sobreposições/natureza/verificar).
+     Elevação via border (elevation.panel) — sem drop-shadow nem glass. */
   .float-panel--mobile {
     position: fixed;
     top: auto;
@@ -1033,32 +910,65 @@
     max-width: none;
     border-radius: 12px;
     z-index: 550;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+    background: var(--surface-100);
+    border: 1px solid var(--border);
   }
   .float-panel--mobile.float-panel--open {
     left: 0;
     right: 0;
     bottom: 0;
     border-radius: 14px 14px 0 0;
-    box-shadow: 0 -8px 32px rgba(0,0,0,0.45);
+    box-shadow: none;
   }
   .float-panel--mobile:not(.float-panel--open) .fp-body { display: none; }
   .float-panel--mobile .fp-summary {
     padding: 10px 14px;
     min-height: 44px;
   }
-  .float-panel--mobile.float-panel--open .fp-body { max-height: 55vh; }
-  .float-panel--mobile.float-panel--open .fp-content { max-height: calc(55vh - 44px); }
+  .float-panel--mobile.float-panel--open .fp-body { max-height: 60vh; }
+  .float-panel--mobile.float-panel--open .fp-content { max-height: calc(60vh - 88px); }
   .fp-count { font-size: 22px; }
 
-  /* Tabs: equal share, smaller type so all three fit */
+  /* Alça de arraste do bottom sheet (mobile). */
+  .fp-handle {
+    width: 36px;
+    height: 4px;
+    border-radius: 9999px;
+    background: var(--ink-faint);
+    margin: 8px auto 4px;
+    flex-shrink: 0;
+    touch-action: pan-y;
+  }
+
+  /* Tab bar: rola horizontalmente (6 abas no mobile). */
+  .fp-tabs--mobile {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start;
+    mask-image: linear-gradient(to right, black 92%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, black 92%, transparent 100%);
+  }
+  .fp-tabs--mobile::-webkit-scrollbar { display: none; }
+
+  /* Tabs: flex-shrink 0 para nenhum item ser cortado na borda. */
   .fp-tab {
-    flex: 1 1 0;
-    padding: 6px 4px;
+    flex: 0 0 auto;
+    padding: 6px 12px;
     font-size: 11px;
     letter-spacing: 0.04em;
     min-height: 36px;
   }
+
+  /* Corpos das abas que vieram dos ex-modais. */
+  .fp-tab-body { padding: 12px 16px; }
+  .fp-tab-body--nature {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .fp-tab-body--verify { display: flex; flex-direction: column; gap: 10px; }
 
   .fp-gauges { gap: 8px; }
   .fp-gauge-svg { width: 40px; height: 40px; }

@@ -130,6 +130,33 @@ local function lookup_ancestor(path, db, z, x, y)
     return nil
 end
 
+-- Walk DOWN to the nearest cached DESCENDANT tile. Used by CAR: the overlay is
+-- precomputed only at z6–14, but the frontend requests z2–5 (minZoom=2). At
+-- those low zooms there is no tile, so we serve the tile at the CENTER of the
+-- requested area at the lowest precomputed zoom (z6) — the coarse fill is
+-- correct at that scale and keeps CAR visible from far away instead of a
+-- transparent hole. Bounded: ≤4 lookups × MAX_FALLBACK_DEPTH.
+local function lookup_descendant(path, db, z, x, y)
+    local az, ax, ay = z, x, y
+    for _ = 1, MAX_FALLBACK_DEPTH do
+        az = az + 1
+        ax = ax * 2
+        ay = ay * 2
+        -- Center child of the current quadrant (the CAR fill is ~continuous
+        -- over Brazil, so the center tile is the most representative).
+        local data = lookup_tile(path, db, az, ax + 1, ay + 1)
+        if data then return data end
+        -- Fallback: any of the 4 children.
+        for dx = 0, 1 do
+            for dy = 0, 1 do
+                local d = lookup_tile(path, db, az, ax + dx, ay + dy)
+                if d then return d end
+            end
+        end
+    end
+    return nil
+end
+
 -- Resolve um tiles DB genérico: override de env → candidatos existentes → default.
 local function resolve_generic_db(env_override, default_name)
     local override = env.get(env_override) or ""
@@ -268,11 +295,19 @@ function _M.get_tile_car(ctx)
             serve_png_no_cache(ctx, data)
             return
         end
+        -- Cache miss at low zoom (z2–5): CAR is precomputed only at z6–14, so
+        -- serve the nearest cached DESCENDANT (z6) to keep the overlay visible
+        -- from far away. No browser caching so a miss never sticks.
+        local desc = lookup_descendant(CAR_TILES_DB, db, z, x, y)
+        if desc then
+            serve_png_no_cache(ctx, desc)
+            return
+        end
     end
 
     -- Cache miss: CAR is fully precomputed (no live upstream to backfill) —
-    -- no ancestor fallback, transparent PNG (graceful). No browser caching
-    -- either, so a miss never sticks.
+    -- transparent PNG (graceful). No browser caching either, so a miss never
+    -- sticks.
     ctx:set_header("Cache-Control", "no-store")
     set_cors_headers(ctx)
     ctx:send(200, EMPTY_PNG, "image/png")

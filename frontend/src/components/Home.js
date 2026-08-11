@@ -35,14 +35,15 @@ const FIRE_STYLES = {
   low:     { color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 0.2,  radius: 1.5, weight: 0 },
 };
 
-// Nature classes (Inc 7): crime = vermelho, suspeito = laranja, permitido =
-// verde, natural = azul. Aplicado quando fire.nature vem preenchido (Inc 5);
-// sem nature cai no fallback por confidence (FIRE_STYLES).
+// Nature classes (Inc 7) — cores da paleta do design system (Fire Data
+// Encoding): crime = ember-high, suspeito = ember-mid, permitido = signal,
+// natural = ink-muted. Nenhuma cor fora da paleta. Aplicado quando fire.nature
+// vem preenchido (Inc 5); sem nature cai no fallback por confidence (FIRE_STYLES).
 const FIRE_NATURE_COLORS = {
-  crime:     { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.42, radius: 3,   weight: 0 },
-  suspeito:  { color: '#f97316', fillColor: '#f97316', fillOpacity: 0.38, radius: 2.5, weight: 0 },
-  permitido: { color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.25, radius: 2.5, weight: 0 },
-  natural:   { color: '#38bdf8', fillColor: '#38bdf8', fillOpacity: 0.35, radius: 2.5, weight: 0 },
+  crime:     { color: '#C62828', fillColor: '#C62828', fillOpacity: 0.42, radius: 3,   weight: 0 },
+  suspeito:  { color: '#FF6200', fillColor: '#FF6200', fillOpacity: 0.38, radius: 2.5, weight: 0 },
+  permitido: { color: '#00C97A', fillColor: '#00C97A', fillOpacity: 0.25, radius: 2.5, weight: 0 },
+  natural:   { color: '#8A9E93', fillColor: '#8A9E93', fillOpacity: 0.35, radius: 2.5, weight: 0 },
 };
 
 const asArray = value => Array.isArray(value) ? value : [];
@@ -594,7 +595,18 @@ function GaugeRing({ value, max, color, size = 64 }) {
   );
 }
 
-const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, activeBiome, onAlertEnter, onAlertLeave, airQuality, temperature, onBiomeHover, loaded, isMobile }) {
+// Tab order inside the unified mobile bottom sheet. On mobile the alert/panel
+// tabs (alertas/biomas/clima) are joined by the three former standalone modals
+// (sobreposições / natureza do fogo / verificar imóvel) so there is a single
+// anchored sheet — never scattered floating layers. Tab bar scrolls horizontally.
+const MOBILE_TABS = ['alerts', 'biomes', 'overlays', 'nature', 'verify'];
+
+const FloatPanel = React.memo(function FloatPanel({
+  alerts, activeAlertId, activeBiome, onAlertEnter, onAlertLeave, airQuality,
+  temperature, onBiomeHover, loaded, isMobile,
+  // Mobile unified-sheet tabs (former standalone modals folded into the sheet)
+  verify,
+}) {
   // Always collapsed on mount — the summary line already shows the live count
   // (crit/warn badges + total); the user expands on demand. Auto-opening would
   // defeat the collapse-by-default declutter.
@@ -628,7 +640,38 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, activ
   }, [activeAlertId, tab, open]);
 
   const toggleOpen = () => setOpen(o => !o);
-  const handleTab = (t) => { setTab(t); if (t !== 'biomes') onBiomeHover?.(null); };
+
+  // Arraste da alça (mobile): puxar a alça/sheet para baixo colapsa. Usa um
+  // limiar simples de distância percorrida para não conflitar com o scroll
+  // interno do conteúdo.
+  const dragStartRef = useRef(null);
+  const onHandlePointerDown = (e) => {
+    if (e.pointerType === 'mouse') return; // drag só para toque
+    dragStartRef.current = { y: e.clientY };
+  };
+  const onHandlePointerMove = (e) => {
+    const s = dragStartRef.current;
+    if (!s) return;
+    const dy = e.clientY - s.y;
+    if (dy > 60) { // arrastou > 60px para baixo → fecha
+      dragStartRef.current = null;
+      setOpen(false);
+    }
+  };
+  const onHandlePointerUp = () => { dragStartRef.current = null; };
+
+  // Label para cada aba (mobile estende o conjunto com os ex-modais).
+  const tabLabel = (k) => {
+    switch (k) {
+      case 'alerts':   return `${t('home.tabAlerts')} (${alerts.length})`;
+      case 'biomes':   return t('home.tabBiomes');
+      case 'clima':    return t('home.tabClima');
+      case 'overlays': return t('home.overlaysLegend');
+      case 'nature':   return t('home.natureLegend');
+      case 'verify':   return t('home.layerCar');
+      default:         return k;
+    }
+  };
 
   return (
     <div className={`float-panel${open ? ' float-panel--open' : ''}${isMobile ? ' float-panel--mobile' : ''}`}>
@@ -645,16 +688,25 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, activ
       </button>
       {open && (
         <div className="fp-body">
-          <div className="fp-tabs">
-            <button className={`fp-tab${tab === 'alerts' ? ' fp-tab--active' : ''}`} onClick={() => handleTab('alerts')}>
-              {t('home.tabAlerts')} ({alerts.length})
-            </button>
-            <button className={`fp-tab${tab === 'biomes' ? ' fp-tab--active' : ''}`} onClick={() => { setTab('biomes'); onBiomeHover?.(null); }}>
-              {t('home.tabBiomes')}
-            </button>
-            <button className={`fp-tab${tab === 'clima' ? ' fp-tab--active' : ''}`} onClick={() => handleTab('clima')}>
-              {t('home.tabClima')}
-            </button>
+          {isMobile && (
+            <div
+              className="fp-handle"
+              onPointerDown={onHandlePointerDown}
+              onPointerMove={onHandlePointerMove}
+              onPointerUp={onHandlePointerUp}
+              onPointerLeave={onHandlePointerUp}
+            />
+          )}
+          <div className={`fp-tabs${isMobile ? ' fp-tabs--mobile' : ''}`}>
+            {(isMobile ? MOBILE_TABS : ['alerts', 'biomes', 'clima']).map(t => (
+              <button
+                key={t}
+                className={`fp-tab${tab === t ? ' fp-tab--active' : ''}`}
+                onClick={() => { setTab(t); if (t !== 'biomes') onBiomeHover?.(null); }}
+              >
+                {tabLabel(t)}
+              </button>
+            ))}
           </div>
           <div className="fp-content">
             {tab === 'alerts' && (
@@ -725,6 +777,22 @@ const FloatPanel = React.memo(function FloatPanel({ alerts, activeAlertId, activ
                     <div className="fp-gauge-sub">{windDir(temperature?.wind_direction)}</div>
                   </div>
                 </div>
+              </div>
+            )}
+            {tab === 'overlays' && (
+              <div className="fp-tab-body fp-tab-body--overlays">
+                {verify?.overlaysRows}
+              </div>
+            )}
+            {tab === 'nature' && (
+              <div className="fp-tab-body fp-tab-body--nature">
+                {verify?.natureLegendBody}
+              </div>
+            )}
+            {tab === 'verify' && (
+              <div className="fp-tab-body fp-tab-body--verify">
+                {verify?.prodesForm}
+                {verify?.prodesResult}
               </div>
             )}
           </div>
@@ -805,6 +873,12 @@ const ALERT_TYPE_KEYS = {
 
 const INDIGENOUS_STYLE = { color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.08, weight: 1.25, opacity: 0.85, dashArray: '5 4' };
 const CONSERVATION_STYLE = { color: '#4ade80', fillColor: '#4ade80', fillOpacity: 0.07, weight: 1.25, opacity: 0.85, dashArray: '5 4' };
+
+// PRODES overlay: tile layer é um raster servido a 33% de opacidade
+// (Home.js:1348-1354) sem cor inline — o swatch da legenda representa a
+// codificação de dados. A cor é o extremo alto do gradiente ember do design
+// system (--ember-high: #C62828) para a legenda ler igual ao mapa renderizado.
+const PRODES_OVERLAY_COLOR = '#C62828';
 
 // CAR overlay: tiles são PNGs opacos pré-renderizados em lime (#a3e635, ver
 // scripts/data/render_car_tiles.py). O TileLayer .car-tiles aplica um filtro
@@ -909,6 +983,9 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
   // CAR overlay (Inc 3): showCar toggle (padrão ON) + carInspect popup state (local ao card).
   const [showCar, setShowCar] = useState(true);
   const [carInspect, setCarInspect] = useState(null);
+  // Legenda de overlays (plan: overlay-legend): expandida no desktop, colapsada
+  // no mobile (pill compacta). useState roda uma vez — resize preserva o estado.
+  const [showOverlaysLegend, setShowOverlaysLegend] = useState(!isMobile);
   // Verificação PRODES por recibo CAR (plan: terrabrasilis-integration, Inc 12).
   const [prodesInput, setProdesInput] = useState('');
   const [prodesResult, setProdesResult] = useState(null);
@@ -942,11 +1019,6 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
       setProdesResult(null);
     } finally {
       setProdesLoading(false);
-    }
-    // No mobile fecha o modal de input após a busca; o resultado aparece como
-    // um card flutuante compacto, sem bloquear o mapa.
-    if (isMobile) {
-      setShowMobileProdes(false);
     }
     // Badge de grilagem: independente do PRODES — falha aqui não derruba o resumo.
     // Só aplica a resposta do recibo ATUAL — uma resposta atrasada de um recibo
@@ -1143,8 +1215,168 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
     setCarInspect(null);
   }, []);
 
-  const [showMobileProdes, setShowMobileProdes] = useState(false);
-  const [showMobileLegend, setShowMobileLegend] = useState(!isMobile);
+  const [showNatureLegend, setShowNatureLegend] = useState(true);
+
+  // Conteúdo das abas mobile unificadas (folded dos ex-modais no sheet).
+  // Os fragments são montados aqui no pai (que detém state dos overlays e do
+  // PRODES) e passados ao FloatPanel — o sheet só os posiciona.
+  const overlaysRows = (
+    <div className="overlays-legend-rows">
+      {[
+        { key: 'prodes', label: t('home.layerDeforestation'), color: PRODES_OVERLAY_COLOR, on: showDeforest },
+        { key: 'ti',     label: t('home.layerIndigenous'),    color: INDIGENOUS_STYLE.color, on: showIndigenous },
+        { key: 'uc',     label: t('home.layerConservation'),  color: CONSERVATION_STYLE.color, on: showConservation },
+        { key: 'car',    label: t('home.carTitle'),           color: CAR_COLOR, on: showCar },
+      ].map(({ key, label, color, on }) => (
+        <span key={key} className={'overlays-legend-row' + (on ? '' : ' overlays-legend-row--off')}>
+          <span className="overlays-legend-swatch" style={{ background: color }} />
+          <span className="overlays-legend-label">{label}</span>
+        </span>
+      ))}
+    </div>
+  );
+
+  const natureLegendBody = (
+    <>
+      {['crime', 'suspeito', 'permitido', 'natural'].map(n => (
+        <span key={n} className="nature-legend-item">
+          <span className="nature-legend-dot" style={{ background: FIRE_NATURE_COLORS[n].color }} />
+          {t(`home.nature_${n}`)}
+        </span>
+      ))}
+      <span className="nature-legend-sep" />
+      <span className="nature-legend-title">{t('home.confidenceLegend')}</span>
+      <span className="nature-legend-gradient">
+        <span style={{ background: FIRE_STYLES.nominal.color }} />
+        <span style={{ background: FIRE_STYLES.high.color }} />
+        <span style={{ background: FIRE_STYLES.low.color }} />
+      </span>
+      <span className="nature-legend-item nature-legend-item--confidence">
+        <span>{t('home.confidenceNominal')}</span>
+        <span>{t('home.confidenceHigh')}</span>
+        <span>{t('home.confidenceLow')}</span>
+      </span>
+      <span className="nature-legend-sep" />
+      <div className="nature-legend-period">
+        <span className="nature-legend-title">{t('home.firePeriod')}</span>
+        <div className="days-chips">
+          {[['', t('home.firePeriodRecent')], ['7', `7 ${t('home.days')}`], ['30', `30 ${t('home.days')}`], ['90', `90 ${t('home.days')}`], ['365', `365 ${t('home.days')}`]].map(([val, label]) => {
+            const active = (fireDays == null ? '' : String(fireDays)) === val;
+            return (
+              <button
+                key={val}
+                type="button"
+                className={`days-chip${active ? ' days-chip--active' : ''}`}
+                onClick={() => setFireDays(val === '' ? null : Number(val))}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+
+  const prodesForm = (
+    <form className="prodes-check-form" onSubmit={prodesQuery}>
+      <div className="prodes-check-header">
+        <label className="prodes-check-label" htmlFor="prodes-input">
+          {t('home.verifyProperty')}
+        </label>
+      </div>
+      <div className="prodes-check-row">
+        <input
+          id="prodes-input"
+          className="prodes-check-input"
+          value={prodesInput}
+          onChange={(e) => setProdesInput(e.target.value)}
+          placeholder={t('home.receiptPlaceholder')}
+          aria-label={t('home.receiptPlaceholder')}
+        />
+        <button className="prodes-check-btn" type="submit" disabled={prodesLoading}>
+          {prodesLoading ? t('home.checkingProperty') : t('home.check')}
+        </button>
+      </div>
+    </form>
+  );
+
+  const prodesResultBody = (
+    <>
+      {prodesError && (
+        <div className="prodes-error">
+          <span>{prodesError}</span>
+          <button className="prodes-result-close" onClick={clearProdes} aria-label={t('home.close')} title={t('home.close')}>×</button>
+        </div>
+      )}
+      {prodesResult && (
+        <div className="prodes-result">
+          {prodesResult.data ? (
+            <>
+              <div className="prodes-result-header">
+                <div className="prodes-result-title">{t('home.propertySummary')}</div>
+                <button className="prodes-result-close" onClick={clearProdes} aria-label={t('home.close')} title={t('home.close')}>×</button>
+              </div>
+              <div className="prodes-result-code"><strong>{prodesResult.data.cod_imovel}</strong></div>
+              {protectedOverlap && protectedOverlap.status === 'suspeito' && (
+                <div className="prodes-fraud">
+                  <div className="prodes-fraud-title">⚠ {t('home.carFraudTitle')}</div>
+                  <div className="prodes-fraud-detail">
+                    {t('home.carFraudDetail', {
+                      name: protectedOverlap.overlaps[0].name,
+                      type: protectedOverlap.overlaps[0].type === 'uc' ? 'UC' : 'TI',
+                      pct: protectedOverlap.overlaps[0].overlap_pct,
+                    })}
+                    {protectedOverlap.overlaps.length > 1 &&
+                      ` ${t('home.carFraudMore', { n: protectedOverlap.overlaps.length - 1 })}`}
+                  </div>
+                  <div className="prodes-fraud-note">{t('home.carFraudNote')}</div>
+                </div>
+              )}
+              {protectedOverlap && protectedOverlap.status === 'indeterminado' && (
+                <div className="prodes-result-meta">{t('home.carOverlapIndeterminate')}</div>
+              )}
+              {prodesResult.data.has_prodes ? (
+                <div className="prodes-result-yes">
+                  {t('home.hasProdesYes', {
+                    area: prodesResult.data.prodes_area_ha,
+                    years: (prodesResult.data.years || []).join(', '),
+                  })}
+                </div>
+              ) : (
+                <div className="prodes-result-no">{t('home.hasProdesNo')}</div>
+              )}
+              <div className="prodes-result-meta">
+                {t('home.propertyAreaLabel', { area: prodesResult.data.property_area_ha ?? '—' })} · {t('home.prodesEstimate')}
+              </div>
+              {prodesResult.data.years && prodesResult.data.years.length > 0 && (
+                <div className="prodes-result-meta">
+                  {t('home.yearsLabel', { years: prodesResult.data.years.join(', ') })}
+                </div>
+              )}
+              {prodesResult.data.regrowth && (
+                <div className="prodes-result-meta">{t('home.regrowthNote')}</div>
+              )}
+            </>
+          ) : (
+            <div className="prodes-result-no">
+              {prodesResult.reason === 'car_unavailable'
+                ? t('home.carUnavailable')
+                : prodesResult.reason === 'not_found'
+                  ? t('home.propertyNotFound')
+                  : t('home.prodesNotAvailable')}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+
+  // No mobile os três modais antigos viram abas do sheet; só montamos os
+  // fragmentos ali (desktop mantém os componentes posicionados como estão).
+  const sheetVerifyFragments = isMobile
+    ? { overlaysRows, natureLegendBody, prodesForm, prodesResult: prodesResultBody }
+    : null;
 
   return (
     <div className={`map-stage${isMobile ? ' map-stage--mobile' : ''}`}>
@@ -1156,6 +1388,12 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
             onClick={() => setShowDeforest(!showDeforest)}
           >
             <span className="lt-dot" /> {t('home.layerDeforestation')}<span className="lt-sub">PRODES</span>
+          </button>
+          <button
+            className={`layer-toggle${showCar ? ' active' : ''}`}
+            onClick={() => setShowCar(!showCar)}
+          >
+            <span className="lt-dot" style={{ background: CAR_COLOR }} /> {t('home.layerCar')}<span className="lt-sub">CAR</span>
           </button>
           <button
             className={`layer-toggle${showFires ? ' active' : ''}`}
@@ -1181,136 +1419,18 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           >
             <span className="lt-dot" style={{ background: CONSERVATION_STYLE.color }} /> {t('home.layerConservation')}
           </button>
-          <button
-            className={`layer-toggle${showCar ? ' active' : ''}`}
-            onClick={() => setShowCar(!showCar)}
-          >
-            <span className="lt-dot" style={{ background: CAR_COLOR }} /> {t('home.layerCar')}<span className="lt-sub">CAR</span>
-          </button>
         </div>
       </div>
 
-      {/* Verificação PRODES por recibo CAR (plan: terrabrasilis-integration, Inc 12) */}
-      <div className={`prodes-check${isMobile ? ' prodes-check--mobile' : ''}${showMobileProdes ? ' prodes-check--mobile-open' : ''}${prodesResult || prodesError ? ' prodes-check--mobile-has-result' : ''}`}>
-        {isMobile && !showMobileProdes && (
-          <button
-            className="prodes-check-toggle"
-            onClick={() => setShowMobileProdes(true)}
-            aria-label={t('home.verifyProperty')}
-          >
-            {t('home.verifyProperty')}
-          </button>
-        )}
-        {(!isMobile || showMobileProdes) && (
-          <form className="prodes-check-form" onSubmit={prodesQuery}>
-            <div className="prodes-check-header">
-              <label className="prodes-check-label" htmlFor="prodes-input">
-                {t('home.verifyProperty')}
-              </label>
-              {isMobile && (
-                <button
-                  className="prodes-result-close"
-                  type="button"
-                  onClick={() => setShowMobileProdes(false)}
-                  aria-label={t('home.close')}
-                >×</button>
-              )}
-            </div>
-            <div className="prodes-check-row">
-              <input
-                id="prodes-input"
-                className="prodes-check-input"
-                value={prodesInput}
-                onChange={(e) => setProdesInput(e.target.value)}
-                placeholder={t('home.receiptPlaceholder')}
-                aria-label={t('home.receiptPlaceholder')}
-              />
-              <button className="prodes-check-btn" type="submit" disabled={prodesLoading}>
-                {prodesLoading ? t('home.checkingProperty') : t('home.check')}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* Resultado/erro: no mobile vira um card flutuante compacto quando o
-            modal de input está fechado, para não bloquear o mapa após o CHECAR. */}
-        {prodesError && (
-          <div className="prodes-error">
-            <span>{prodesError}</span>
-            <button
-              className="prodes-result-close"
-              onClick={clearProdes}
-              aria-label={t('home.close')}
-              title={t('home.close')}
-            >×</button>
-          </div>
-        )}
-        {prodesResult && (
-          <div className="prodes-result">
-            {prodesResult.data ? (
-              <>
-                <div className="prodes-result-header">
-                  <div className="prodes-result-title">{t('home.propertySummary')}</div>
-                  <button
-                    className="prodes-result-close"
-                    onClick={clearProdes}
-                    aria-label={t('home.close')}
-                    title={t('home.close')}
-                  >×</button>
-                </div>
-                <div className="prodes-result-code"><strong>{prodesResult.data.cod_imovel}</strong></div>
-                {protectedOverlap && protectedOverlap.status === 'suspeito' && (
-                  <div className="prodes-fraud">
-                    <div className="prodes-fraud-title">⚠ {t('home.carFraudTitle')}</div>
-                    <div className="prodes-fraud-detail">
-                      {t('home.carFraudDetail', {
-                        name: protectedOverlap.overlaps[0].name,
-                        type: protectedOverlap.overlaps[0].type === 'uc' ? 'UC' : 'TI',
-                        pct: protectedOverlap.overlaps[0].overlap_pct,
-                      })}
-                      {protectedOverlap.overlaps.length > 1 &&
-                        ` ${t('home.carFraudMore', { n: protectedOverlap.overlaps.length - 1 })}`}
-                    </div>
-                    <div className="prodes-fraud-note">{t('home.carFraudNote')}</div>
-                  </div>
-                )}
-                {protectedOverlap && protectedOverlap.status === 'indeterminado' && (
-                  <div className="prodes-result-meta">{t('home.carOverlapIndeterminate')}</div>
-                )}
-                {prodesResult.data.has_prodes ? (
-                  <div className="prodes-result-yes">
-                    {t('home.hasProdesYes', {
-                      area: prodesResult.data.prodes_area_ha,
-                      years: (prodesResult.data.years || []).join(', '),
-                    })}
-                  </div>
-                ) : (
-                  <div className="prodes-result-no">{t('home.hasProdesNo')}</div>
-                )}
-                <div className="prodes-result-meta">
-                  {t('home.propertyAreaLabel', { area: prodesResult.data.property_area_ha ?? '—' })} · {t('home.prodesEstimate')}
-                </div>
-                {prodesResult.data.years && prodesResult.data.years.length > 0 && (
-                  <div className="prodes-result-meta">
-                    {t('home.yearsLabel', { years: prodesResult.data.years.join(', ') })}
-                  </div>
-                )}
-                {prodesResult.data.regrowth && (
-                  <div className="prodes-result-meta">{t('home.regrowthNote')}</div>
-                )}
-              </>
-            ) : (
-              <div className="prodes-result-no">
-                {prodesResult.reason === 'car_unavailable'
-                  ? t('home.carUnavailable')
-                  : prodesResult.reason === 'not_found'
-                    ? t('home.propertyNotFound')
-                    : t('home.prodesNotAvailable')}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      {/* Verificação PRODES por recibo CAR — desktop (plan: terrabrasilis-integration,
+          Inc 12). No mobile o form+resultado vivem na aba "Verificar imóvel" do
+          bottom sheet unificado (fragments sheetVerifyFragments). */}
+      {!isMobile && (
+        <div className="prodes-check">
+          {prodesForm}
+          {prodesResultBody}
+        </div>
+      )}
 
       {/* Map */}
       <MapContainer
@@ -1367,6 +1487,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
               opacity={0.5}
               tileSize={256}
               maxNativeZoom={14}
+              minNativeZoom={6}
               minZoom={2}
               keepBuffer={4}
               updateWhenZooming={false}
@@ -1472,121 +1593,26 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           )}
         </MapContainer>
 
-      {/* Nature legend — bottom left on desktop; mobile uses a pill toggle that opens a modal sheet so it never covers other controls. */}
-      {showFires && (
-        <div className={`nature-legend${isMobile ? ' nature-legend--mobile' : ''}${isMobile && !showMobileLegend ? ' nature-legend--mobile-collapsed' : ''}${isMobile && showMobileLegend ? ' nature-legend--mobile-open' : ''}`}>
-          {isMobile && (
-            <button
-              className="nature-legend-toggle"
-              onClick={() => setShowMobileLegend(o => !o)}
-              aria-label={showMobileLegend ? t('home.collapseLegend') : t('home.expandLegend')}
-            >
-              <span className="nature-legend-toggle-dots">
-                {['crime', 'suspeito', 'permitido', 'natural'].map(n => (
-                  <span key={n} className="nature-legend-dot" style={{ background: FIRE_NATURE_COLORS[n].color }} />
-                ))}
-              </span>
-              {showMobileLegend ? '×' : t('home.natureLegend')}
-            </button>
-          )}
-          {(!isMobile || showMobileLegend) && (
-            isMobile ? (
-              <div className="nature-legend-card" onClick={(e) => { if (e.target === e.currentTarget) setShowMobileLegend(false); }}>
-                <div className="nature-legend-card-inner">
-                  <div className="nature-legend-card-header">
-                    <span className="nature-legend-title">{t('home.natureLegend')}</span>
-                    <button
-                      className="nature-legend-card-close"
-                      onClick={() => setShowMobileLegend(false)}
-                      aria-label={t('home.close')}
-                    >×</button>
-                  </div>
-                  {['crime', 'suspeito', 'permitido', 'natural'].map(n => (
-                    <span key={n} className="nature-legend-item">
-                      <span className="nature-legend-dot" style={{ background: FIRE_NATURE_COLORS[n].color }} />
-                      {t(`home.nature_${n}`)}
-                    </span>
-                  ))}
-                  <span className="nature-legend-sep" />
-                  <span className="nature-legend-title">{t('home.confidenceLegend')}</span>
-                  <span className="nature-legend-gradient">
-                    <span style={{ background: FIRE_STYLES.nominal.color }} />
-                    <span style={{ background: FIRE_STYLES.high.color }} />
-                    <span style={{ background: FIRE_STYLES.low.color }} />
-                  </span>
-                  <span className="nature-legend-item nature-legend-item--confidence">
-                    <span>{t('home.confidenceNominal')}</span>
-                    <span>{t('home.confidenceHigh')}</span>
-                    <span>{t('home.confidenceLow')}</span>
-                  </span>
-                  <span className="nature-legend-sep" />
-                  <div className="nature-legend-period">
-                    <span className="nature-legend-title">{t('home.firePeriod')}</span>
-                    <div className="days-chips">
-                      {[['', t('home.firePeriodRecent')], ['7', `7 ${t('home.days')}`], ['30', `30 ${t('home.days')}`], ['90', `90 ${t('home.days')}`], ['365', `365 ${t('home.days')}`]].map(([val, label]) => {
-                        const active = (fireDays == null ? '' : String(fireDays)) === val;
-                        return (
-                          <button
-                            key={val}
-                            type="button"
-                            className={`days-chip${active ? ' days-chip--active' : ''}`}
-                            onClick={() => setFireDays(val === '' ? null : Number(val))}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <>
-                <span className="nature-legend-title">{t('home.natureLegend')}</span>
-                {['crime', 'suspeito', 'permitido', 'natural'].map(n => (
-                  <span key={n} className="nature-legend-item">
-                    <span className="nature-legend-dot" style={{ background: FIRE_NATURE_COLORS[n].color }} />
-                    {t(`home.nature_${n}`)}
-                  </span>
-                ))}
-                <span className="nature-legend-sep" />
-                <span className="nature-legend-title">{t('home.confidenceLegend')}</span>
-                <span className="nature-legend-gradient">
-                  <span style={{ background: FIRE_STYLES.nominal.color }} />
-                  <span style={{ background: FIRE_STYLES.high.color }} />
-                  <span style={{ background: FIRE_STYLES.low.color }} />
-                </span>
-                <span className="nature-legend-item nature-legend-item--confidence">
-                  <span>{t('home.confidenceNominal')}</span>
-                  <span>{t('home.confidenceHigh')}</span>
-                  <span>{t('home.confidenceLow')}</span>
-                </span>
-                <span className="nature-legend-sep" />
-                <div className="nature-legend-period">
-                  <span className="nature-legend-title">{t('home.firePeriod')}</span>
-                  <div className="days-chips">
-                    {[['', t('home.firePeriodRecent')], ['7', `7 ${t('home.days')}`], ['30', `30 ${t('home.days')}`], ['90', `90 ${t('home.days')}`], ['365', `365 ${t('home.days')}`]].map(([val, label]) => {
-                      const active = (fireDays == null ? '' : String(fireDays)) === val;
-                      return (
-                        <button
-                          key={val}
-                          type="button"
-                          className={`days-chip${active ? ' days-chip--active' : ''}`}
-                          onClick={() => setFireDays(val === '' ? null : Number(val))}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </>
-            )
-          )}
+      {/* Nature legend — bottom left on desktop only. No mobile a "Natureza do
+          fogo" é uma aba do bottom sheet unificado (ver FloatPanel). */}
+      {showFires && !isMobile && (
+        <div className="nature-legend">
+          <button
+            type="button"
+            className="nature-legend-summary"
+            onClick={() => setShowNatureLegend(o => !o)}
+            aria-expanded={showNatureLegend}
+          >
+            <span className="nature-legend-title">{t('home.natureLegend')}</span>
+            <ChevronDown size={14} className={`nature-legend-chevron${showNatureLegend ? ' nature-legend-chevron--open' : ''}`} />
+          </button>
+          {showNatureLegend && natureLegendBody}
         </div>
       )}
 
-      {/* Consolidated float panel — bottom right */}
+      {/* Consolidated float panel — bottom right. No mobile é o bottom sheet
+          único ancorado na base (barra de alertas colapsada + abas internas
+          incluindo os ex-modais: sobreposições / natureza do fogo / verificar). */}
       <FloatPanel
         alerts={alertRows}
         loaded={alerts !== null}
@@ -1598,7 +1624,27 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
         temperature={temperature}
         onBiomeHover={onBiomeHover}
         isMobile={isMobile}
+        verify={sheetVerifyFragments}
       />
+
+      {/* Legenda dos overlays — canto direito, emparelhada ao float panel
+          (plan: overlay-legend). 4 camadas geo: PRODES, TI, UC, CAR.
+          Desktop-only: no mobile "Sobreposições" é uma aba do bottom sheet
+          unificado (ver FloatPanel). */}
+      {!isMobile && (
+        <div className={`overlays-legend${showOverlaysLegend ? ' overlays-legend--open' : ''}`}>
+          <button
+            type="button"
+            className="overlays-legend-summary"
+            onClick={() => setShowOverlaysLegend(o => !o)}
+            aria-expanded={showOverlaysLegend}
+          >
+            <span className="overlays-legend-title">{t('home.overlaysLegend')}</span>
+            <ChevronDown size={14} className="overlays-legend-chevron" aria-hidden="true" />
+          </button>
+          {showOverlaysLegend && overlaysRows}
+        </div>
+      )}
     </div>
   );
 });
