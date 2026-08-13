@@ -181,18 +181,26 @@ def intersect_pair(alert_geom_ea, car_geom_ea):
 
     Both geometries are already in an equal-area CRS. Returns
     (area_efetiva_ha, fracao) or (None, None) when they don't intersect.
+
+    Robust to invalid CAR geometries: a `TopologyException` (or any Shapely
+    error) from a malformed polygon is caught and treated as "no intersection"
+    so one bad CAR can't abort the whole compute (common-mistake #6 — a single
+    bad row must not kill the batch).
     """
-    if not alert_geom_ea.intersects(car_geom_ea):
+    try:
+        if not alert_geom_ea.intersects(car_geom_ea):
+            return None, None
+        inter = alert_geom_ea.intersection(car_geom_ea)
+        if inter.is_empty:
+            return None, None
+        inter_area_ha = inter.area / 10000.0
+        alert_area_ha = alert_geom_ea.area / 10000.0
+        if alert_area_ha <= 0:
+            return None, None
+        fracao = inter_area_ha / alert_area_ha
+        return round(inter_area_ha, 2), round(fracao, 4)
+    except Exception:  # noqa: BLE001 - invalid geometry → skip pair
         return None, None
-    inter = alert_geom_ea.intersection(car_geom_ea)
-    if inter.is_empty:
-        return None, None
-    inter_area_ha = inter.area / 10000.0
-    alert_area_ha = alert_geom_ea.area / 10000.0
-    if alert_area_ha <= 0:
-        return None, None
-    fracao = inter_area_ha / alert_area_ha
-    return round(inter_area_ha, 2), round(fracao, 4)
 
 
 def build_db(rows, out_path, version_key):

@@ -82,6 +82,20 @@ run ssh "${SSH_OPTS[@]}" "$VM_USER@$VM_IP" "mkdir -p $REMOTE_DIR"
 run scp -i "$SSH_KEY" "$DB" "$VM_USER@$VM_IP:$REMOTE_DIR/"
 echo "DB scp'd to $VM_USER@$VM_IP:$REMOTE_DIR/"
 
+# ── 4b. scp do version marker (review finding) ─────────────────────────────
+# O marker `area_efetiva.version` é a fonte de verdade da versão (escrito só
+# após sucesso). Sem ele no prod, `risk_precompute.current_version_key()` não
+# avança e os scores de risco cacheados NÃO invalidam após um recomputo. O
+# RUNBOOK exige scp de AMBOS (DB + marker); sem o marker o sync fica
+# silenciosamente stale.
+VERSION_MARKER="$PROJECT_DIR/backend-lua/data/area_efetiva/area_efetiva.version"
+if [[ -f "$VERSION_MARKER" ]]; then
+  run scp -i "$SSH_KEY" "$VERSION_MARKER" "$VM_USER@$VM_IP:$REMOTE_DIR/"
+  echo "version marker scp'd to $VM_USER@$VM_IP:$REMOTE_DIR/"
+else
+  echo "WARN: area_efetiva.version not found — cached risk scores may not invalidate" >&2
+fi
+
 # ── 5. Verificação ───────────────────────────────────────────────────────────
 if [[ "$DRY_RUN" == true ]]; then
   echo "[dry-run] verify remote DB size + lookup open"
