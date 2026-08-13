@@ -155,7 +155,8 @@ local function send_response(skt, status, body, content_type, extra_headers)
 
     local response_lines = {
         "HTTP/1.1 " .. status .. " " .. ({
-            [200] = "OK", [201] = "Created", [204] = "No Content",
+            [200] = "OK", [201] = "Created", [202] = "Accepted",
+            [204] = "No Content",
             [400] = "Bad Request", [401] = "Unauthorized", [404] = "Not Found",
             [429] = "Too Many Requests", [500] = "Internal Server Error",
             [502] = "Bad Gateway", [503] = "Service Unavailable",
