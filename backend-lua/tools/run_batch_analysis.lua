@@ -217,7 +217,10 @@ function _M.run_batch(batch_id, csv_path)
     local processed = 0
 
     -- Dedup por property_id (common-mistake #3: N+1 é smell; aqui dedup evita
-    -- re-score de duplicatas no CSV).
+    -- re-score de duplicatas no CSV). Cada linha é processada em pcall: um
+    -- lookup malformado (ex: janela Sinaflor com data nil) não pode derrubar
+    -- o lote inteiro — a linha vira {found=false, reason="error"} e o resto
+    -- segue.
     local seen = {}
     for _, row in ipairs(rows) do
         local pid = risk_score.resolve_property_id({
@@ -228,7 +231,19 @@ function _M.run_batch(batch_id, csv_path)
         })
         if pid ~= "" and not seen[pid] then
             seen[pid] = true
-            results[#results + 1] = _M.process_row(row)
+            local ok, res = pcall(_M.process_row, row)
+            if ok then
+                results[#results + 1] = res
+            else
+                logger.warn("run_batch_analysis: row failed for " .. tostring(pid)
+                    .. ": " .. tostring(res))
+                results[#results + 1] = {
+                    found = false,
+                    reason = "error",
+                    property_id = pid,
+                    nome = row.nome,
+                }
+            end
         end
         processed = processed + 1
         if processed % 50 == 0 then
@@ -251,7 +266,16 @@ if arg and arg[0] and arg[0]:match("run_batch_analysis%.lua$") then
         logger.error("usage: lua5.1 tools/run_batch_analysis.lua <batch_id> <csv_path>")
         os.exit(1)
     end
-    local n = _M.run_batch(batch_id, csv_path)
+    -- pcall no topo: qualquer erro (lookup load, CSV malformado, etc.) grava
+    -- status "failed" no Redis em vez de deixar o frontend em loop eterno de
+    -- polling com {status:"running", processed:0}.
+    local ok, n = pcall(_M.run_batch, batch_id, csv_path)
+    if not ok then
+        logger.error("run_batch_analysis: batch failed: " .. tostring(n))
+        redis.set("risk:batch:" .. batch_id,
+            cjson.encode({ status = "failed", error = tostring(n) }), 3600)
+        os.exit(1)
+    end
     os.exit(n >= 0 and 0 or 1)
 end
 

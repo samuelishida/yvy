@@ -44,6 +44,10 @@ local function build_fixture()
     -- MT-2: duas janelas — a antiga e a ativa; a ativa é a de data_inicio mais recente
     add("MT-2", "ASV-OLD", "ASV", "2025-01-01", "2025-12-31", "MT")
     add("MT-2", "ASV-2", "ASV", "2026-01-01", "2026-12-31", "MT")
+    -- MT-5: duas janelas ATIVAS na MESMA data (regressão: best.inicio era nil
+    -- e a 2ª janela ativa crashava com "attempt to compare nil with string")
+    add("MT-5", "ASV-5A", "ASV", "2026-01-01", "2026-12-31", "MT")
+    add("MT-5", "ASV-5B", "ASV", "2026-06-01", "2026-12-31", "MT")
     -- MT-3: janela passada (fora da data do foco)
     add("MT-3", "ASV-3", "ASV", "2025-01-01", "2025-06-30", "MT")
     -- MT-4: data_fim aberta
@@ -68,7 +72,7 @@ describe("sinaflor_lookup", function()
     end)
 
     it("count() retorna as autorizações", function()
-        assert.are_equal(5, sinaflor.count())
+        assert.are_equal(7, sinaflor.count())
     end)
 
     it("is_loaded() true após load", function()
@@ -95,6 +99,15 @@ describe("sinaflor_lookup", function()
     it("múltiplas janelas → a ativa com data_inicio mais recente (determinístico)", function()
         local a = sinaflor.authorized({id = "MT-2", name = "F", uf = "MT"}, "2026-03-01")
         assert.are_equal("ASV-2", a.nro)
+    end)
+
+    it("2+ janelas ativas na mesma data não crasha (regressão best.inicio nil)", function()
+        -- MT-5 tem duas janelas ativas em 2026-07-01; antes do fix, a 2ª
+        -- comparação `w.inicio > best.inicio` crashava (best.inicio era nil).
+        local a = sinaflor.authorized({id = "MT-5", name = "F", uf = "MT"}, "2026-07-01")
+        assert.is_not_nil(a)
+        -- A mais recente (data_inicio 2026-06-01) vence.
+        assert.are_equal("ASV-5B", a.nro)
     end)
 
     it("data_fim aberta (9999-12-31) cobre a data do foco", function()

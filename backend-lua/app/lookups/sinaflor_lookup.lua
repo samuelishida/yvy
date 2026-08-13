@@ -133,7 +133,10 @@ function _M.authorized(car_prop, acq_date)
     local best
     for _, w in ipairs(list) do
         if acq_date >= w.inicio and acq_date <= w.fim then
-            if not best or w.inicio > best.inicio then
+            -- `best` é montado com as chaves data_inicio/data_fim (não
+            -- inicio/fim); a comparação usa data_inicio para não comparar
+            -- com nil quando há 2+ janelas ativas na data.
+            if not best or w.inicio > best.data_inicio then
                 best = {
                     nro = w.nro,
                     modo = w.modo,
