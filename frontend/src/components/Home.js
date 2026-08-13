@@ -88,12 +88,73 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function alertForFire(fire, alerts) {
-  let best = null, bestDist = Infinity;
-  for (const a of alerts) {
-    if (!a.center) continue;
-    const d = haversineKm(fire.lat, fire.lon, a.center[0], a.center[1]);
-    if (d <= (a.radius_km || 15) && d < bestDist) { bestDist = d; best = a.id; }
+// Haversine where the second point's radians + cos(lat) are precomputed (Inc 1).
+// Used by the spatial grid so the alert's degree→radian conversion and cos are
+// done once per alertRows instead of once per fire×alert distance check.
+function haversineKmFromRad(lat1, lon1, lat2Rad, lon2Rad, cosLat2) {
+  const R = 6371, rad = Math.PI / 180;
+  const p1 = lat1 * rad;
+  const a = Math.sin((lat2Rad - p1) / 2) ** 2
+          + Math.cos(p1) * cosLat2 * Math.sin((lon2Rad - lon1 * rad) / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// --- Spatial-grid alert→fire matching (Inc 1) ---
+// Precompute each alert's center + radian lat/lon once per alertRows so the
+// grid build and every distance check reuse the conversion. Also derives the
+// max alert radius (same `(a.radius_km || 15)` default as alertForFire) so the
+// cell provably covers alertForFire's exact reach.
+function buildAlertCenters(alerts) {
+  const centers = new Map();
+  let maxRadiusKm = 15;
+  alerts.forEach((a, idx) => {
+    if (!a.center) return;
+    const [lat, lon] = a.center;
+    const radiusKm = Number(a.radius_km) || 15;
+    centers.set(a.id, {
+      alert: a,
+      idx,
+      center: [lat, lon],
+      latRad: lat * Math.PI / 180,
+      lonRad: lon * Math.PI / 180,
+      cosLat: Math.cos(lat * Math.PI / 180),
+      radiusKm,
+    });
+    if (radiusKm > maxRadiusKm) maxRadiusKm = radiusKm;
+  });
+  return { centers, maxRadiusKm };
+}
+
+// Bucket alerts by lat/lon cell. The cell is sized so it is >= maxRadiusKm
+// wide in BOTH axes for all lat >= minLat (longitude degrees shrink by cos(lat)).
+function buildAlertGrid(alertCenters, cellDeg) {
+  const grid = new Map();
+  alertCenters.forEach((c) => {
+    const key = `${Math.floor(c.center[0] / cellDeg)},${Math.floor(c.center[1] / cellDeg)}`;
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push(c);
+  });
+  return grid;
+}
+
+// Nearest alert within radius for a fire, using the fire's cell + 8 neighbors.
+// Tie → first in original array order (min idx wins on equidistant), matching
+// alertForFire's strict-`<` first-wins behavior.
+function nearestAlertForFire(grid, fire, alertCenters, cellDeg) {
+  const cellLat = Math.floor(fire.lat / cellDeg);
+  const cellLon = Math.floor(fire.lon / cellDeg);
+  let best = null, bestDist = Infinity, bestIdx = Infinity;
+  for (let dl = -1; dl <= 1; dl++) {
+    for (let dn = -1; dn <= 1; dn++) {
+      const bucket = grid.get(`${cellLat + dl},${cellLon + dn}`);
+      if (!bucket) continue;
+      for (const c of bucket) {
+        const d = haversineKmFromRad(fire.lat, fire.lon, c.latRad, c.lonRad, c.cosLat);
+        if (d <= c.radiusKm && (d < bestDist || (d === bestDist && c.idx < bestIdx))) {
+          bestDist = d; best = c.alert.id; bestIdx = c.idx;
+        }
+      }
+    }
   }
   return best;
 }
@@ -103,9 +164,23 @@ const MOBILE_BREAKPOINT = 720;
 function useWindowSize() {
   const [size, setSize] = useState({ width: window.innerWidth, height: window.innerHeight });
   useEffect(() => {
-    const onResize = () => setSize({ width: window.innerWidth, height: window.innerHeight });
+    // rAF-throttle (Inc 3): collapse per-pixel resize events to at most one
+    // setState per animation frame. The pending rAF is cancelled on unmount and
+    // the latest size is flushed on the final frame, so a resize that stops
+    // mid-frame still commits the final size.
+    let rafId = null;
+    const onResize = () => {
+      if (rafId != null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        setSize({ width: window.innerWidth, height: window.innerHeight });
+      });
+    };
     window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      if (rafId != null) cancelAnimationFrame(rafId);
+    };
   }, []);
   return size;
 }
@@ -1057,7 +1132,10 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
     setCarHighlight(null);
   }, []);
   const prodesQueryRef = useRef(null);
-  const prodesQuery = async (e, forcedCod) => {
+  // useCallback (Inc 2) so prodesQuery is a stable reference and safe to include
+  // in the prodesForm memo deps. Body unchanged; deps are exactly the state it
+  // reads (prodesInput, prodesLoading, t) — setters/refs/module fns are stable.
+  const prodesQuery = useCallback(async (e, forcedCod) => {
     if (e && e.preventDefault) e.preventDefault();
     const cod = (forcedCod || prodesInput).trim();
     if (!cod || prodesLoading) return;
@@ -1109,7 +1187,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
         }
       })
       .catch(() => setProtectedOverlap(null));
-  };
+  }, [prodesInput, prodesLoading, t]);
   prodesQueryRef.current = prodesQuery;
 
   const alertRows = asArray(alerts);
@@ -1191,13 +1269,30 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
     }, 0);
   }, [prodesLoading]);
 
+  // Spatial-grid alert→fire matching (Inc 1). Three memos so the grid is never
+  // rebuilt on fire-only refreshes: alertCenters rebuilds only on the 180s alert
+  // poll, grid only when centers change, fireAlertMap is O(N) lookups on fire
+  // refresh. Output stays Map<fireIdx, alertId> keyed by fire array index.
+  const { centers: alertCenters, maxRadiusKm } = useMemo(() => buildAlertCenters(alertRows), [alertRows]);
+  const cellDeg = useMemo(() => {
+    // minLat clamped to the actual min fire latitude so an anomalous southern
+    // fire cannot fall outside the coverage proof (see Inc 1 edge cases).
+    let minLat = BR_BOUNDS.swLat;
+    if (fireRows.length) {
+      let minFireLat = Infinity;
+      fireRows.forEach(f => { if (f.lat < minFireLat) minFireLat = f.lat; });
+      if (minFireLat < minLat) minLat = minFireLat;
+    }
+    return maxRadiusKm / (111 * Math.cos(minLat * Math.PI / 180));
+  }, [maxRadiusKm, fireRows]);
+  const alertGrid = useMemo(() => buildAlertGrid(alertCenters, cellDeg), [alertCenters, cellDeg]);
   const fireAlertMap = useMemo(() => {
     const m = new Map();
     if (alertRows.length && fireRows.length) {
-      fireRows.forEach((fire, idx) => { m.set(idx, alertForFire(fire, alertRows)); });
+      fireRows.forEach((fire, idx) => { m.set(idx, nearestAlertForFire(alertGrid, fire, alertCenters, cellDeg)); });
     }
     return m;
-  }, [fireRows, alertRows]);
+  }, [fireRows, alertGrid, alertCenters, cellDeg, alertRows]);
 
   // Build fire -> fullIdx lookup once per fireRows change (O(N) build, O(1) lookup)
   const fireToFullIdxMap = useMemo(() => {
@@ -1215,13 +1310,22 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
   // conter objetos de outro conjunto (outro período). Esses objetos legados
   // não são encontrados no fireToFullIdxMap → fullIdx undefined → keys
   // duplicadas e pontos fantasmas. Reconcilia usando id do foco se houver.
+  // O(1) id→fire lookup (Inc 4) substitui o fireRows.find(...) O(N) por foco.
+  // Null-id fires são pulados (não podem ser casados por id) — mudança
+  // intencional: antes o .find casava o primeiro fire null-id, arbitrário.
+  const fireById = useMemo(() => {
+    const m = new Map();
+    fireRows.forEach(f => { if (f.id != null) m.set(f.id, f); });
+    return m;
+  }, [fireRows]);
+
   const keyedFireRenderList = useMemo(() => {
     return fireRenderList
       .map(({ fire }) => {
         const fullIdx = fireToFullIdxMap.get(fire);
         if (fullIdx != null) return { fire, fullIdx };
         // Fallback por id quando o objeto visibleFire veio de cache/estado anterior
-        const found = fireRows.find(f => f.id === fire.id);
+        const found = fire.id != null ? fireById.get(fire.id) : undefined;
         if (found) {
           const idx = fireToFullIdxMap.get(found);
           if (idx != null) return { fire: found, fullIdx: idx };
@@ -1229,7 +1333,7 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
         return null;
       })
       .filter(Boolean);
-  }, [fireRenderList, fireToFullIdxMap, fireRows]);
+  }, [fireRenderList, fireToFullIdxMap, fireById]);
 
   const visibleToFullIdxMap = useMemo(() => {
     const m = new Map();
@@ -1296,8 +1400,11 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
 
   // Conteúdo das abas mobile unificadas (folded dos ex-modais no sheet).
   // Os fragments são montados aqui no pai (que detém state dos overlays e do
-  // PRODES) e passados ao FloatPanel — o sheet só os posiciona.
-  const overlaysRows = (
+  // PRODES) e passados ao FloatPanel — o sheet só os posiciona. Cada fragment é
+  // memoizado com deps explícitas (Inc 2) para que o objeto `verify` seja estável
+  // e o React.memo do FloatPanel volte a funcionar (sem isso o sheet inteiro
+  // re-renderizava a cada hover/click/state change).
+  const overlaysRows = useMemo(() => (
     <div className="overlays-legend-rows">
       {[
         { key: 'prodes', label: t('home.layerDeforestation'), color: PRODES_OVERLAY_COLOR, on: showDeforest },
@@ -1311,9 +1418,9 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
         </span>
       ))}
     </div>
-  );
+  ), [showDeforest, showIndigenous, showConservation, showCar, t]);
 
-  const natureLegendBody = (
+  const natureLegendBody = useMemo(() => (
     <>
       {['crime', 'suspeito', 'permitido', 'natural'].map(n => (
         <span key={n} className="nature-legend-item">
@@ -1353,9 +1460,9 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
         </div>
       </div>
     </>
-  );
+  ), [fireDays, setFireDays, t]);
 
-  const prodesForm = (
+  const prodesForm = useMemo(() => (
     <form className="prodes-check-form" onSubmit={prodesQuery}>
       <div className="prodes-check-header">
         <label className="prodes-check-label" htmlFor="prodes-input">
@@ -1376,9 +1483,9 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
         </button>
       </div>
     </form>
-  );
+  ), [prodesInput, prodesLoading, prodesQuery, t]);
 
-  const prodesResultBody = (
+  const prodesResultBody = useMemo(() => (
     <>
       {prodesError && (
         <div className="prodes-error">
@@ -1447,13 +1554,16 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
         </div>
       )}
     </>
-  );
+  ), [prodesError, prodesResult, protectedOverlap, clearProdes, t]);
 
   // No mobile os três modais antigos viram abas do sheet; só montamos os
   // fragmentos ali (desktop mantém os componentes posicionados como estão).
-  const sheetVerifyFragments = isMobile
-    ? { overlaysRows, natureLegendBody, prodesForm, prodesResult: prodesResultBody }
-    : null;
+  // O objeto é memoizado (Inc 2) para que `verify` seja estável entre renders
+  // que não mudam nenhum fragmento — restaurando o React.memo do FloatPanel.
+  const sheetVerifyFragments = useMemo(
+    () => (isMobile ? { overlaysRows, natureLegendBody, prodesForm, prodesResult: prodesResultBody } : null),
+    [isMobile, overlaysRows, natureLegendBody, prodesForm, prodesResultBody]
+  );
 
   return (
     <div className={`map-stage${isMobile ? ' map-stage--mobile' : ''}`}>
