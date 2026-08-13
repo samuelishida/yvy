@@ -1,0 +1,19 @@
+[Unit]
+Description=Yvy Aux layers + deforestation stats monthly refresh (Inc 4)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ yvy_user }}
+Group={{ yvy_group }}
+WorkingDirectory={{ app_dir }}
+Environment=HOME=/home/{{ yvy_user }}
+Environment=YVY_LOCAL_DEV=0
+# Aux download first (writes municipalities.geojson / conservation_units.json /
+# indigenous_lands.json), then def-stats (reads those files). Aux failure is
+# FATAL (set -e exits); def-stats is optional (|| guard) so a polygon refresh
+# still lands even if def-stats fails.
+ExecStart=/usr/bin/bash -c 'set -eu; {{ app_dir }}/.venv/bin/python3 {{ app_dir }}/scripts/data/download_aux_layers.py; {{ app_dir }}/.venv/bin/python3 {{ app_dir }}/scripts/data/precompute_deforestation_stats.py --db {{ app_dir }}/backend-lua/data/yvy.db || echo "WARN: def-stats failed (polygon refresh still landed)"'
+StandardOutput=journal
+StandardError=journal

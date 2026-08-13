@@ -1,0 +1,23 @@
+[Unit]
+Description=Yvy Sinaflor weekly refresh + fire reclassify (Inc 3)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ yvy_user }}
+Group={{ yvy_group }}
+WorkingDirectory={{ app_dir }}
+Environment=HOME=/home/{{ yvy_user }}
+Environment=YVY_LOCAL_DEV=0
+# Absolute CAR_DB_PATH: the script defaults to a *relative* path that resolves
+# wrong from the unit's cwd, silently skipping spatial resolution (review
+# finding).
+Environment=CAR_DB_PATH={{ app_dir }}/backend-lua/data/car/car.db
+# Run generator → increment .sync_version → trigger reclassify. With set -eu,
+# a generator failure exits non-zero (unit FAILS, no version increment, no
+# reclassify). Only the classify curl is guarded (||): the DB is already in
+# place, so a curl failure is a WARN, not a unit failure.
+ExecStart=/usr/bin/bash -c 'set -eu; {{ app_dir }}/.venv/bin/python3 {{ app_dir }}/scripts/data/download_sinaflor_auth.py --out {{ app_dir }}/backend-lua/data/sinaflor/sinaflor_auth.db; NEW=$(( $(cat {{ app_dir }}/backend-lua/data/sinaflor/.sync_version 2>/dev/null || echo 0) + 1 )); echo "$NEW" > {{ app_dir }}/backend-lua/data/sinaflor/.sync_version; curl -s -X POST "http://127.0.0.1:5000/api/admin/fires/classify?version=$NEW" || echo "WARN: classify trigger failed (DB already in place; re-run safe)"'
+StandardOutput=journal
+StandardError=journal

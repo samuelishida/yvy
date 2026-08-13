@@ -203,6 +203,12 @@ backend-lua/data/tiles_prodes.db
 backend-lua/data/car/
 # Sinaflor (ASV/AUTESP) — DB dedicado de autorizações, gerado offline
 backend-lua/data/sinaflor/
+# MapBiomas alerta DB (237M) — baixado por download_mapbiomas_alerta.py
+backend-lua/data/mapbiomas/
+# Diretório aninhado acidental (backend-lua/backend-lua/) — artefato de runtime
+backend-lua/backend-lua/
+# CSV de teste local de fornecedores
+fornecedores_teste.csv
 # Backups do SQLite (ex.: yvy.db.backup-*)
 backend-lua/data/*.db.backup*
 # DBs temporários criados pelos testes busted (ex.: yvy_car_route_*.db)

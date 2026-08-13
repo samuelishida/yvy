@@ -1,0 +1,20 @@
+[Unit]
+Description=Yvy IBAMA embargo download (CAR risk expansion, Inc 2; ingestion-automation, Inc 2)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ yvy_user }}
+Group={{ yvy_group }}
+WorkingDirectory={{ app_dir }}
+Environment=HOME=/home/{{ yvy_user }}
+Environment=YVY_LOCAL_DEV=0
+# Absolute CAR_DB_PATH: the script defaults to a *relative* path that resolves
+# wrong from the unit's cwd, silently skipping spatial resolution (review
+# finding). Embargo's spatial fallback is its ONLY path, so a missing car.db
+# must fail loudly, not WARN-and-drop (the wrapper hard-guards this).
+Environment=CAR_DB_PATH={{ app_dir }}/backend-lua/data/car/car.db
+ExecStart=/usr/bin/bash {{ app_dir }}/scripts/data/download_embargo.sh
+StandardOutput=journal
+StandardError=journal

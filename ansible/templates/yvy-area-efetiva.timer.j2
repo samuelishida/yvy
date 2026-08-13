@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily area efetiva recompute for Yvy (CAR risk expansion, Inc 1)
+
+[Timer]
+# Staggered from the DETER daily (~04:30) and risk monitor (~05:30) so
+# downloads don't collide.
+OnCalendar=*-*-* 06:30:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

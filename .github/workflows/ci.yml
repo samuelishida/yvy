@@ -83,8 +83,14 @@ jobs:
                    scripts/backup/prod-backup.sh \
                    scripts/backup/pull-prod-backups.sh \
                    scripts/backup/install-backup-cron.sh \
+                   scripts/backup/install-ingestion-cron.sh \
                    scripts/data/check_prodes_update.sh \
                    scripts/data/deter_daily.sh \
+                   scripts/data/download_embargo.sh \
+                   scripts/data/mapbiomas_weekly.sh \
+                   scripts/data/car_weekly.sh \
+                   scripts/data/area_efetiva_weekly.sh \
+                   scripts/data/status_marker.sh \
                    scripts/dev/setup-python-env.sh \
                    scripts/deploy/sync-sinaflor.sh; do
             if [ -f "$f" ]; then bash -n "$f" || exit 1; else echo "skip $f (not found)"; fi
@@ -102,8 +108,11 @@ jobs:
             scripts/deploy/deploy-local.sh scripts/deploy/deploy-nginx.sh \
             scripts/dev/verify-gzip.sh \
             scripts/backup/prod-backup.sh scripts/backup/pull-prod-backups.sh \
-            scripts/backup/install-backup-cron.sh \
+            scripts/backup/install-backup-cron.sh scripts/backup/install-ingestion-cron.sh \
             scripts/data/check_prodes_update.sh scripts/data/deter_daily.sh \
+            scripts/data/download_embargo.sh scripts/data/mapbiomas_weekly.sh \
+            scripts/data/car_weekly.sh scripts/data/area_efetiva_weekly.sh \
+            scripts/data/status_marker.sh \
             scripts/dev/setup-python-env.sh scripts/deploy/sync-sinaflor.sh \
           || true
 

@@ -440,6 +440,116 @@
         state: started
         enabled: true
 
+    - name: Criar unidade systemd do risk monitor (Inc 6)
+      ansible.builtin.template:
+        src: yvy-risk-monitor.service.j2
+        dest: /etc/systemd/system/yvy-risk-monitor.service
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Criar timer systemd do risk monitor (Inc 6)
+      ansible.builtin.template:
+        src: yvy-risk-monitor.timer.j2
+        dest: /etc/systemd/system/yvy-risk-monitor.timer
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Ativar timer do risk monitor (Inc 6)
+      ansible.builtin.systemd:
+        name: yvy-risk-monitor.timer
+        state: started
+        enabled: true
+
+    - name: Criar unidade systemd do embargo (Inc 2)
+      ansible.builtin.template:
+        src: yvy-embargo.service.j2
+        dest: /etc/systemd/system/yvy-embargo.service
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Criar timer systemd do embargo (Inc 2)
+      ansible.builtin.template:
+        src: yvy-embargo.timer.j2
+        dest: /etc/systemd/system/yvy-embargo.timer
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Ativar timer do embargo (Inc 2)
+      ansible.builtin.systemd:
+        name: yvy-embargo.timer
+        state: started
+        enabled: true
+
+    - name: Criar unidade systemd do sinaflor (Inc 3)
+      ansible.builtin.template:
+        src: yvy-sinaflor.service.j2
+        dest: /etc/systemd/system/yvy-sinaflor.service
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Criar timer systemd do sinaflor (Inc 3)
+      ansible.builtin.template:
+        src: yvy-sinaflor.timer.j2
+        dest: /etc/systemd/system/yvy-sinaflor.timer
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Ativar timer do sinaflor (Inc 3)
+      ansible.builtin.systemd:
+        name: yvy-sinaflor.timer
+        state: started
+        enabled: true
+
+    - name: Criar unidade systemd do area efetiva (fixup Inc 3)
+      ansible.builtin.template:
+        src: yvy-area-efetiva.service.j2
+        dest: /etc/systemd/system/yvy-area-efetiva.service
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Criar timer systemd do area efetiva (fixup Inc 3)
+      ansible.builtin.template:
+        src: yvy-area-efetiva.timer.j2
+        dest: /etc/systemd/system/yvy-area-efetiva.timer
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Ativar timer do area efetiva (fixup Inc 3)
+      ansible.builtin.systemd:
+        name: yvy-area-efetiva.timer
+        state: started
+        enabled: true
+
+    - name: Criar unidade systemd do aux layers (Inc 4)
+      ansible.builtin.template:
+        src: yvy-aux-layers.service.j2
+        dest: /etc/systemd/system/yvy-aux-layers.service
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Criar timer systemd do aux layers (Inc 4)
+      ansible.builtin.template:
+        src: yvy-aux-layers.timer.j2
+        dest: /etc/systemd/system/yvy-aux-layers.timer
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Ativar timer do aux layers (Inc 4)
+      ansible.builtin.systemd:
+        name: yvy-aux-layers.timer
+        state: started
+        enabled: true
+
     - name: Aguardar backend ficar saudável
       ansible.builtin.uri:
         url: http://localhost:5000/health

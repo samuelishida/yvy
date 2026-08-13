@@ -73,7 +73,7 @@
 #define MAX_HEADER_VAL  512
 #define CLIENT_TIMEOUT  5                /* seconds for recv/send timeouts */
 #define BACKEND_TIMEOUT 30               /* seconds for backend proxy timeout */
-#define MAX_REQUEST_SIZE   (1024 * 1024) /* 1MB cap for client request (headers+body) */
+#define MAX_REQUEST_SIZE   (8 * 1024 * 1024) /* 8MB cap for client request (headers+body) — plan: risk-intelligence, Inc 3 (CSV uploads) */
 #define MAX_RESPONSE_SIZE  (2 * 1024 * 1024) /* 2MB cap for buffered backend response */
 #define DYNBUF_INITIAL_CAP 8192
 #define LISTEN_BACKLOG  128

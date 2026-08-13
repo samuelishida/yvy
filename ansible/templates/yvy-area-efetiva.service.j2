@@ -1,0 +1,16 @@
+[Unit]
+Description=Yvy area efetiva recompute (CAR risk expansion, Inc 1)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ yvy_user }}
+Group={{ yvy_group }}
+WorkingDirectory={{ app_dir }}
+Environment=HOME=/home/{{ yvy_user }}
+Environment=YVY_LOCAL_DEV=0
+Environment=AREA_EFETIVA_VERSION_FILE={{ app_dir }}/backend-lua/data/area_efetiva/area_efetiva.version
+ExecStart=/usr/bin/bash {{ app_dir }}/scripts/data/compute_area_efetiva.sh
+StandardOutput=journal
+StandardError=journal

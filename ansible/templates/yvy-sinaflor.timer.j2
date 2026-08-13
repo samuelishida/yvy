@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly Sinaflor refresh + fire reclassify for Yvy (Inc 3)
+
+[Timer]
+# Staggered after the embargo job (~02:30) so downloads don't collide.
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

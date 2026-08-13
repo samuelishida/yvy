@@ -68,6 +68,13 @@ export default function Navbar() {
         >
           {t('nav.thematicMaps')}
         </Link>
+        <Link
+          to="/risk-intelligence"
+          className={location.pathname === '/risk-intelligence' ? 'nav-link nav-link--active' : 'nav-link'}
+          onClick={close}
+        >
+          {t('risk.nav')}
+        </Link>
       </div>
 
       <div className="topbar-right">

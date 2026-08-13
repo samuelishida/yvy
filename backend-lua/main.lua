@@ -28,6 +28,7 @@ local weather       = require("app.routes.weather")
 local news          = require("app.routes.news")
 local alerts        = require("app.routes.alerts")
 local tiles         = require("app.routes.tiles")
+local risk          = require("app.routes.risk")
 local auth          = require("app.middleware.auth")
 local rl            = require("app.middleware.rate_limit")
 local db            = require("app.db")
@@ -354,6 +355,20 @@ server.route("GET", "/api/news", news.get_news)
 server.route("POST", "/api/news/refresh", news.refresh_news)
 server.route("POST", "/api/news/repair", news.repair_news)
 server.route("POST", "/api/admin/news/sync", news.admin_news_sync)
+
+-- Risk Intelligence (plan: risk-intelligence)
+-- Batch analysis (Inc 3): POST CSV raw → job assíncrono; GET progresso.
+server.route("POST", "/api/risk/batch", risk.post_batch)
+server.route("GET", "/api/risk/batch", risk.get_batch)
+-- PDF report (Inc 4): GET /api/risk/report?id=<property_id> → 202 async;
+-- status + download endpoints (fixup Inc 1).
+server.route("GET", "/api/risk/report", risk.get_report)
+server.route("GET", "/api/risk/report/status", risk.get_report_status)
+server.route("GET", "/api/risk/report/download", risk.get_report_download)
+-- Continuous monitoring (Inc 6): CRUD de fornecedores + alertas in-app.
+server.route("POST", "/api/risk/supplier", risk.post_supplier)
+server.route("GET", "/api/risk/suppliers", risk.get_suppliers)
+server.route("GET", "/api/risk/supplier-alerts", risk.get_supplier_alerts)
 
 -- Weather
 server.route("GET", "/api/weather",             weather.get_weather)

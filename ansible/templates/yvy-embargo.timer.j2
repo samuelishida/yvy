@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly IBAMA embargo download for Yvy (CAR risk expansion, Inc 2; ingestion-automation, Inc 2)
+
+[Timer]
+# Staggered from the daily jobs so downloads don't collide.
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

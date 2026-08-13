@@ -218,3 +218,58 @@ Indígenas):
   (`tools/classify_fires.lua`).
 - **Env vars:** `PROTECTED_OVERLAP_SUSPECT`, `PROTECTED_OVERLAP_SAMPLES`,
   `PROTECTED_OVERLAP_MAX_SAMPLES`, `DETER_LARGE_CUT_KM2`, `DETER_CORNER_HITS`.
+
+## Automation / scheduled jobs (plan: ingestion-automation)
+
+Hybrid automation: **light jobs** run on the prod VM via systemd timers; the
+**heavy jobs** (CAR pipeline, MapBiomas, Area efetiva) run on the dev machine
+via cron (5am, so the user is not on the PC). The DB mtime is the authoritative
+success marker (common-mistake #5); a per-source `.last_sync` status file adds
+human-readable last-run observability.
+
+### Prod VM — systemd timers (wired in `ansible/playbook.yml`)
+
+| Timer | Schedule | Runs | Status check |
+|---|---|---|---|
+| `yvy-prodes-check.timer` | daily 03:10 | PRODES yearly check | `systemctl status yvy-prodes-check.timer` |
+| `yvy-deter-daily.timer` | daily 04:30 | DETER pipeline | `systemctl status yvy-deter-daily.timer` |
+| `yvy-risk-monitor.timer` | daily 05:30 | risk supplier scan | `systemctl status yvy-risk-monitor.timer` |
+| `yvy-embargo.timer` | weekly 02:30 | IBAMA embargo → `embargo.db` | `systemctl status yvy-embargo.timer` |
+| `yvy-sinaflor.timer` | weekly 03:00 | Sinaflor + reclassify | `systemctl status yvy-sinaflor.timer` |
+| `yvy-aux-layers.timer` | monthly 1st 02:00 | aux layers + def stats | `systemctl status yvy-aux-layers.timer` |
+
+Manual run of a VM job: `systemctl start yvy-embargo` (etc.). The embargo and
+sinaflor units export an absolute `CAR_DB_PATH`; embargo hard-fails if `car.db`
+is missing (its spatial resolve is the only path).
+
+### Dev machine — cron (installed by `scripts/backup/install-ingestion-cron.sh`)
+
+| Wrapper | Schedule | Runs | Status check |
+|---|---|---|---|
+| `mapbiomas_weekly.sh` | Mon 05:00 | MapBiomas Alerta → scp `mapbiomas_alerta.db` | `cat backend-lua/data/mapbiomas/.last_sync` |
+| `car_weekly.sh` | Mon 05:30 | full CAR chain → atomic scp `car.db` + `tiles_car.db` + Redis invalidation | `cat backend-lua/data/car/.last_sync` |
+| `area_efetiva_weekly.sh` | Mon 06:00 | area efetiva → scp `area_efetiva.db` + `.version` | `cat backend-lua/data/area_efetiva/.last_sync` |
+
+Manual run: `make mapbiomas-weekly` / `make car-weekly` / `make area-efetiva-weekly`
+(or `bash scripts/data/<wrapper>.sh`). Logs land in `$HOME/yvy-ingestion/`.
+
+**CAR swap is atomic** (car.db is WAL, mutated in place): scp to `.new` →
+`PRAGMA integrity_check` → keep `.prev` → `mv` → drop `.prev`. After the swap,
+prod Redis `car:*` keys are invalidated (`redis-cli --scan --pattern 'car:*' |
+xargs redis-cli del`) because the warm tools invalidate **dev** Redis only.
+
+**Area efetiva version marker:** `area_efetiva_weekly.sh` scp's both
+`area_efetiva.db` AND `area_efetiva.version`. The Ansible service exports
+`AREA_EFETIVA_VERSION` from the marker to invalidate cached risk scores; if the
+marker isn't fresh on prod, risk scores won't invalidate.
+
+### Known freshness bounds
+
+- **MapBiomas vs car.db:** MapBiomas runs weekly on dev; car.db is refreshed
+  weekly by the dev CAR cron. The spatial resolution uses a car.db up to 7 days
+  stale — matches today's manual flow, acceptable.
+- **Embargo/Sinaflor on the 1GB VM:** both run a per-row `classify_point` loop
+  against the 7GB car.db. The RTree keeps candidate decoding cheap and the
+  datasets are CSV-sourced (few thousand rows), so they should fit — but if
+  either OOMs, move it to the dev cron (the `sync-embargo.sh` path supports
+  dev-side generation + scp). VM-jobs-until-proven-otherwise.

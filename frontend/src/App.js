@@ -8,6 +8,7 @@ const Home          = React.lazy(() => import('./components/Home'));
 const Dashboard     = React.lazy(() => import('./components/Dashboard'));
 const News          = React.lazy(() => import('./components/News'));
 const MapasTemáticos = React.lazy(() => import('./components/MapasTemáticos'));
+const RiskIntelligence = React.lazy(() => import('./components/RiskIntelligence/RiskIntelligence'));
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/news" element={<News />} />
                 <Route path="/mapas-tematicos" element={<MapasTemáticos />} />
+                <Route path="/risk-intelligence" element={<RiskIntelligence />} />
               </Routes>
             </Suspense>
           </main>

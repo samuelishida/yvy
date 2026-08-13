@@ -39,7 +39,10 @@ local STATIC_DIR = os.getenv("STATIC_DIR") or env.first_existing({
 }) or "../frontend/build"
 
 -- Security limits
-local MAX_REQUEST_SIZE = tonumber(os.getenv("MAX_REQUEST_SIZE") or "1048576")  -- 1MB default
+-- MAX_REQUEST_SIZE default 8MB (plan: risk-intelligence, Inc 3) para uploads de
+-- CSV raw de fornecedores. Em produção o gate real é o nginx
+-- `client_max_body_size` (yvy-nginx.conf.j2); este é o segundo gate.
+local MAX_REQUEST_SIZE = tonumber(os.getenv("MAX_REQUEST_SIZE") or "8388608")  -- 8MB default
 local MAX_URI_LENGTH = tonumber(os.getenv("MAX_URI_LENGTH") or "2048")  -- 2KB
 local CLIENT_TIMEOUT = tonumber(os.getenv("CLIENT_TIMEOUT_SECONDS") or "5")
 

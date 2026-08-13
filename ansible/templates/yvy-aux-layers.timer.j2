@@ -1,0 +1,11 @@
+[Unit]
+Description=Monthly Aux layers + deforestation stats refresh for Yvy (Inc 4)
+
+[Timer]
+# Monthly on the 1st, staggered from the daily/weekly jobs.
+OnCalendar=*-*-01 02:00:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

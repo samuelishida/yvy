@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily risk supplier monitor scan for Yvy (Inc 6)
+
+[Timer]
+# Staggered from the DETER daily (~04:30) so downloads don't collide.
+OnCalendar=*-*-* 05:30:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
