@@ -292,7 +292,16 @@ end
 function _M.spawn_report(property_id, context_json)
     local source = (debug.getinfo(1, "S").source or ""):gsub("^@", "")
     local backend_dir = source:match("^(.*[/\\])app[/\\]routes[/\\]") or ""
-    local project_dir = backend_dir:gsub("backend%-lua[/\\]$", "")
+    -- O script Python está na raiz do projeto (scripts/data/), não em
+    -- backend-lua/. backend_dir aponta para backend-lua/ (ou ./ relativo a
+    -- ele); subimos um nível para chegar à raiz do projeto.
+    local project_dir
+    if backend_dir:match("backend%-lua[/\\]$") then
+        project_dir = backend_dir:gsub("backend%-lua[/\\]$", "")
+    else
+        -- backend_dir é "./" (cwd = backend-lua/): sobe um nível.
+        project_dir = "../"
+    end
     local script = project_dir .. "scripts/data/render_risk_report.py"
     local python = venv_python(project_dir)
 

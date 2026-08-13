@@ -33,14 +33,36 @@ local risk_precompute = require("app.lookups.risk_precompute")
 local mapbiomas = require("app.lookups.mapbiomas_lookup")
 local embargo = require("app.lookups.embargo_lookup")
 local area_efetiva = require("app.lookups.area_efetiva_lookup")
+local car_lookup = require("app.lookups.car_lookup")
 
 local _M = {}
+
+-- Resolve o cod_imovel a partir da propriedade. Se cod_imovel já está
+-- presente, usa direto. Se for lat/lon, classifica o ponto via car_lookup
+-- (intersecção espacial com o polígono do CAR). CNPJ sem cod_imovel não tem
+-- mapeamento direto → retorna nil (score sem evidência espacial).
+local function resolve_cod_imovel(property)
+    local cod = tostring(property.cod_imovel or ""):upper()
+    if cod ~= "" then return cod end
+    local lat = tonumber(property.lat)
+    local lon = tonumber(property.lon)
+    if lat and lon then
+        car_lookup.load_car()
+        local car = car_lookup.classify_point(lon, lat)
+        if car and car.id then
+            return tostring(car.id):upper()
+        end
+    end
+    return nil
+end
 
 -- Constrói o ctx de score para uma propriedade a partir dos dados MapBiomas
 -- disponíveis. Para v1, usa alertas recentes do imóvel (se houver cod_imovel)
 -- e defaults neutros para os demais fatores. O fator `embargo` é alimentado
 -- via embargo_lookup (Inc 2) — antes era sempre nil. O fator `deforestation`
 -- usa `area_efetiva_ha` (Inc 3) quando disponível.
+-- Resolve o cod_imovel a partir de lat/lon quando necessário (CNPJ sem CAR
+-- não tem mapeamento → score sem evidência).
 local function build_ctx(property)
     local ctx = {
         deforestation = nil,
@@ -51,18 +73,19 @@ local function build_ctx(property)
         recent_alerts = nil,
         area_efetiva_ha = nil,
     }
-    if property.cod_imovel and property.cod_imovel ~= "" then
-        local alerts = mapbiomas.get_alerts_by_car(property.cod_imovel)
+    local cod = resolve_cod_imovel(property)
+    if cod then
+        local alerts = mapbiomas.get_alerts_by_car(cod)
         if #alerts > 0 then
             ctx.recent_alerts = alerts
         end
         -- Embargo ativo → fator 1 (0..1). DB ausente → nil (fator neutro).
-        if embargo.has_active_embargo(property.cod_imovel) then
+        if embargo.has_active_embargo(cod) then
             ctx.embargo = 1
         end
         -- Área efetiva (soma das áreas dos alertas dentro do imóvel). DB
         -- ausente → nil (fallback para recent_alerts no score).
-        local sum = area_efetiva.sum_by_car(property.cod_imovel)
+        local sum = area_efetiva.sum_by_car(cod)
         if sum > 0 then
             ctx.area_efetiva_ha = sum
         end
@@ -91,10 +114,12 @@ function _M.process_row(row)
     risk_precompute.upsert(property_id, result)
 
     -- Área efetiva no payload do resultado (para o frontend exibir a coluna
-    -- sem um segundo lookup). Nil quando não há dados.
+    -- sem um segundo lookup). Usa o cod_imovel resolvido (lat/lon → CAR).
+    -- Nil quando não há dados.
+    local cod = resolve_cod_imovel(property)
     local area_efetiva_ha = nil
-    if property.cod_imovel and property.cod_imovel ~= "" then
-        local sum = area_efetiva.sum_by_car(property.cod_imovel)
+    if cod then
+        local sum = area_efetiva.sum_by_car(cod)
         if sum > 0 then
             area_efetiva_ha = sum
         end
