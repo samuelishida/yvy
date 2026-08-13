@@ -154,13 +154,13 @@ local function send_response(skt, status, body, content_type, extra_headers)
     extra_headers["Connection"] = extra_headers["Connection"] or "close"
 
     local response_lines = {
-        "HTTP/1.1 " .. status .. " " .. ({
+        "HTTP/1.1 " .. status .. " " .. (({
             [200] = "OK", [201] = "Created", [202] = "Accepted",
-            [204] = "No Content",
+            [204] = "No Content", [304] = "Not Modified",
             [400] = "Bad Request", [401] = "Unauthorized", [404] = "Not Found",
             [429] = "Too Many Requests", [500] = "Internal Server Error",
             [502] = "Bad Gateway", [503] = "Service Unavailable",
-        })[status] or "Unknown",
+        })[status] or "Unknown"),
     }
 
     -- Security headers
@@ -370,5 +370,9 @@ function _M.start()
 
     copas.loop()
 end
+
+-- Test-only export: lets tests exercise the status-line construction (incl.
+-- the 304 precedence fix) without opening a socket. Not used in production.
+_M.send_response = send_response
 
 return _M
