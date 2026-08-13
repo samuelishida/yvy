@@ -76,30 +76,40 @@ local function deforestation_factor(ctx)
         -- >50 ha recente → fator alto; escala logarítmica suave.
         return clamp01(math.log(1 + area) / math.log(1 + 50))
     end
-    return 0
+    -- Sem deforestation explícito e sem alertas → neutro (nil).
+    return nil
 end
 
 -- Fator de sobreposição com área protegida (UC/TI): 0..1.
+-- nil quando não informado (neutro).
 local function protected_factor(ctx)
+    if ctx.protected_overlap == nil then return nil end
     return clamp01(ctx.protected_overlap)
 end
 
 -- Fator de embargo: 0..1 (1 = embargado).
+-- nil quando não informado (neutro).
 local function embargo_factor(ctx)
+    if ctx.embargo == nil then return nil end
     return clamp01(ctx.embargo)
 end
 
 -- Fator de status do CAR: 0 (ativo) .. 1 (suspenso/ausente).
+-- Quando o status é desconhecido (nil/vazio), retorna nil para que o fator
+-- seja neutro (não contribui para o score nem para o evidence_gap).
 local function car_status_factor(ctx)
     local status = tostring(ctx.car_status or ""):lower()
+    if status == "" then return nil end
     if status == "ativo" or status == "active" then return 0 end
     if status == "suspenso" or status == "suspended" then return 1 end
-    if status == "ausente" or status == "missing" or status == "" then return 0.5 end
-    return 0.5
+    if status == "ausente" or status == "missing" then return 0.5 end
+    return nil
 end
 
 -- Fator de focos de calor recentes: 0..1 (1 = muitos focos).
+-- nil quando ctx.fires não foi informado (neutro, não contribui).
 local function fires_factor(ctx)
+    if ctx.fires == nil then return nil end
     local n = tonumber(ctx.fires) or 0
     if n <= 0 then return 0 end
     return clamp01(math.log(1 + n) / math.log(1 + 20))
@@ -111,25 +121,34 @@ end
 -- area_efetiva_ha}.
 function _M.score(property, ctx)
     ctx = ctx or {}
+    -- Calcula cada fator; nil = neutro (não contribui para peso nem score).
+    local f_def = deforestation_factor(ctx)
+    local f_prot = protected_factor(ctx)
+    local f_emb = embargo_factor(ctx)
+    local f_car = car_status_factor(ctx)
+    local f_fires = fires_factor(ctx)
+
     local factors = {
-        { name = "deforestation",     weight = _M.WEIGHTS.deforestation,     value = deforestation_factor(ctx) },
-        { name = "protected_overlap", weight = _M.WEIGHTS.protected_overlap, value = protected_factor(ctx) },
-        { name = "embargo",           weight = _M.WEIGHTS.embargo,           value = embargo_factor(ctx) },
-        { name = "car_status",        weight = _M.WEIGHTS.car_status,        value = car_status_factor(ctx) },
-        { name = "fires",             weight = _M.WEIGHTS.fires,             value = fires_factor(ctx) },
+        { name = "deforestation",     weight = _M.WEIGHTS.deforestation,     value = f_def or 0, active = f_def ~= nil },
+        { name = "protected_overlap", weight = _M.WEIGHTS.protected_overlap, value = f_prot or 0, active = f_prot ~= nil },
+        { name = "embargo",           weight = _M.WEIGHTS.embargo,           value = f_emb or 0,  active = f_emb ~= nil },
+        { name = "car_status",        weight = _M.WEIGHTS.car_status,        value = f_car or 0,  active = f_car ~= nil },
+        { name = "fires",             weight = _M.WEIGHTS.fires,             value = f_fires or 0, active = f_fires ~= nil },
     }
 
+    -- Score ponderado SÓ pelos fatores ativos (com dados). Fatores sem dados
+    -- não contribuem — o score reflete apenas o risco real observado.
     local total_weight = 0
     local weighted = 0
     for _, f in ipairs(factors) do
-        total_weight = total_weight + f.weight
-        weighted = weighted + f.weight * f.value
+        if f.active then
+            total_weight = total_weight + f.weight
+            weighted = weighted + f.weight * f.value
+        end
     end
 
     -- evidence_gap: distingue "sem evidência" (score 0) de "risco baixo".
-    local has_evidence = (ctx.deforestation ~= nil) or (type(ctx.recent_alerts) == "table" and #ctx.recent_alerts > 0)
-        or (ctx.protected_overlap ~= nil) or (ctx.embargo ~= nil)
-        or (ctx.car_status ~= nil) or (tonumber(ctx.fires) or 0) > 0
+    local has_evidence = total_weight > 0
     local evidence_gap = has_evidence and 0 or 1
 
     local score = 0

@@ -30,17 +30,23 @@ except ImportError:
           "and pip install", file=sys.stderr)
     sys.exit(1)
 
-BRAND = colors.HexColor("#00C97A")
-INK = colors.HexColor("#E8F0EC")
-INK_MUTED = colors.HexColor("#8A9E93")
-CANVAS = colors.HexColor("#0A0F0D")
-SURFACE = colors.HexColor("#141A17")
-BORDER = colors.HexColor("#2A3530")
+BRAND = colors.HexColor("#00875A")
+INK = colors.HexColor("#1A1A1A")
+INK_MUTED = colors.HexColor("#666666")
+CANVAS = colors.HexColor("#FFFFFF")
+SURFACE = colors.HexColor("#F5F7F5")
+SURFACE_ALT = colors.HexColor("#EEF1EE")
+BORDER = colors.HexColor("#D0D5D0")
 
 LEVEL_COLORS = {
     "alto": colors.HexColor("#C62828"),
-    "medio": colors.HexColor("#FF6200"),
-    "baixo": colors.HexColor("#00C97A"),
+    "medio": colors.HexColor("#E65100"),
+    "baixo": colors.HexColor("#00875A"),
+}
+LEVEL_BG = {
+    "alto": colors.HexColor("#FFEBEE"),
+    "medio": colors.HexColor("#FFF3E0"),
+    "baixo": colors.HexColor("#E8F5E9"),
 }
 
 
@@ -71,11 +77,14 @@ def _section_table(rows, col_widths):
     t.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), SURFACE),
         ("TEXTCOLOR", (0, 0), (-1, 0), BRAND),
+        ("TEXTCOLOR", (0, 1), (-1, -1), INK),
         ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
         ("FONTSIZE", (0, 0), (-1, -1), 9),
         ("TOPPADDING", (0, 0), (-1, -1), 3 * mm),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3 * mm),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [CANVAS, SURFACE_ALT]),
     ]))
     return t
 
@@ -122,29 +131,29 @@ def _render_static_map(context, out_png):
     if not prop_geom and not alert_geoms:
         return None
 
-    fig, ax = plt.subplots(figsize=(6, 5), facecolor="#0A0F0D")
-    ax.set_facecolor("#0A0F0D")
+    fig, ax = plt.subplots(figsize=(6, 5), facecolor="#FFFFFF")
+    ax.set_facecolor("#F5F7F5")
 
     prop = _decode_geom(prop_geom)
     if prop is not None:
         for poly in _iter_polys(prop):
             xs, ys = poly.exterior.xy
-            ax.plot(xs, ys, color="#00C97A", linewidth=1.5, label="Imóvel")
+            ax.plot(xs, ys, color="#00875A", linewidth=1.5, label="Imóvel")
 
     for g in alert_geoms:
         geom = _decode_geom(g)
         if geom is not None:
             for poly in _iter_polys(geom):
                 xs, ys = poly.exterior.xy
-                ax.fill(xs, ys, color="#C62828", alpha=0.5)
+                ax.fill(xs, ys, color="#C62828", alpha=0.4)
                 ax.plot(xs, ys, color="#C62828", linewidth=1)
 
     ax.set_aspect("equal")
     ax.axis("off")
-    ax.legend(loc="upper right", facecolor="#141A17", edgecolor="#2A3530",
-              labelcolor="#E8F0EC")
+    ax.legend(loc="upper right", facecolor="#FFFFFF", edgecolor="#D0D5D0",
+              labelcolor="#1A1A1A")
     fig.tight_layout()
-    fig.savefig(out_png, dpi=120, facecolor="#0A0F0D")
+    fig.savefig(out_png, dpi=120, facecolor="#FFFFFF")
     plt.close(fig)
     return out_png
 
@@ -170,6 +179,7 @@ def render_report(context, out_path):
     story.append(Spacer(1, 4 * mm))
 
     score_val = int(score.get("score", 0))
+    level_bg = LEVEL_BG.get(level, SURFACE)
     score_table = Table(
         [[Paragraph("SCORE DE RISCO", st["h2"]),
           Paragraph("<font color='#%s' size='28'><b>%d</b>/100</font>"
@@ -177,7 +187,7 @@ def render_report(context, out_path):
         colWidths=[90 * mm, 60 * mm],
     )
     score_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), SURFACE),
+        ("BACKGROUND", (0, 0), (-1, -1), level_bg),
         ("BOX", (0, 0), (-1, -1), 1, BORDER),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("TOPPADDING", (0, 0), (-1, -1), 6 * mm),
