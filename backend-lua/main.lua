@@ -213,6 +213,12 @@ server.route("GET", "/api/car/summary", function(ctx)
     local car_routes = require("app.routes.car")
     car_routes.get_summary(ctx)
 end)
+-- CAR property geometry by receipt (plan: car-highlight, Inc 1) — polygon
+-- GeoJSON for the "Verificar imóvel" highlight overlay.
+server.route("GET", "/api/car/geometry", function(ctx)
+    local car_routes = require("app.routes.car")
+    car_routes.get_geometry(ctx)
+end)
 
 -- CAR × UC/TI overlap (plan: protected-area-crossing, Inc 1)
 server.route("GET", "/api/car/protected-overlap", function(ctx)

@@ -484,4 +484,59 @@ function _M.get_summary(ctx)
     })
 end
 
+-- ── Geometria do imóvel por recibo CAR (plan: car-highlight, Inc 1)
+--
+-- Devolve o polígono GeoJSON exato do imóvel para o frontend desenhar o
+-- highlight do "Verificar imóvel" por cima do overlay raster CAR. A geometria
+-- já é resolvida por get_by_cod_imovel (json(geom) → texto GeoJSON); repassamos
+-- o texto sem re-decodificar/re-encode para não gastar CPU no event loop
+-- single-threaded. Endpoint dedicado (não no /api/car/prodes) para não pesar o
+-- cache Redis de 24h da verificação. Sem cache Redis aqui — geometria pode ser
+-- grande; o cliente usa cachedFetch com TTL próprio.
+function _M.get_geometry(ctx)
+    if not auth.enforce(ctx) then return end
+    if not rl.enforce(ctx) then return end
+
+    local cod = ctx.req.args.cod_imovel
+    if type(cod) ~= "string" or cod == "" then
+        ctx:error(400, "Missing cod_imovel")
+        return
+    end
+
+    local car = require("app.lookups.car_lookup")
+    car.load_car()
+    if not car.is_loaded() then
+        ctx:json(200, { cod_imovel = cod, found = false, reason = "car_unavailable", note = "CAR unavailable" })
+        return
+    end
+
+    local prop = car.get_by_cod_imovel(cod)
+    if not prop then
+        ctx:json(200, { cod_imovel = cod, found = false, reason = "not_found" })
+        return
+    end
+
+    -- json(geom) de uma coluna JSONB vazia retorna o literal "null" — tratar
+    -- como inexistente, nunca repassar "null" para o cliente.
+    local geom = prop.geom
+    if type(geom) ~= "string" or geom == "" or geom == "null" then
+        ctx:json(200, { cod_imovel = cod, found = false, reason = "not_found" })
+        return
+    end
+
+    -- Observabilidade: geometria muito grande (imóvel com milhares de pontos)
+    -- pode pesar o payload. string.len é proxy barato; espelha o slow path do
+    -- car/prodes (car.lua:120).
+    if string.len(geom) > 100000 then
+        logger.warn("car/geometry large payload: " .. string.len(geom) .. " bytes for " .. tostring(prop.id))
+    end
+
+    ctx:json(200, {
+        cod_imovel = prop.id,
+        found = true,
+        geom = geom,
+        bbox = prop.bbox,
+    })
+end
+
 return _M

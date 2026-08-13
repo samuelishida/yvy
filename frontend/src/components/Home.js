@@ -888,6 +888,18 @@ const PRODES_OVERLAY_COLOR = '#C62828';
 // o único controle de transparência. CAR_TILES_VERSION é bumped ao regenerar os
 // tiles (busta caches).
 const CAR_COLOR = '#FF84FF';
+// Highlight do imóvel verificado ("Verificar imóvel", plan: car-highlight).
+// Segue o padrão visual das TIs/UCs (contorno tracejado dashArray '5 4',
+// linhas finas weight 1.25, opacity 0.85, fillOpacity 0.08) na cor do CAR —
+// o destaque vem da cor magenta sobre o raster, não de linhas mais grossas.
+const CAR_HIGHLIGHT_STYLE = {
+  color: CAR_COLOR,
+  fillColor: CAR_COLOR,
+  fillOpacity: 0.08,
+  weight: 1.25,
+  opacity: 0.85,
+  dashArray: '5 4',
+};
 // CAR tiles are served with Cache-Control: no-store (see tiles.lua
 // serve_png_no_cache) so the browser always re-fetches from the backend — the
 // rasterized pixel positions shift whenever car.db is re-imported, so a long
@@ -921,7 +933,7 @@ function BiomeHighlightLayer({ activeBiome, biomeGeoJSON }) {
     for (const [name, features] of byName) {
       const color = BIOME_HIGHLIGHT_COLORS[name] || '#00C97A';
       const layer = L.geoJSON({ type: 'FeatureCollection', features }, {
-        style: { color, fillColor: color, fillOpacity: 0.18, weight: 2.5, opacity: 0.9, dashArray: '5 4' },
+        style: { color, fillColor: color, fillOpacity: 0.08, weight: 1.25, opacity: 0.85, dashArray: '5 4' },
         interactive: false,
       });
       let bounds = null;
@@ -973,6 +985,42 @@ const ProdesFlyTo = React.memo(function ProdesFlyTo({ bbox }) {
   return null;
 });
 
+// Contorno do imóvel verificado ("Verificar imóvel", plan: car-highlight, Inc 2).
+// Desenha o polígono GeoJSON exato do CAR alvo por cima do overlay raster,
+// seguindo o padrão BiomeHighlightLayer (L.geoJSON + useMap, interactive:false).
+// bringToFront() garante que o contorno fique acima dos overlays vetoriais
+// TI/UC mesmo que o usuário os ligue depois (a ordem de add é dependente de
+// montagem). O fly-to do mapa já é feito pelo ProdesFlyTo (bbox do resultado);
+// aqui só desenhamos o contorno — a geometria tem bounds próprios, então não
+// precisamos de flyToBounds adicional.
+const VerifiedCarHighlightLayer = React.memo(function VerifiedCarHighlightLayer({ geometry, showIndigenous, showConservation }) {
+  const map = useMap();
+  const attachedRef = useRef(null);
+
+  useEffect(() => {
+    if (attachedRef.current) {
+      attachedRef.current.remove();
+      attachedRef.current = null;
+    }
+    if (!geometry) return;
+    const layer = L.geoJSON(geometry, {
+      style: CAR_HIGHLIGHT_STYLE,
+      interactive: false,
+    });
+    layer.addTo(map);
+    layer.bringToFront();
+    attachedRef.current = layer;
+    return () => {
+      if (attachedRef.current) {
+        attachedRef.current.remove();
+        attachedRef.current = null;
+      }
+    };
+  }, [geometry, map, showIndigenous, showConservation]);
+
+  return null;
+});
+
 const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, setShowDeforest, setShowFires, showIndigenous, setShowIndigenous, showConservation, setShowConservation, indigenousGeo, conservationGeo, t, alerts, activeAlertId, flyToAlertId, hoveredFireIdx, lockedFireIdx, onFireOver, onFireHoverEnd, onFireClick, onClearFireLock, onAlertEnter, onAlertLeave, airQuality, temperature, activeBiome, biomeGeoJSON, onBiomeHover, focus, fireDays, setFireDays, fireDataGeneration }) {
   const { width: windowWidth } = useWindowSize();
   const isMobile = windowWidth <= MOBILE_BREAKPOINT;
@@ -994,12 +1042,19 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
   // Sobreposição CAR × UC/TI (plan: protected-area-crossing, Inc 2) — badge de
   // grilagem. Busca separada do PRODES para uma falha não derrubar o resumo.
   const [protectedOverlap, setProtectedOverlap] = useState(null);
+  // Highlight do imóvel verificado (plan: car-highlight, Inc 2) — geometria do
+  // CAR alvo para desenhar o contorno por cima do overlay raster.
+  const [carHighlight, setCarHighlight] = useState(null);
+  // Ref do resultado vigente para a guarda de troca rápida da geometria: uma
+  // resposta atrasada de um recibo anterior não pode vazar para o card novo.
+  const prodesResultRef = useRef(null);
   // Fecha o card de verificação e devolve a interação do mapa (sem isso o card
   // ficava preso cobrindo o mapa até recarregar a página).
   const clearProdes = useCallback(() => {
     setProdesResult(null);
     setProdesError(null);
     setProtectedOverlap(null);
+    setCarHighlight(null);
   }, []);
   const prodesQueryRef = useRef(null);
   const prodesQuery = async (e, forcedCod) => {
@@ -1009,14 +1064,36 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
     setProdesLoading(true);
     setProdesError(null);
     setProtectedOverlap(null);
+    // Toda nova verificação reseta o highlight ANTES do fetch resolver — um
+    // verify subsequente que retorne not_found/car_unavailable não deixa o
+    // contorno do imóvel anterior na tela.
+    setCarHighlight(null);
     try {
       const d = await cachedFetch(`/api/car/prodes?cod_imovel=${encodeURIComponent(cod)}`, { ttl: 60_000 });
       setProdesResult(d);
+      prodesResultRef.current = d;
+      // Busca a geometria do imóvel para o highlight. Guarda explícita
+      // (g && g.found && g.geom) e compara contra o resultado VIGENTE via ref
+      // (não o cod local da invocação) para não vazar resposta atrasada.
+      if (d && d.data && d.data.found) {
+        cachedFetch(`/api/car/geometry?cod_imovel=${encodeURIComponent(cod)}`, { ttl: 86_400_000 })
+          .then(g => {
+            if (g && g.found && g.geom && g.cod_imovel === prodesResultRef.current?.data?.cod_imovel) {
+              try {
+                setCarHighlight({ geom: JSON.parse(g.geom), bbox: g.bbox });
+              } catch (_) {
+                // geom inválido — highlight ausente, fly-to bbox continua.
+              }
+            }
+          })
+          .catch(() => { /* highlight ausente; não derruba o resultado */ });
+      }
     } catch (err) {
       // Sem texto cru de erro (ex. string de exceção do fetch/404 antigo) —
       // mensagem traduzida genérica; o caso "não encontrado" vem como 200 + reason.
       setProdesError(t('home.error'));
       setProdesResult(null);
+      prodesResultRef.current = null;
     } finally {
       setProdesLoading(false);
     }
@@ -1449,6 +1526,11 @@ const MapaCard = React.memo(function MapaCard({ fires, showDeforest, showFires, 
           <MapController activeAlert={flyToAlert} />
           <FocusController focus={focus} />
           <ProdesFlyTo bbox={prodesResult && prodesResult.data ? prodesResult.data.bbox : null} />
+          <VerifiedCarHighlightLayer
+            geometry={carHighlight?.geom}
+            showIndigenous={showIndigenous}
+            showConservation={showConservation}
+          />
           <BiomeHighlightLayer activeBiome={activeBiome} biomeGeoJSON={biomeGeoJSON} />
           <FireHoverLock
             fires={fireRows}
