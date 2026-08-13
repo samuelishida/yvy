@@ -103,8 +103,11 @@ function _M.post_batch(ctx)
     f:close()
 
     -- Lock de dedup: um batch por vez por batch_id (o id é único, mas o lock
-    -- evita re-spawn acidental do mesmo id).
-    redis.setnx("risk:batch:" .. batch_id, "running", 3600)
+    -- evita re-spawn acidental do mesmo id). Grava JSON válido (não string
+    -- pura) para o get_batch conseguir decodificar antes do subprocesso
+    -- gravar o progresso real.
+    redis.setnx("risk:batch:" .. batch_id,
+        cjson.encode({ status = "running", total = #rows, processed = 0 }), 3600)
 
     if not spawn_batch(batch_id, csv_path) then
         ctx:error(500, "failed to start batch job")
