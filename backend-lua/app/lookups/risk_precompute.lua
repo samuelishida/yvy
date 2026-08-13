@@ -65,25 +65,61 @@ local function short_hash(parts)
     return string.format("%08x%08x", h, h)
 end
 
--- version_key: invalida quando MapBiomas/PRODES/UC/TI/área efetiva muda. Para
--- v1, deriva de env vars (bump manual) + contagem de alertas MapBiomas (se
--- disponível). `AREA_EFETIVA_VERSION` (Inc 3) é gravado pelo
--- compute_area_efetiva.py via marker; um recomputo da área efetiva invalida
--- os scores cacheados que a consomem. O warm/batch passa o version_key atual;
--- `get` compara e retorna nil (stale) quando diverge → recompute.
+-- version_key: invalida quando MapBiomas/PRODES/UC/TI/área efetiva/Sinaflor/
+-- protected-overlap muda. Para v1, deriva de env vars (bump manual) + contagem
+-- de alertas MapBiomas (se disponível). `AREA_EFETIVA_VERSION` (Inc 3) é
+-- gravado pelo compute_area_efetiva.py via marker; um recomputo da área
+-- efetiva invalida os scores cacheados que a consomem. O warm/batch passa o
+-- version_key atual; `get` compara e retorna nil (stale) quando diverge →
+-- recompute.
 --
 -- A versão da área efetiva vem do marker file (fonte de verdade escrita após
 -- sucesso, common-mistake #5), com fallback para a env var. Ler o arquivo
 -- direto decoupla do systemd env propagation (que exigiria restart por
 -- recomputo).
+--
+-- Inc 2: o version_key também inclui o hash do DB Sinaflor (mtime do arquivo,
+-- pois sinaflor_lookup não expõe version_key) e o version_key do
+-- car_protected_overlap. Sem isso, uma atualização de Sinaflor ou do
+-- pré-cálculo UC/TI não invalidaria os scores cacheados que os consomem.
 function _M.current_version_key()
     local area_efetiva_version = read_marker(AREA_EFETIVA_MARKER)
         or env.get("AREA_EFETIVA_VERSION", "")
+
+    -- Sinaflor: mtime do DB dedicado (fonte de verdade do import offline).
+    local sinaflor_version = ""
+    local sinaflor_path = env.get("SINAFLOR_DB_PATH")
+        or env.first_with_existing_parent({
+            "backend-lua/data/sinaflor/sinaflor_auth.db",
+            "data/sinaflor/sinaflor_auth.db",
+            "../backend-lua/data/sinaflor/sinaflor_auth.db",
+            "/opt/yvy/backend-lua/data/sinaflor/sinaflor_auth.db",
+        })
+    if sinaflor_path then
+        local f = io.open(sinaflor_path, "r")
+        if f then
+            local stat = f:seek("end")
+            f:close()
+            sinaflor_version = tostring(stat)
+        end
+    end
+
+    -- car_protected_overlap: version_key do pré-cálculo UC/TI. Guardado em
+    -- pcall — em testes sem os dados UC/TI carregados, cai para um valor
+    -- estável (não derruba o version_key).
+    local protected_version = ""
+    pcall(function()
+        local car_protected = require("app.lookups.car_protected_overlap")
+        protected_version = car_protected.current_version_key() or ""
+    end)
+
     local parts = {
-        tostring(env.get("RISK_VERSION", "1")),
+        tostring(env.get("RISK_VERSION", "2")),
         tostring(env.get("PRODES_VERSION", "")),
         tostring(env.get("MAPBIOMAS_VERSION", "")),
         tostring(area_efetiva_version),
+        tostring(sinaflor_version),
+        tostring(protected_version),
     }
     return short_hash(parts)
 end
@@ -121,6 +157,28 @@ function _M.ensure_schema(conn)
             computed_at TEXT
         );
     ]])
+    -- Migração aditiva (common-mistake #5): adiciona as colunas de pilares/
+    -- confiança/unknown se ainda não existirem. Guardado por PRAGMA table_info
+    -- para ser idempotente em DBs já migrados. Pilares são colunas individuais
+    -- (não JSON BLOB) para evitar drift de representação dupla.
+    local cols = {}
+    for row in conn:nrows("PRAGMA table_info(risk_scores)") do
+        cols[row.name] = true
+    end
+    local additions = {
+        { "severity", "REAL" },
+        { "legality", "REAL" },
+        { "evidence", "REAL" },
+        { "confidence", "INTEGER" },
+        { "coverage", "REAL" },
+        { "evidence_gap", "INTEGER" },
+        { "unknown", "INTEGER" },
+    }
+    for _, a in ipairs(additions) do
+        if not cols[a[1]] then
+            conn:exec("ALTER TABLE risk_scores ADD COLUMN " .. a[1] .. " " .. a[2])
+        end
+    end
 end
 
 -- Conexão read-only (query_only=ON) para a runtime. Abre sob demanda e
@@ -147,6 +205,8 @@ function _M.get(property_id)
 
     local stmt = conn:prepare([[
         SELECT property_id, score, level, recommendation, factors,
+               severity, legality, evidence, confidence, coverage,
+               evidence_gap, unknown,
                version_key, computed_at
         FROM risk_scores WHERE property_id = ?
     ]])
@@ -171,6 +231,15 @@ function _M.get(property_id)
         level = row.level,
         recommendation = row.recommendation,
         factors = factors,
+        pillars = {
+            severity = tonumber(row.severity) or 0,
+            legality = tonumber(row.legality) or 0,
+            evidence = tonumber(row.evidence) or 0,
+        },
+        confidence = tonumber(row.confidence) or 0,
+        coverage = tonumber(row.coverage) or 0,
+        evidence_gap = tonumber(row.evidence_gap) or 0,
+        unknown = tonumber(row.unknown) or 0,
         version_key = row.version_key,
         computed_at = row.computed_at,
     }
@@ -187,13 +256,23 @@ function _M.upsert(property_id, result)
 
     local stmt = conn:prepare([[
         INSERT INTO risk_scores
-            (property_id, score, level, recommendation, factors, version_key, computed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+            (property_id, score, level, recommendation, factors,
+             severity, legality, evidence, confidence, coverage,
+             evidence_gap, unknown,
+             version_key, computed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(property_id) DO UPDATE SET
             score=excluded.score,
             level=excluded.level,
             recommendation=excluded.recommendation,
             factors=excluded.factors,
+            severity=excluded.severity,
+            legality=excluded.legality,
+            evidence=excluded.evidence,
+            confidence=excluded.confidence,
+            coverage=excluded.coverage,
+            evidence_gap=excluded.evidence_gap,
+            unknown=excluded.unknown,
             version_key=excluded.version_key,
             computed_at=excluded.computed_at
     ]])
@@ -203,8 +282,15 @@ function _M.upsert(property_id, result)
     stmt:bind(3, result.level or "baixo")
     stmt:bind(4, result.recommendation or "")
     stmt:bind(5, factors_json)
-    stmt:bind(6, result.version_key or _M.current_version_key())
-    stmt:bind(7, result.computed_at or os.date("!%Y-%m-%dT%H:%M:%SZ"))
+    stmt:bind(6, (result.pillars and result.pillars.severity) or 0)
+    stmt:bind(7, (result.pillars and result.pillars.legality) or 0)
+    stmt:bind(8, (result.pillars and result.pillars.evidence) or 0)
+    stmt:bind(9, result.confidence or 0)
+    stmt:bind(10, result.coverage or 0)
+    stmt:bind(11, result.evidence_gap or 0)
+    stmt:bind(12, result.unknown or 0)
+    stmt:bind(13, result.version_key or _M.current_version_key())
+    stmt:bind(14, result.computed_at or os.date("!%Y-%m-%dT%H:%M:%SZ"))
     local rc = stmt:step()
     stmt:finalize()
     return rc == sqlite3.DONE
@@ -218,13 +304,23 @@ function _M.bulk_upsert(rows)
 
     local stmt = conn:prepare([[
         INSERT INTO risk_scores
-            (property_id, score, level, recommendation, factors, version_key, computed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+            (property_id, score, level, recommendation, factors,
+             severity, legality, evidence, confidence, coverage,
+             evidence_gap, unknown,
+             version_key, computed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(property_id) DO UPDATE SET
             score=excluded.score,
             level=excluded.level,
             recommendation=excluded.recommendation,
             factors=excluded.factors,
+            severity=excluded.severity,
+            legality=excluded.legality,
+            evidence=excluded.evidence,
+            confidence=excluded.confidence,
+            coverage=excluded.coverage,
+            evidence_gap=excluded.evidence_gap,
+            unknown=excluded.unknown,
             version_key=excluded.version_key,
             computed_at=excluded.computed_at
     ]])
@@ -244,8 +340,15 @@ function _M.bulk_upsert(rows)
             stmt:bind(3, r.level or "baixo")
             stmt:bind(4, r.recommendation or "")
             stmt:bind(5, factors_json)
-            stmt:bind(6, r.version_key or _M.current_version_key())
-            stmt:bind(7, r.computed_at or os.date("!%Y-%m-%dT%H:%M:%SZ"))
+            stmt:bind(6, (r.pillars and r.pillars.severity) or 0)
+            stmt:bind(7, (r.pillars and r.pillars.legality) or 0)
+            stmt:bind(8, (r.pillars and r.pillars.evidence) or 0)
+            stmt:bind(9, r.confidence or 0)
+            stmt:bind(10, r.coverage or 0)
+            stmt:bind(11, r.evidence_gap or 0)
+            stmt:bind(12, r.unknown or 0)
+            stmt:bind(13, r.version_key or _M.current_version_key())
+            stmt:bind(14, r.computed_at or os.date("!%Y-%m-%dT%H:%M:%SZ"))
             local rc = stmt:step()
             if rc == sqlite3.DONE then
                 n = n + 1

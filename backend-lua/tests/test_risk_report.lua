@@ -3,6 +3,7 @@
 dofile("tests/helpers.lua")
 local env = require("app.env")
 local sqlite3 = require("lsqlite3")
+local cjson = require("cjson")
 
 local tmp_risk_db = "./yvy_risk_report_" .. tostring(os.time()) .. ".db"
 env.set("RISK_DB_PATH", tmp_risk_db)
@@ -57,8 +58,11 @@ end
 describe("risk report", function()
     setup(function()
         risk_precompute.ensure_schema(risk_precompute._offline_conn())
+        -- Alimenta Severity (recent_alerts) + Legality (protected_overlap) —
+        -- o fator `deforestation` foi removido na API de pilares.
         local res = risk_score.score({ cod_imovel = "RO-1" }, {
-            deforestation = 1.0, protected_overlap = 1.0,
+            recent_alerts = { { area_ha = 3000, ano_det = 2026 } },
+            protected_overlap = 1.0,
         })
         risk_precompute.upsert("RO-1", res)
     end)
@@ -78,10 +82,20 @@ describe("risk report", function()
         assert.are_equal(400, ctx.status)
     end)
 
-    it("GET /api/risk/report returns 404 when score not found", function()
+    it("GET /api/risk/report returns 202 + UNKNOWN for a property with no score (Inc 4)", function()
+        -- Antes: 404. Agora: um id válido sem score gera um laudo UNKNOWN (202).
         local ctx = fake_ctx({ id = "NOPE-1" })
         risk_routes.get_report(ctx)
-        assert.are_equal(404, ctx.status)
+        assert.are_equal(202, ctx.status)
+        assert.are_equal("running", ctx.body.status)
+        assert.is_not_nil(spawned)
+        assert.are_equal("NOPE-1", spawned.property_id)
+        -- O contexto enviado ao renderer carrega o estado UNKNOWN.
+        local ok, context = pcall(function() return cjson.decode(spawned.context_json) end)
+        assert.is_true(ok)
+        assert.are_equal("unknown", context.score.level)
+        assert.are_equal(1, context.score.unknown)
+        assert.are_equal(0, context.score.confidence)
     end)
 
     it("GET /api/risk/report returns 202 + report_id (async)", function()
@@ -92,6 +106,17 @@ describe("risk report", function()
         assert.are_equal(MOCK_REPORT_ID, ctx.body.report_id)
         assert.is_not_nil(spawned)
         assert.are_equal("RO-1", spawned.property_id)
+    end)
+
+    it("GET /api/risk/report propagates pillars/confidence/unknown (Inc 4)", function()
+        local ctx = fake_ctx({ id = "RO-1" })
+        risk_routes.get_report(ctx)
+        assert.are_equal(202, ctx.status)
+        local ok, context = pcall(function() return cjson.decode(spawned.context_json) end)
+        assert.is_true(ok)
+        assert.is_not_nil(context.score.pillars)
+        assert.is_not_nil(context.score.confidence)
+        assert.is_not_nil(context.score.unknown)
     end)
 
     it("GET /api/risk/report/status returns running while no marker", function()

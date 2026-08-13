@@ -246,7 +246,8 @@ local function build_report_context(property_id)
         context.sinaflor[#context.sinaflor + 1] = auth
     end
 
-    -- 8. risk_precompute.get → score, level, recommendation, factors.
+    -- 8. risk_precompute.get → score, level, recommendation, factors,
+    --    pillars, confidence, unknown.
     local score = risk_precompute.get(property_id)
     if score then
         context.score = {
@@ -254,6 +255,9 @@ local function build_report_context(property_id)
             level = score.level,
             recommendation = score.recommendation,
             computed_at = score.computed_at,
+            pillars = score.pillars,
+            confidence = score.confidence,
+            unknown = score.unknown,
         }
         context.factors = score.factors
     end
@@ -344,9 +348,28 @@ function _M.get_report(ctx)
         return
     end
 
+    -- UNKNOWN é reportável: um id válido sem score OU com score.unknown==1
+    -- gera um laudo com o estado UNKNOWN (não 404). Só ids inválidos/ausentes
+    -- retornam 400/404.
     local score = risk_precompute.get(property_id)
     if not score then
-        ctx:error(404, "score not found for property")
+        -- Sem score pré-calculado: monta um contexto com estado UNKNOWN.
+        local context = build_report_context(property_id)
+        context.score = context.score or {
+            score = 0,
+            level = "unknown",
+            recommendation = "Risco indeterminado — não foi possível vincular a propriedade a um CAR válido / evidência insuficiente.",
+            computed_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+            pillars = { severity = 0, legality = 0, evidence = 0 },
+            confidence = 0,
+            unknown = 1,
+        }
+        local report_id = _M.spawn_report(property_id, cjson.encode(context))
+        if not report_id then
+            ctx:error(500, "failed to start report render")
+            return
+        end
+        ctx:json(202, { report_id = report_id, status = "running" })
         return
     end
 
@@ -357,6 +380,9 @@ function _M.get_report(ctx)
         level = score.level,
         recommendation = score.recommendation,
         computed_at = score.computed_at,
+        pillars = score.pillars,
+        confidence = score.confidence,
+        unknown = score.unknown,
     }
     if #context.factors == 0 then
         context.factors = score.factors

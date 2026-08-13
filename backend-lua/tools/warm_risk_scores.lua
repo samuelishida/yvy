@@ -30,6 +30,8 @@ local risk_precompute = require("app.lookups.risk_precompute")
 local mapbiomas  = require("app.lookups.mapbiomas_lookup")
 local embargo    = require("app.lookups.embargo_lookup")
 local area_efetiva = require("app.lookups.area_efetiva_lookup")
+local car_protected = require("app.lookups.car_protected_overlap")
+local sinaflor   = require("app.lookups.sinaflor_lookup")
 
 local _M = {}
 -- Testes setam _skip_redis_invalidation=true para não varrer o namespace
@@ -38,12 +40,38 @@ _M._skip_redis_invalidation = false
 
 local BULK_CHUNK = 500
 
+-- Normaliza uma data "YYYY-MM-DD" estrita. Retorna a string se válida, senão
+-- nil. O schema MapBiomas permite data_deteccao NULL; sem uma data válida não
+-- há janela de autorização Sinaflor para casar (neutro).
+local function normalize_date(s)
+    if type(s) ~= "string" then return nil end
+    local y, m, d = s:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)$")
+    if not y then return nil end
+    return string.format("%s-%s-%s", y, m, d)
+end
+
+-- Data de detecção do alerta mais recente (para casar a autorização Sinaflor).
+-- Usa data_deteccao (string completa) — o inteiro ano_det (ex: 2026) falharia
+-- a comparação lexicográfica de janela. Retorna nil se não houver alerta ou
+-- data válida.
+local function latest_alert_date(alerts)
+    if type(alerts) ~= "table" or #alerts == 0 then return nil end
+    -- get_alerts_by_car ordena por ano_det DESC; o primeiro é o mais recente.
+    for _, a in ipairs(alerts) do
+        local d = normalize_date(a.data_deteccao)
+        if d then return d end
+    end
+    return nil
+end
+
 -- Constrói o ctx de score para uma propriedade. O batch (Inc 3) e o monitor
 -- (Inc 6) preenchem o ctx com dados reais de MapBiomas/CAR. Para o embargo
 -- ter efeito, `build_ctx` consulta `mapbiomas.get_alerts_by_car` (senão
 -- `recent_alerts` fica nil e o score sai 0 com evidence_gap=1 — inútil) e
 -- `embargo.has_active_embargo` (Inc 2). O fator `deforestation` usa
--- `area_efetiva_ha` (Inc 3) quando disponível.
+-- `area_efetiva_ha` (Inc 3) quando disponível. Inc 3: alimenta
+-- `protected_overlap` (UC/TI) e `sinaflor_authorized`/`sinaflor_checked`
+-- (autorização ASV/AUTESP) para tornar o pilar Legality real em produção.
 local function build_ctx(property)
     local ctx = {
         deforestation = nil,
@@ -53,18 +81,40 @@ local function build_ctx(property)
         fires = nil,
         recent_alerts = nil,
         area_efetiva_ha = nil,
+        sinaflor_checked = false,
+        sinaflor_authorized = false,
     }
     if property.cod_imovel and property.cod_imovel ~= "" then
-        local alerts = mapbiomas.get_alerts_by_car(property.cod_imovel)
+        local cod = property.cod_imovel
+        local alerts = mapbiomas.get_alerts_by_car(cod)
         if #alerts > 0 then
             ctx.recent_alerts = alerts
         end
-        if embargo.has_active_embargo(property.cod_imovel) then
+        if embargo.has_active_embargo(cod) then
             ctx.embargo = 1
         end
-        local sum = area_efetiva.sum_by_car(property.cod_imovel)
+        local sum = area_efetiva.sum_by_car(cod)
         if sum > 0 then
             ctx.area_efetiva_ha = sum
+        end
+        -- Sobreposição UC/TI: pré-cálculo car_protected_overlap. Ausente
+        -- (sem precompute) → nil (neutro).
+        local prot = car_protected.get(cod)
+        if prot then
+            ctx.protected_overlap = math.min(1, math.max(0, (prot.max_pct or 0) / 100))
+        end
+        -- Sinaflor: autorização vigente na data do alerta mais recente
+        -- de-risca o desmatamento. Só alimenta quando o DB está carregado e
+        -- há uma data válida para casar; ausência é neutra (nunca penaliza).
+        if sinaflor.is_loaded() then
+            ctx.sinaflor_checked = true
+            local acq_date = latest_alert_date(alerts)
+            if acq_date then
+                local auth = sinaflor.authorized({ id = cod }, acq_date)
+                if auth then
+                    ctx.sinaflor_authorized = true
+                end
+            end
         end
     end
     return ctx
@@ -117,10 +167,12 @@ function _M.run_batch(all, limit)
     end
 
     -- Carrega os lookups (DBs dedicados) antes de recomputar. Sem o load, os
-    -- lookups retornam vazio e embargo/área efetiva nunca são alimentados.
+    -- lookups retornam vazio e embargo/área efetiva/protected/sinaflor nunca
+    -- são alimentados. car_protected.get abre a conexão lazy (sem load).
     mapbiomas.load_mapbiomas()
     embargo.load_embargo()
     area_efetiva.load_area_efetiva()
+    sinaflor.load_sinaflor()
 
     local rows = {}
     local total = 0
@@ -135,6 +187,11 @@ function _M.run_batch(all, limit)
             level = result.level,
             recommendation = result.recommendation,
             factors = result.factors,
+            pillars = result.pillars,
+            confidence = result.confidence,
+            coverage = result.coverage,
+            evidence_gap = result.evidence_gap,
+            unknown = result.unknown,
             version_key = version_key,
             computed_at = result.computed_at,
         }

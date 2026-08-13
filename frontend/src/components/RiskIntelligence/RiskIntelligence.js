@@ -12,6 +12,7 @@ const LEVEL_CLASS = {
   alto: 'risk-badge risk-badge--alto',
   medio: 'risk-badge risk-badge--medio',
   baixo: 'risk-badge risk-badge--baixo',
+  unknown: 'risk-badge risk-badge--unknown',
 };
 
 function ScoreBadge({ level, score }) {
@@ -20,6 +21,35 @@ function ScoreBadge({ level, score }) {
   return (
     <span className={cls} title={t(`risk.level${level[0].toUpperCase()}${level.slice(1)}`)}>
       {score}
+    </span>
+  );
+}
+
+// Pillar bars (Severity / Legality / Evidence) + Confidence %. Nil pillars
+// render as 0 (partial evidence) gracefully.
+function PillarBars({ pillars }) {
+  const { t } = useI18n();
+  if (!pillars) return <span className="risk-table__pillars risk-table__pillars--empty">—</span>;
+  const items = [
+    { key: 'severity', label: t('risk.pillarSeverity') },
+    { key: 'legality', label: t('risk.pillarLegality') },
+    { key: 'evidence', label: t('risk.pillarEvidence') },
+  ];
+  return (
+    <span className="risk-table__pillars">
+      {items.map((it) => {
+        const val = pillars[it.key] != null ? pillars[it.key] : 0;
+        const pct = Math.round(val * 100);
+        return (
+          <span key={it.key} className="risk-table__pillar" title={`${it.label}: ${pct}%`}>
+            <span className="risk-table__pillar-label">{it.label}</span>
+            <span className="risk-table__pillar-bar">
+              <span className="risk-table__pillar-fill" style={{ width: `${pct}%` }} />
+            </span>
+            <span className="risk-table__pillar-val">{pct}%</span>
+          </span>
+        );
+      })}
     </span>
   );
 }
@@ -221,6 +251,17 @@ function ResultsTable({ batchId }) {
     );
   }
 
+  // Default sort: UNKNOWN rows rank last; among same-score rows, higher
+  // confidence ranks higher. `confidence` may be undefined on legacy payloads
+  // → treat as 0 so legacy rows sink below scored rows.
+  const sorted = [...results].sort((a, b) => {
+    const aU = a.unknown ? 1 : 0;
+    const bU = b.unknown ? 1 : 0;
+    if (aU !== bU) return aU - bU;
+    if ((b.score || 0) !== (a.score || 0)) return (b.score || 0) - (a.score || 0);
+    return (b.confidence || 0) - (a.confidence || 0);
+  });
+
   return (
     <div className="risk-results">
       <h2 className="risk-results__title">
@@ -233,12 +274,14 @@ function ResultsTable({ batchId }) {
             <th>{t('risk.areaEfetiva')}</th>
             <th>{t('risk.score')}</th>
             <th>{t('risk.level')}</th>
+            <th>{t('risk.confidence')}</th>
+            <th>{t('risk.pillars')}</th>
             <th>{t('risk.recommendation')}</th>
             <th>{t('risk.downloadPdf')}</th>
           </tr>
         </thead>
         <tbody>
-          {results.map((r) => (
+          {sorted.map((r) => (
             <tr key={r.property_id}>
               <td>{r.nome || r.property_id}</td>
               <td className="risk-table__area">
@@ -246,6 +289,10 @@ function ResultsTable({ batchId }) {
               </td>
               <td><ScoreBadge level={r.level} score={r.score} /></td>
               <td>{t(`risk.level${r.level[0].toUpperCase()}${r.level.slice(1)}`)}</td>
+              <td className="risk-table__conf">
+                {r.confidence != null ? `${r.confidence}%` : '—'}
+              </td>
+              <td><PillarBars pillars={r.pillars} /></td>
               <td className="risk-table__rec">{r.recommendation}</td>
               <td>
                 <PdfButton propertyId={r.property_id} />

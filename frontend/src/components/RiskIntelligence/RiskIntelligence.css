@@ -202,6 +202,64 @@
   color: #fff;
 }
 
+/* UNKNOWN: cinza/neutro — NUNCA verde (não pode ler como risco baixo). */
+.risk-badge--unknown {
+  background: var(--ink-muted);
+  color: #fff;
+}
+
+.risk-table__conf {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.risk-table__pillars {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 120px;
+}
+
+.risk-table__pillars--empty {
+  color: var(--ink-muted);
+}
+
+.risk-table__pillar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.risk-table__pillar-label {
+  color: var(--ink-muted);
+  width: 52px;
+  white-space: nowrap;
+}
+
+.risk-table__pillar-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--surface-300);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.risk-table__pillar-fill {
+  display: block;
+  height: 100%;
+  background: var(--signal);
+  border-radius: 9999px;
+}
+
+.risk-table__pillar-val {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  width: 30px;
+  text-align: right;
+}
+
 .risk-alerts {
   background: var(--surface-100);
   border: 1px solid var(--border);

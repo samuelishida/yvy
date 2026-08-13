@@ -61,6 +61,23 @@ function _M.ensure_schema(conn)
             last_alert_at TEXT
         );
     ]])
+    -- Migração aditiva (common-mistake #5): adiciona as colunas do novo modelo
+    -- de score (level/confidence/unknown) se ainda não existirem. Guardado por
+    -- PRAGMA table_info para ser idempotente em DBs já migrados.
+    local cols = {}
+    for row in conn:nrows("PRAGMA table_info(suppliers)") do
+        cols[row.name] = true
+    end
+    local additions = {
+        { "last_level", "TEXT" },
+        { "last_confidence", "INTEGER" },
+        { "last_unknown", "INTEGER" },
+    }
+    for _, a in ipairs(additions) do
+        if not cols[a[1]] then
+            conn:exec("ALTER TABLE suppliers ADD COLUMN " .. a[1] .. " " .. a[2])
+        end
+    end
 end
 
 local function read_conn_open()
@@ -90,6 +107,9 @@ function _M.get_suppliers()
             webhook_url = row.webhook_url,
             status = row.status,
             last_score = tonumber(row.last_score),
+            last_level = row.last_level,
+            last_confidence = tonumber(row.last_confidence),
+            last_unknown = tonumber(row.last_unknown),
             last_alert_at = row.last_alert_at,
         }
     end
@@ -118,6 +138,9 @@ function _M.get_supplier(cnpj)
         webhook_url = row.webhook_url,
         status = row.status,
         last_score = tonumber(row.last_score),
+        last_level = row.last_level,
+        last_confidence = tonumber(row.last_confidence),
+        last_unknown = tonumber(row.last_unknown),
         last_alert_at = row.last_alert_at,
     }
 end
@@ -168,6 +191,35 @@ function _M.update_status(cnpj, status, last_score, last_alert_at)
     stmt:bind(2, last_score or nil)
     stmt:bind(3, last_alert_at or nil)
     stmt:bind(4, tostring(cnpj or ""):gsub("%D", ""))
+    local rc = stmt:step()
+    stmt:finalize()
+    return rc == sqlite3.DONE
+end
+
+-- Persiste o resultado completo de score de um fornecedor (novo modelo de 3
+-- pilares). Grava last_score + last_level + last_confidence + last_unknown +
+-- updated_at atomicamente. `score_result` é o retorno de risk_score.score
+-- (ou um subset com level/confidence/unknown). Mantém compatibilidade com
+-- chamadores legados que passam apenas last_score via update_status.
+function _M.record_score(cnpj, score_result)
+    local conn = ensure_conn()
+    if not conn then return false end
+    local stmt = conn:prepare([[
+        UPDATE suppliers SET
+            last_score=?,
+            last_level=?,
+            last_confidence=?,
+            last_unknown=?,
+            last_alert_at=?
+        WHERE cnpj=?
+    ]])
+    if not stmt then return false end
+    stmt:bind(1, score_result.score or 0)
+    stmt:bind(2, score_result.level or "baixo")
+    stmt:bind(3, score_result.confidence or 0)
+    stmt:bind(4, score_result.unknown or 0)
+    stmt:bind(5, os.date("!%Y-%m-%dT%H:%M:%SZ"))
+    stmt:bind(6, tostring(cnpj or ""):gsub("%D", ""))
     local rc = stmt:step()
     stmt:finalize()
     return rc == sqlite3.DONE

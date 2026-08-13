@@ -42,11 +42,13 @@ LEVEL_COLORS = {
     "alto": colors.HexColor("#C62828"),
     "medio": colors.HexColor("#E65100"),
     "baixo": colors.HexColor("#00875A"),
+    "unknown": colors.HexColor("#757575"),
 }
 LEVEL_BG = {
     "alto": colors.HexColor("#FFEBEE"),
     "medio": colors.HexColor("#FFF3E0"),
     "baixo": colors.HexColor("#E8F5E9"),
+    "unknown": colors.HexColor("#EEEEEE"),
 }
 
 
@@ -179,12 +181,17 @@ def render_report(context, out_path):
     story.append(Spacer(1, 4 * mm))
 
     score_val = int(score.get("score", 0))
+    confidence = int(score.get("confidence", 0))
+    unknown = int(score.get("unknown", 0))
     level_bg = LEVEL_BG.get(level, SURFACE)
+    # Score + Confidence side-by-side: um 97 com 40% de confiança não pode ser
+    # confundido com um 97 com 95%.
     score_table = Table(
         [[Paragraph("SCORE DE RISCO", st["h2"]),
           Paragraph("<font color='#%s' size='28'><b>%d</b>/100</font>"
-                    % (level_color.hexval()[2:], score_val), st["body"])]],
-        colWidths=[90 * mm, 60 * mm],
+                    % (level_color.hexval()[2:], score_val), st["body"]),
+          Paragraph("Confiança: <b>%d%%</b>" % confidence, st["body"])]],
+        colWidths=[60 * mm, 50 * mm, 40 * mm],
     )
     score_table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), level_bg),
@@ -200,6 +207,32 @@ def render_report(context, out_path):
     story.append(Paragraph("Recomendação: %s" % score.get("recommendation", ""),
                            st["body"]))
     story.append(Spacer(1, 4 * mm))
+
+    # ── Pillar breakdown (Severity / Legality / Evidence) ────────────────────
+    story.append(Paragraph("Pilares de risco", st["h2"]))
+    pillars = score.get("pillars") or {}
+    pillar_rows = [["Pilar", "Valor"]]
+    pillar_labels = [
+        ("severity", "Severidade"),
+        ("legality", "Legalidade"),
+        ("evidence", "Evidência"),
+    ]
+    for key, label in pillar_labels:
+        val = pillars.get(key)
+        if val is None:
+            val = 0
+        pct = int(round(float(val) * 100))
+        bar = "█" * (pct // 10) + "░" * (10 - pct // 10)
+        pillar_rows.append([label, "%s %d%%" % (bar, pct)])
+    story.append(_section_table(pillar_rows, [50 * mm, 100 * mm]))
+    story.append(Spacer(1, 3 * mm))
+
+    if unknown == 1:
+        story.append(Paragraph(
+            "Estado: <b>UNKNOWN / EVIDENCE_GAP</b> — não foi possível vincular "
+            "a propriedade a um CAR válido ou a evidência é insuficiente. "
+            "Aprofundar due diligence antes de decisão.", st["body"]))
+        story.append(Spacer(1, 3 * mm))
 
     # ── P2 Executive summary ─────────────────────────────────────────────────
     story.append(Paragraph("Resumo executivo", st["h2"]))
