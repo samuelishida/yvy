@@ -205,6 +205,10 @@ backend-lua/data/car/
 backend-lua/data/sinaflor/
 # MapBiomas alerta DB (237M) — baixado por download_mapbiomas_alerta.py
 backend-lua/data/mapbiomas/
+# Embargo IBAMA DB — gerado offline por download_embargo.py
+backend-lua/data/embargo/
+# Area efetiva DB + version marker — gerado offline por compute_area_efetiva.py
+backend-lua/data/area_efetiva/
 # Diretório aninhado acidental (backend-lua/backend-lua/) — artefato de runtime
 backend-lua/backend-lua/
 # CSV de teste local de fornecedores
