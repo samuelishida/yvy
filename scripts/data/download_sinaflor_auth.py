@@ -301,7 +301,11 @@ def classify_point(car_conn, lon, lat):
             geom = shape(json.loads(g))
         except Exception:
             continue
-        if geom.contains(Point(lon, lat)):
+        try:
+            contains = geom.contains(Point(lon, lat))
+        except Exception:  # noqa: BLE001 - invalid geometry → not contained
+            contains = False
+        if contains:
             area = float(r[1] or 0)
             if area > best_area:
                 best_area = area

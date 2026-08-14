@@ -66,6 +66,39 @@ def _decode(geom_json):
         return None
 
 
+def _safe_contains(geom, point):
+    """`geom.contains(point)` robust to invalid geometries.
+
+    A malformed CAR polygon can raise `TopologyException` from Shapely's
+    `contains`/`intersects`. Treat that as "not contained" (skip the pair)
+    so one bad CAR can't abort the whole daily run (common-mistake #6).
+    """
+    try:
+        return geom.contains(point)
+    except Exception:  # noqa: BLE001 - invalid geometry → not contained
+        return False
+
+
+def _safe_intersects(a, b):
+    """`a.intersects(b)` robust to invalid geometries (see _safe_contains)."""
+    try:
+        return a.intersects(b)
+    except Exception:  # noqa: BLE001 - invalid geometry → no intersection
+        return False
+
+
+def _safe_intersection(a, b):
+    """`a.intersection(b)` robust to invalid geometries.
+
+    Returns the intersection geometry, or None on a TopologyException so the
+    caller can skip the pair instead of aborting the whole run.
+    """
+    try:
+        return a.intersection(b)
+    except Exception:  # noqa: BLE001 - invalid geometry → no intersection
+        return None
+
+
 def load_deter_recent(db_path: str, days: int):
     """Recent DETER polygons as a GeoDataFrame (view_date, classname, uf, ...)."""
     cutoff = (date.today() - timedelta(days=days)).isoformat()
@@ -169,7 +202,7 @@ def cross_fire_data(car_geom, deter_date, fires_conn):
     count = 0
     dates = []
     for lat, lon, ad in rows:
-        if car_geom.contains(Point(lon, lat)):
+        if _safe_contains(car_geom, Point(lon, lat)):
             count += 1
             dates.append(ad)
     return count, sorted(dates)
@@ -241,9 +274,11 @@ def run_pass1(deter_gdf, car_db_path, fires_db_path) -> list:
             continue
         car_ea = to_equal_area(car_gdf)
         for (_, car), (_, car_ea_row) in zip(car_gdf.iterrows(), car_ea.iterrows()):
-            if not det_ea_row.geometry.intersects(car_ea_row.geometry):
+            if not _safe_intersects(det_ea_row.geometry, car_ea_row.geometry):
                 continue
-            inter = det_ea_row.geometry.intersection(car_ea_row.geometry)
+            inter = _safe_intersection(det_ea_row.geometry, car_ea_row.geometry)
+            if inter is None or inter.is_empty:
+                continue
             area_ha = inter.area / 10000.0
             key = (car["cod_imovel"], det["classname"], det["view_date"])
             entry = acc.get(key)
@@ -296,7 +331,7 @@ def run_pass2(db_path, car_db_path, days) -> list:
         if car_gdf is None:
             continue
         for _, car in car_gdf.iterrows():
-            if car.geometry.contains(Point(lon, lat)):
+            if _safe_contains(car.geometry, Point(lon, lat)):
                 prop = fire_by_prop.setdefault(car["cod_imovel"], {"uf": car.get("uf"), "municipio": car.get("municipio"), "fires": []})
                 prop["fires"].append((lat, lon, f["acq_date"]))
                 prop_geom.setdefault(car["cod_imovel"], car.geometry)
@@ -311,7 +346,7 @@ def run_pass2(db_path, car_db_path, days) -> list:
             hits = deter_tree.query(geom)
             skip = False
             for idx in hits.tolist():
-                if geom.intersects(deter_gdf.geometry.iloc[idx]):
+                if _safe_intersects(geom, deter_gdf.geometry.iloc[idx]):
                     skip = True
                     break
             if skip:

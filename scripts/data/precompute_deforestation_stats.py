@@ -113,7 +113,11 @@ def aggregate(kind: str, ter_gdf, points):
         hits = list(sindex.intersection((p["lon"], p["lat"], p["lon"], p["lat"])))
         for idx in hits:
             geom = ter_gdf.geometry.iloc[idx]
-            if geom.contains((p["lon"], p["lat"])):
+            try:
+                contains = geom.contains((p["lon"], p["lat"]))
+            except Exception:  # noqa: BLE001 - invalid geometry → not contained
+                contains = False
+            if contains:
                 key = ter_gdf["key"].iloc[idx]
                 per_year[p["year"]][key] += PIXEL_KM2
                 break  # first containing territory (ANY containment, edge case)
