@@ -110,3 +110,26 @@ the lock for the whole TTL and the weekly/timer trigger silently no-ops
 command but its success is NOT observable from the parent ("always 0" for
 `cmd &`) — verify via the subprocess's Redis writes/logs, not the return
 code. Same class of bug as common-mistakes §5 (marker-after-success).
+
+## 10. Offline importers that DELETE before they INSERT: resolve paths in PRA + gate before the swap
+
+`tools/import_car.lua` (2026-08 incident: click-in-property UI regressed to
+`{"imovel":null}` for a week): (a) `debug.getinfo(1).source` is RELATIVE
+(`"tools/import_car.lua"`) when the tool is run as `lua5.1 tools/foo.lua` —
+deriving `data_dir` from it pointed at a nonexistent `tools/data/car/` while
+`car_db_path()` (relative) still hit the REAL car.db: every per-UF `DELETE`
+emptied the DB and every `import_file` silently returned 0. Rule: resolve
+the script path to PRA (prefix `os.getenv('PWD')` when relative) and print
+/ assert the resolved paths when a destructive step follows; (b) any batch
+pipeline doing DELETE-then-INSERT in place must GATE after the import
+(`SELECT COUNT(*) > 0` + cross-table consistency, e.g. `car_rtree ==
+car_data`) and ABORT (exit 1) before distribution — `car_weekly.sh` used
+to `set -e` past a 0-row import and scp'd the empty DB to prod; a
+pre-import snapshot + restore on gate failure makes the gate reversible;
+(c) a DELETE that needs a subquery on the SAME table being deleted captures
+the ids BEFORE (`SELECT id ... ; DELETE data ; DELETE rtree WHERE id IN
+(captured ids)`) — the original `DELETE FROM car_rtree WHERE id IN (SELECT
+id FROM car_data ...)` ran after the data delete and never matched, leaving
+8.4M orphan rtree rows that made point-lookups return null even though tiles
+still rendered (stale spatial index + empty payload = the worst possible
+combination: UI looks fine, every click comes back empty).

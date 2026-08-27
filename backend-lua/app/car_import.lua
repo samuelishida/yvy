@@ -11,9 +11,20 @@ local _M = {}
 
 function _M.car_db_path()
     local custom = env.get("CAR_DB_PATH")
-    if custom and custom ~= "" then return custom end
-    local backend = (debug.getinfo(1, "S").source or ""):match("@(.*[/\\])app[/\\]")
-    return (backend or "") .. "data/car/car.db"
+    if custom and custom ~= "" then
+        -- normaliza pra PRA real: caminha relativo + PWD presente → absoluto.
+        -- Bug 2026-08: resolve pra "backend/data/car/car.db" (inexistente)
+        -- era o caminho do projeto CRLF/Windows; aqui a mesma ambiguidade
+        -- pode apontar pro banco errado dependendo do cwd de quem chama.
+        if not custom:match("^/") then
+            local pwd = os.getenv("PWD")
+            if pwd and pwd ~= "" and pwd:match("^/") then custom = pwd .. "/" .. custom end
+        end
+        return custom
+    end
+    local backend = (debug.getinfo(1, "S").source or ""):gsub("^@", ""):match("^(.*[/\\])app[/\\]")
+    local base = backend or ""
+    return base .. "data/car/car.db"
 end
 
 function _M.round(n, decimals)
@@ -110,6 +121,27 @@ function _M.delete_car_protected_for_uf(conn, uf)
     stmt:bind(1, uf)
     stmt:step()
     stmt:finalize()
+end
+
+-- Remove do rtree por lista de ids já capturada (NÃO via subquery em car_data,
+-- que já foi DELETE — ver bug 2026-08 dos 8.4M fantasmas). Batch de 50k ids
+-- por statement: o limite de variáveis (999 em SQLite antigo / 32766 moderno)
+-- estouraria com UFs grandes (BA ~1.3M).
+function _M.delete_rtree_by_ids(conn, ids)
+    local BATCH = 50000
+    for start = 1, #ids, BATCH do
+        local stop = math.min(start + BATCH - 1, #ids)
+        local placeholders = {}
+        for i = start, stop do placeholders[#placeholders + 1] = "?" end
+        local sql = "DELETE FROM car_rtree WHERE id IN (" .. table.concat(placeholders, ",") .. ")"
+        local stmt = conn:prepare(sql)
+        if not stmt then return end
+        for k = 1, stop - start + 1 do
+            stmt:bind(k, ids[start + k - 1])
+        end
+        stmt:step()
+        stmt:finalize()
+    end
 end
 
 -- Tabela de pré-cálculo CAR × PRODES (plan: precompute-car-prodes).

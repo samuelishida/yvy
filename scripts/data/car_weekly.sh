@@ -89,7 +89,37 @@ fi
 run "$PY" "$PROJECT_DIR/scripts/data/download_car_wfs.py" --all
 
 # ── 5. Import → car.db (WAL, mutated in place) ─────────────────────────────
-( cd "$BACKEND_DIR" && run lua5.1 tools/import_car.lua )
+#   (a) snapshot pré-import → restore em falha
+#   (b) exit != 0 do import ABORTA a chain (incidente 2026-08: import 0-
+#       imóveis silencioso distribuiu car.db VAZIO p/ prod — clique regrediu
+#       p/ {imovel:null}, car_rtree com 8.4M linhas fantasmas)
+#   (c) gate pós-import: car_data > 0 E car_rtree == car_data (else restore)
+if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[dry-run] import car.db (guarded: snapshot + car_data>0 + rtree sync)"
+else
+    cp --sparse=always "$CAR_DB" "$CAR_DB.pre-import" 2>/dev/null || true
+    ( cd "$BACKEND_DIR" && lua5.1 tools/import_car.lua ) || {
+        echo "ERROR: import do car.db falhou — restaurando snapshot e abortando" >&2
+        [ -f "$CAR_DB.pre-import" ] && mv -f "$CAR_DB.pre-import" "$CAR_DB"
+        exit 1
+    }
+    CAR_GATE_DB="$CAR_DB" lua5.1 -e '
+        local arg = { [1] = os.getenv("CAR_GATE_DB") }
+        local sqlite3 = require("lsqlite3")
+        local conn = sqlite3.open(arg[1])
+        local n, rc = 0, -1
+        for r in conn:nrows("SELECT COUNT(*) c FROM car_data") do n = r.c end
+        for r in conn:nrows("SELECT COUNT(*) c FROM car_rtree") do rc = r.c end
+        io.write(string.format("gate: car_data=%d car_rtree=%d\n", n, rc))
+        if n == 0 then error("car_data VAZIO pós-import — nada p/ deploy") end
+        if rc ~= n then error("car_rtree(" .. rc .. ") != car_data(" .. n .. ") — rtree desincronizado") end
+    ' "$CAR_DB" || {
+        echo "ERROR: post-import gate falhou — restaurando snapshot e abortando (sem deploy)" >&2
+        [ -f "$CAR_DB.pre-import" ] && mv -f "$CAR_DB.pre-import" "$CAR_DB"
+        exit 1
+    }
+    rm -f "$CAR_DB.pre-import"
+fi
 
 # ── 6. Warm protected + prodes (parallel per-UF via clone worker) ──────────
 # The clone worker clones car.db per-UF, warms prodes in parallel, merges back,
