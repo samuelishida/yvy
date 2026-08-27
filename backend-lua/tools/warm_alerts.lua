@@ -30,12 +30,20 @@ env.load_dotenv(backend_dir .. ".env")
 
 local db     = require("app.db")
 local redis  = require("app.redis")
+local biome  = require("app.lookups.biome_lookup")
 local ti     = require("app.lookups.indigenous_lands_lookup")
 local uc     = require("app.lookups.conservation_units_lookup")
 local alerts = require("app.routes.alerts")
 local cjson  = require("cjson")
 
 db.init_db()
+biome.load_biomes()   -- SEM ISSO: classify_point = nil p/ todo fogo → meta vira
+                      -- a região ("Brasil") e o filtro isOutOfBrazil do frontend
+                      -- (whitelist de nomes de bioma) descarta TODAS as alertas
+                      -- (card mostrava N, lista "Sem alertas ativos"). No server
+                      -- inline o prewarm de init.lua fazia esse load; no
+                      -- subprocess (este arquivo, plan tile-corruption-biome-speed)
+                      -- ninguém tinha.
 ti.load_indigenous_lands()
 uc.load_conservation_units()
 

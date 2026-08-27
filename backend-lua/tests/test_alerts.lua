@@ -44,6 +44,43 @@ describe("alerts", function()
             assert.is_true(type(result.count) == "number")
         end)
 
+        it("sets out_of_brazil on EVERY alert from its center (regression: card N x lista vazia)", function()
+            -- Horario dentro das janelas (cluster 24h / night 12h): hoje 12:00
+            -- UTC. days_ago(1) em meio-dia UTC cairia FORA da janela de 24h e
+            -- a assercao viraria vacua (nenhum alerta gerado).
+            local today = os.date("!%Y-%m-%d")
+            local function fires_at(lat, lon)
+                local out = {}
+                for i = 1, 4 do
+                    out[i] = {
+                        lat = lat + (i * 0.01), lon = lon + (i * 0.01),
+                        confidence = "high", acq_date = today, acq_time = "1200",
+                    }
+                end
+                return out
+            end
+            -- Cluster in-bbox (4 focos high conf, <15km): tem que nascer.
+            local result = alerts.generate_all_alerts(fires_at(-10.0, -55.0), nil, "demo")
+            local cluster_in = 0
+            for _, a in ipairs(result.alerts) do
+                assert.is_true(a.out_of_brazil == false,
+                    "alerta em bbox BR sem flag errada: " .. cjson.encode(a))
+                if a.type == "cluster" then cluster_in = cluster_in + 1 end
+            end
+            assert.is_true(cluster_in > 0, "cluster in-box na janela p/ nao deixar o teste vazio")
+            -- Cluster fora do Brasil (4 focos em La Pampa/AR, lat < -34):
+            -- precisa nascer com a flag true — se existir alertas, todas
+            -- com a flag certa; se nenhum nascer, o cluster out de guarda a vacuidade.
+            local result_out = alerts.generate_all_alerts(fires_at(-35.0, -62.0), nil, "demo")
+            local cluster_out = 0
+            for _, a in ipairs(result_out.alerts) do
+                assert.is_true(a.out_of_brazil == true,
+                    "alerta fora da bbox BR precisa da flag: " .. cjson.encode(a))
+                if a.type == "cluster" then cluster_out = cluster_out + 1 end
+            end
+            assert.is_true(cluster_out > 0, "cluster out-of-box na janela p/ cobrir a flag true")
+        end)
+
         it("caps alerts at MAX_ALERTS (20)", function()
             -- Generate many fires that would create many alerts
             local fires = {}

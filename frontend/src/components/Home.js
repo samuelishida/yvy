@@ -17,8 +17,18 @@ let _mapMountCounter = 0;
 
 const BRAZIL_BIOMES = new Set(['Amazônia', 'Cerrado', 'Mata Atlântica', 'Caatinga', 'Pantanal', 'Pampa']);
 const BRAZIL_BIOMES_ARR = Array.from(BRAZIL_BIOMES);
-const isOutOfBrazil = (a) => a.out_of_brazil === true ||
-  (!BRAZIL_BIOMES.has(a.meta) && !BRAZIL_BIOMES_ARR.some(b => a.meta?.startsWith(b)));
+// O backend (routes/alerts.lua generate_all_alerts) normaliza out_of_brazil
+// pelo center de TODAS as alertas — é a fonte da verdade e garante card ===
+// lista. A whitelist de bioma abaixo é só fallback para payloads antigos já
+// em cache (alerts:all:stale do /api/alerts sem a flag), preservando o
+// comportamento anterior (meta "Brasil" era descartada). Sem o fallback:
+// (a) tipos sem a flag (TI/UC/prodes/DETER/PM2.5) somitavam da lista;
+// (b) quando o warm de alertas rodou sem biomas, meta virou "Brasil" p/ tudo
+// e o card mostrava N mas a lista "Sem alertas ativos".
+const isOutOfBrazil = (a) =>
+  a.out_of_brazil === undefined
+    ? (!BRAZIL_BIOMES.has(a.meta) && !BRAZIL_BIOMES_ARR.some(b => a.meta?.startsWith(b)))
+    : a.out_of_brazil === true;
 
 const BIOME_HIGHLIGHT_COLORS = {
   'Amazônia':       '#ef4444',
@@ -688,22 +698,26 @@ const FloatPanel = React.memo(function FloatPanel({
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('biomes');
   const { t } = useI18n();
-  const critCount = alerts.filter(a => a.tick === 'crit').length;
-  const warnCount = alerts.filter(a => a.tick === 'warn').length;
+  // Card, aba e lista mostram o MESMO conjunto (alertas do Brasil) — antes o
+  // card usava alerts.length (total, incluindo fora do Brasil e sem meta)
+  // e a lista a versão filtrada → "821 no card, Sem alertas ativos ao clicar".
+  const brazilAlerts = useMemo(() => alerts.filter(a => !isOutOfBrazil(a)), [alerts]);
+  const critCount = brazilAlerts.filter(a => a.tick === 'crit').length;
+  const warnCount = brazilAlerts.filter(a => a.tick === 'warn').length;
   const aqiVal = airQuality ? airQuality.aqi : 0;
   const aqiColor = aqiVal <= 50 ? '#4ade80' : aqiVal <= 100 ? '#fbbf24' : '#ef4444';
   const activeAlertRowRef = useRef(null);
 
   const sortedAlerts = useMemo(() => {
     const typePriority = { indigenous_land: 0, conservation_unit: 1, deter_protected: 2, cluster: 3, night_fire: 4, prodes: 5, pm25: 6 };
-    return alerts.filter(a => !isOutOfBrazil(a)).sort((a, b) => {
+    return [...brazilAlerts].sort((a, b) => {
       const pa = typePriority[a.type] ?? 9;
       const pb = typePriority[b.type] ?? 9;
       if (pa !== pb) return pa - pb;
       const tier = { crit: 0, warn: 1, info: 2 };
       return (tier[a.tick] ?? 9) - (tier[b.tick] ?? 9);
     });
-  }, [alerts]);
+  }, [brazilAlerts]);
 
   // Ensure the active alert row stays visible when the alerts tab is open.
   useEffect(() => {
@@ -738,7 +752,7 @@ const FloatPanel = React.memo(function FloatPanel({
   // Label para cada aba (mobile estende o conjunto com os ex-modais).
   const tabLabel = (k) => {
     switch (k) {
-      case 'alerts':   return `${t('home.tabAlerts')} (${alerts.length})`;
+      case 'alerts':   return `${t('home.tabAlerts')} (${brazilAlerts.length})`;
       case 'biomes':   return t('home.tabBiomes');
       case 'clima':    return t('home.tabClima');
       case 'overlays': return t('home.overlaysLegend');
@@ -752,7 +766,7 @@ const FloatPanel = React.memo(function FloatPanel({
     <div className={`float-panel${open ? ' float-panel--open' : ''}${isMobile ? ' float-panel--mobile' : ''}`}>
       <button className="fp-summary" onClick={toggleOpen} aria-expanded={open}>
         <div className="fp-hero">
-          <span className="fp-count">{loaded ? alerts.length.toLocaleString('pt-BR') : '—'}</span>
+          <span className="fp-count">{loaded ? brazilAlerts.length.toLocaleString('pt-BR') : '—'}</span>
           <span className="fp-unit">{t('home.panelAlertsUnit')}</span>
         </div>
         <div className="fp-right">

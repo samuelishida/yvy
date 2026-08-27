@@ -564,8 +564,23 @@ end
 function _M.generate_all_alerts(fires, deforestation_data, waqi_token)
     local all_alerts = {}
 
+    -- Sinal de filtragem do frontend: isOutOfBrazil (Home.js) descarta
+    -- out_of_brazil===true — mas só cluster/night_fire emitiam a flag e o
+    -- front desconfiava do resto pela whitelist de `meta` (frágil: meta
+    -- "Brasil" ou lookup de bioma vazio escondia alertas válidas; card
+    -- mostrava o total e a lista vazia). Normalizamos para 100% dos tipos
+    -- a partir do center — todos emitem center = {lat, lon} (cluster,
+    -- night_fire, TI, UC, prodes, pm25 e DETER protegido; DETER via
+    -- bbox_center em tools/deter_protected_alerts.lua). Herança sem center
+    -- → false (mantém a alerta, não dropar por ambiguidade).
     local function extend(list)
         for _, a in ipairs(list) do
+            local c = a.center
+            if type(c) == "table" and c[1] ~= nil and c[2] ~= nil then
+                a.out_of_brazil = not is_in_brazil_bbox(c[1], c[2])
+            else
+                a.out_of_brazil = false
+            end
             all_alerts[#all_alerts + 1] = a
         end
     end

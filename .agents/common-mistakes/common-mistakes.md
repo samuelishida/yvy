@@ -133,3 +133,36 @@ id FROM car_data ...)` ran after the data delete and never matched, leaving
 8.4M orphan rtree rows that made point-lookups return null even though tiles
 still rendered (stale spatial index + empty payload = the worst possible
 combination: UI looks fine, every click comes back empty).
+Variant found in the same month (alerts: card showed N, list "Sem alertas
+ativos"): `app/db.lua` resolved `yvy.db` via `first_with_existing_parent()`
+with RELATIVE candidates ordered for the repo-root cwd. A tool launched from
+`backend-lua/` matched candidate 1 `backend-lua/data/yvy.db` at the
+DIR level and `init_db`'s own `mkdir -p` materialized a mirror with an
+EMPTY `backend-lua/backend-lua/data/yvy.db` — `find_fires` = 0 rows and the
+warmer happily wrote a 0-alert payload over Redis's good one. Rule: when
+picking the DB, prefer candidates whose FILE already exists (`io.open`,
+prod absolute path first — immune to cwd); only fall back to parent-existing
+resolution for a pristine setup (first fallback dir created once).
+
+## 11. Card vs list count mismatch: one source of truth per dimension, normalized in ONE place
+
+Alerts regression (card showed 821, list said “Sem alertas ativos”): the
+card rendered `alerts.length` while the list rendered
+`alerts.filter(!isOutOfBrazil)` — and `isOutOfBrazil` inferred Brazil from
+the HUMAN-LABEL `meta` (whitelist of 6 biome names). Any code path that
+failed to classify the biome (the detached `warm_alerts.lua` never called
+`biome.load_biomes()`) made `meta = "Brasil"` for every alert → visible
+count 0 while the card still showed the total. Two rules:
+1. **Never derive a filter/flag from a display label.** A field like
+   `meta` ("Brasil", "Amazônia · X", "UC · nome") has as many producers as
+   there are alert types, and its values are copy, not data. The backend
+   already knew the truth — normalize `out_of_brazil` from
+   `center` in ONE place (`generate_all_alerts.extend`) so it covers
+   100% of types (cluster, night_fire, TI, UC, prodes, pm25, DETER — all emit
+   `center = {lat, lon}`), and let the UI trust the flag.
+2. **Card and list must count the SAME set** (`brazilAlerts` computed once,
+   reused for header, tab label, badges and rows). If a number shown to the
+   user differs from what they see after clicking, the invariant is broken
+   somewhere — fix the invariant, not the label. Keep the old meta-whitelist
+   only as a FALLBACK for pre-fix cached payloads (`out_of_brazil ===
+   undefined`), not as the primary signal.

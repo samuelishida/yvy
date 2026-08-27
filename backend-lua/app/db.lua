@@ -25,12 +25,37 @@ if configured_db_path and configured_db_path:match("backend[/\\]data[/\\]yvy%.db
     configured_db_path = nil
 end
 
-local DB_PATH = configured_db_path or env.first_with_existing_parent({
-    "backend-lua/data/yvy.db",
-    "data/yvy.db",
-    "../backend-lua/data/yvy.db",
-    "/opt/yvy/backend-lua/data/yvy.db",
-})
+-- Regressao 2026-08 (mesma classe da licao 10 do incidente CAR): com cwd em
+-- backend-lua/, o candidato RELATIVO "backend-lua/data/yvy.db" "vencia" a
+-- first_with_existing_parent porque o proprio init_db faz mkdir -p do dir —
+-- nascia um espelho VAZIO em backend-lua/backend-lua/data/yvy.db e qualquer
+-- ferramenta standalone (warm_alerts & cia) abria ele: find_fires = 0 rows,
+-- payload de 0 alertas escrito no Redis. A ordem anterior era p/ repo-root
+-- cwd, que nao cobre todos os launch paths. Fix: priorizar o arquivo que ja
+-- EXISTE (prod absoluto primeiro — imune ao cwd); s6 criar o dir do
+-- primeiro fallback quando nenhum existe (setup limpo).
+local function first_existing_file(candidates)
+    for _, candidate in ipairs(candidates or {}) do
+        local f = io.open(candidate, "rb")
+        if f then
+            f:close()
+            return candidate
+        end
+    end
+    return nil
+end
+
+local DB_PATH = configured_db_path
+    or first_existing_file({
+        "/opt/yvy/backend-lua/data/yvy.db",
+        "backend-lua/data/yvy.db",
+        "data/yvy.db",
+        "../backend-lua/data/yvy.db",
+    })
+    or env.first_with_existing_parent({
+        "data/yvy.db",
+        "backend-lua/data/yvy.db",
+    })
 local POOL_SIZE = 3  -- connections per nginx worker
 
 -- ── Schema ───────────────────────────────────────────────────────────────
