@@ -141,14 +141,12 @@ local function alerts_sync_loop()
                 age / 60, ALERTS_SYNC_INTERVAL / 60))
             copas.sleep(ALERTS_SYNC_INTERVAL - age)
         else
-            logger.info("Background alerts refresh starting")
-            pcall(function()
-                local fires = db.find_fires(-34.0, 5.5, -74.0, -34.0, 10000)
-                local result = alerts_mod.generate_all_alerts(fires, nil, os.getenv("WAQI_TOKEN"))
-                redis.set("alerts:all", cjson.encode(result), 1800)
-                redis.set("alerts:last_sync", os.date("!%Y-%m-%dT%H:%M:%SZ"), ALERTS_SYNC_INTERVAL * 2)
-                logger.info("Alerts cache refreshed: " .. result.count .. " alerts")
-            end)
+            -- Detached subprocess (tools/warm_alerts.lua): find_fires +
+            -- generate_all_alerts ≈ 0.8s congelava o loop copas no inline
+            -- (plan: tile-corruption-biome-speed, mesmo padrão de news/ti-
+            -- at-risk). O subprocesso escreve alerts:all + alerts:last_sync.
+            logger.info("Background alerts refresh starting (detached subprocess)")
+            alerts_mod.trigger_alert_refresh()
             copas.sleep(ALERTS_SYNC_INTERVAL)
         end
     end
@@ -236,15 +234,14 @@ local function state_backfill_loop()
 end
 
 local function biomes_prewarm_loop()
-    local biome_lookup = require("app.lookups.biome_lookup")
-    local MAX_RESULTS = tonumber(os.getenv("MAX_RESULTS_PER_REQUEST") or "10000")
+    local biomes_routes = require("app.routes.biomes")
+    -- Agregado SQL (~0.16s): o find_fires + classify_fires inline (~1.5s) que
+    -- existia aqui congelava o loop copas a cada 5min (plan: tile-corruption-
+    -- biome-speed). O shape do payload é o mesmo — compute_biomes_payload().
     copas.sleep(20)
     while true do
         pcall(function()
-            local fires = db.find_fires(-34.0, 5.5, -74.0, -34.0, MAX_RESULTS)
-            local result = biome_lookup.classify_fires(fires)
-            local last_sync = redis.get("fires:last_sync")
-            local body = cjson.encode({biomes = result, total_fires = #fires, last_sync = last_sync})
+            local body = biomes_routes.compute_biomes_payload()
             redis.set("biomes:all", body, BIOMES_PREWARM_INTERVAL + 60)
         end)
         copas.sleep(BIOMES_PREWARM_INTERVAL)

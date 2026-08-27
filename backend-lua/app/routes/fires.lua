@@ -550,8 +550,11 @@ end
 function _M.trigger_fire_classification(version)
     version = tonumber(version) or 0
 
+    -- TTL generoso (2h): uma reclassificação completa (188k+ focos × crossing
+    -- CAR/TI/UC/sinaflor) pode passar de 30min. O lock é liberado ao fim do
+    -- subprocesso (tools/classify_fires.lua); o TTL é só o backstop de crash.
     local lock_key = "fires:classify:lock"
-    if not redis.setnx(lock_key, "1", 1800) then
+    if not redis.setnx(lock_key, "1", 7200) then
         return false  -- another job is already in flight
     end
 

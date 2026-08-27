@@ -55,7 +55,15 @@ function _M.load_dotenv(path)
             if key then
                 value = value:gsub('^"', ""):gsub('"$', ""):gsub("^'", ""):gsub("'$", "")
                 value = value:match("^(.-)%s*#") or value
-                _M.set(key, trim(value))
+                -- Semântica padrão de dotenv: NÃO sobrescreve variáveis já
+                -- definidas no ambiente real (os.getenv). Sem isto, um
+                -- SQLITE_PATH legado errado no .env (ex: /opt/yvy/backend/
+                -- data/yvy.db) vence o export correto do run-lua.sh e o
+                -- backend resolve um caminho duplicado (backend-lua/
+                -- backend-lua/data/yvy.db) — servindo um DB velho/errado.
+                if raw_getenv(key) == nil then
+                    _M.set(key, trim(value))
+                end
             end
         end
     end

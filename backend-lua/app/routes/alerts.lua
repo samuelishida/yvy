@@ -11,6 +11,7 @@
 
 require("app.env")
 local db           = require("app.db")
+local redis        = require("app.redis")
 local biome_lookup = require("app.lookups.biome_lookup")
 local ti_lookup    = require("app.lookups.indigenous_lands_lookup")
 local uc_lookup    = require("app.lookups.conservation_units_lookup")
@@ -598,6 +599,38 @@ function _M.generate_all_alerts(fires, deforestation_data, waqi_token)
         count = #all_alerts,
         generated_at = os.date("!%Y-%m-%dT%H:%M:%SZ", now),
     }
+end
+
+-- Spawns a detached subprocess to recompute the alerts payload (plan:
+-- tile-corruption-biome-speed). generate_all_alerts + find_fires ≈ 0.8s was
+-- blocking the single-threaded copas loop inline (same reason ti-at-risk and
+-- news were moved to subprocesses — tools/warm_alerts.lua writes
+-- alerts:all + alerts:all:stale + alerts:last_sync to Redis). os.execute
+-- returns immediately for a backgrounded command → never blocks the loop.
+-- A short Redis lock (setnx) prevents duplicate refreshers; TTL = crash
+-- backstop.
+function _M.trigger_alert_refresh()
+    local lock_key = "alerts:refresh:lock"
+    if not redis.setnx(lock_key, "1", 1800) then
+        return false  -- another refresh is already in flight
+    end
+
+    local source = (debug.getinfo(1, "S").source or ""):gsub("^@", "")
+    local backend_dir = source:match("^(.*[/\\])app[/\\]routes[/\\]") or ""
+    local script = backend_dir .. "tools/warm_alerts.lua"
+
+    local cmd
+    if package.config:sub(1, 1) == "\\" then
+        cmd = 'start /b lua5.1.exe "' .. script .. '" >NUL 2>NUL'
+    else
+        cmd = 'nohup lua5.1 "' .. script .. '" >/dev/null 2>&1 &'
+    end
+
+    local ok, err = pcall(os.execute, cmd)
+    if not ok then
+        logger.warn("Failed to spawn alerts warmup: " .. tostring(err))
+    end
+    return true
 end
 
 return _M

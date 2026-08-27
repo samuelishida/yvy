@@ -19,6 +19,7 @@ Options:
 import sys
 import os
 import math
+import io
 import sqlite3
 import argparse
 import time
@@ -30,6 +31,13 @@ try:
 except ImportError:
     print("ERROR: Missing requests. Install with: pip install requests", file=sys.stderr)
     sys.exit(1)
+
+try:
+    import numpy as np
+    from PIL import Image
+except ImportError:
+    np = None  # filter disabled below if PIL/numpy unavailable
+    Image = None
 
 WMS_URL = "https://terrabrasilis.dpi.inpe.br/geoserver/prodes-brasil-nb/prodes_brasil/wms"
 WMS_PARAMS_BASE = {
@@ -43,6 +51,57 @@ WMS_PARAMS_BASE = {
     "WIDTH": "256",
     "HEIGHT": "256",
 }
+
+# Colors that are NOT deforestation and must be dropped from cached tiles so the
+# overlay shows only the deforestation palette (yellow #ffff00 = value 7, amber
+# #ffc300-family = values 2-24, orange/red = values 50-64) instead of the whole
+# PRODES raster:
+#   green  (48,135,3)  = value 100 vegetação nativa (native vegetation)
+#   blue   (5,19,177)  = value 91 hidrografia (water)
+# NOTE: pure yellow #ffff00 is ALSO value 0 (não-floresta) — the WMS SLD cannot
+# distinguish value 0 from value 7 by color, so não-floresta shows as yellow too.
+# That is inherent to the WMS raster (the reason the offline value-based renderer
+# existed); accepted here as the "classic PRODES" look.
+_DROP_COLORS = {(48, 135, 3), (5, 19, 177)}
+
+
+def _keep_pixel(rgb):
+    """True if a pixel is part of the warm deforestation palette."""
+    if tuple(rgb) in _DROP_COLORS:
+        return False
+    r, g, b = int(rgb[0]), int(rgb[1]), int(rgb[2])
+    # warm palette: red dominant, blue low (yellow/amber/orange all qualify)
+    return r >= 150 and b <= r and b <= 200
+
+
+def filter_wms_tile(data):
+    """Drop non-deforestation colors (native-veg green, water blue) -> transparent.
+
+    Falls back to the raw PNG on any error so a filter failure never breaks the
+    cache warmer.
+    """
+    if Image is None or np is None:
+        return data
+    try:
+        img = Image.open(io.BytesIO(data)).convert("RGBA")
+        arr = np.array(img)
+        a = arr[..., 3] > 0
+        if not a.any():
+            return data
+        for rgb in np.unique(arr[a][:, :3], axis=0):
+            if not _keep_pixel(rgb):
+                mask = (arr[..., :3] == rgb).all(axis=2)
+                arr[mask, 3] = 0
+        out = io.BytesIO()
+        Image.fromarray(arr).save(out, format="PNG")
+        return out.getvalue()
+    except Exception:
+        # Filter failure is non-fatal for the cache warmer, but must be
+        # VISIBLE — a silently disabled filter means the overlay shows the
+        # whole PRODES palette again (review: must/consider fix).
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        return data
 
 
 def tile_to_bbox(z, x, y):
@@ -94,7 +153,9 @@ def fetch_tile(z, x, y, session):
     ct = resp.headers.get("Content-Type", "")
     if "image" not in ct:
         return None
-    return resp.content
+    # Drop native-vegetation green + water blue so the overlay shows only the
+    # deforestation palette (see filter_wms_tile).
+    return filter_wms_tile(resp.content)
 
 
 def main():
@@ -109,7 +170,7 @@ def main():
     args = parser.parse_args()
 
     script_dir   = os.path.dirname(os.path.abspath(__file__))
-    project_dir  = os.path.dirname(script_dir)
+    project_dir  = os.path.dirname(os.path.dirname(script_dir))  # scripts/data -> project root
     data_dir     = os.path.join(project_dir, "backend-lua", "data")
     tiles_db_path   = args.db or os.path.join(data_dir, "tiles_prodes.db")
     deforest_db_path = args.deforest_db

@@ -85,3 +85,28 @@ Correct pattern (see `PopupCloseSync` in `frontend/src/components/Home.js`):
 bind `map.on('popupclose')`, match `e.popup === <popupInstance>` via the
 `ref` prop (v4 forwards the Leaflet instance), and clear the corresponding
 React state.
+
+## 8. Hand-crafted binary constants (PNG/byte literals) must be verified with the real decoder + asserted in a test
+
+The 67-byte "minimal transparent PNG" in `app/routes/tiles.lua` was
+hand-written hex with an invalid DEFLATE stream ("stored blocks" under a
+`78 9C` compression header) and a wrong IDAT CRC — it looked plausible,
+`#body < 100` asserts passed, and every cache-miss tile broke the browser
+image decoder (`Image corrupt or truncated` spam). Rule: generate such
+constants with the toolchain (`zlib`/PIL, not eyeballed hex), verify with
+the real decoder (`PIL Image.open(...).load()` + per-chunk
+`zlib.crc32`), and pin validity in a test that asserts more than the
+signature (full decode). See plan `tile-corruption-biome-speed`.
+
+## 9. Spawning detached subprocesses from the copas loop: setnx lock → owner releases → TTL is only the crash backstop
+
+`alerts:refresh:lock` / `fires:classify:lock` pattern (consolidated by the
+tile-corruption-biome-speed review): (a) `redis.setnx(lock, "1", TTL)`
+before spawning, (b) the SUBPROCESS releases the lock on BOTH success and
+failure (wrap the compute in `pcall`; delete the lock in the failure path
+and `os.exit(1)`) — never rely on the TTL alone, or a crashed job zombies
+the lock for the whole TTL and the weekly/timer trigger silently no-ops
+(`started:false`), (c) `os.execute` returns immediately for a backgrounded
+command but its success is NOT observable from the parent ("always 0" for
+`cmd &`) — verify via the subprocess's Redis writes/logs, not the return
+code. Same class of bug as common-mistakes §5 (marker-after-success).

@@ -266,24 +266,32 @@ server.route("GET", "/api/biome-boundaries", function(ctx)
 end)
 
 -- Alerts
+-- O compute (find_fires 10k + generate_all_alerts ≈ 0.8s) roda em subprocesso
+-- destacado (tools/warm_alerts.lua) — inline bloqueava o loop copas inteiro
+-- (plan: tile-corruption-biome-speed; mesmo padrão de news e ti-at-risk).
+-- A rota só lê Redis: cache → último-bom (stale) → vazio, e dispara o
+-- refresh quando há (lock setnx impede duplo job).
 server.route("GET", "/api/alerts", function(ctx)
     if not auth.enforce(ctx) then return end
     if not rl.enforce(ctx) then return end
 
+    local alerts_mod = require("app.routes.alerts")
+
     local cached = redis.get("alerts:all")
-    if cached and not cached:find('"alerts"%s*:%s*{}') then
+    if cached and not cached:find('"alerts"%s*:%s*%{%}') then
         ctx:set_header("Cache-Control", "public, max-age=300")
         ctx:send(200, cached)
         return
     end
     if cached then redis.delete("alerts:all") end
 
-    local alerts_mod = require("app.routes.alerts")
-    local fires_data = db.find_fires(-34.0, 5.5, -74.0, -34.0, 10000)
-    local result = alerts_mod.generate_all_alerts(fires_data, nil, os.getenv("WAQI_TOKEN"))
-    local body = cjson.encode(result)
-    redis.set("alerts:all", body, 1800)
-    ctx:set_header("Cache-Control", "public, max-age=300")
+    -- Cold path: serve last-known-good imediatamente + refresh em fundo.
+    local body = redis.get("alerts:all:stale")
+    if not body then
+        body = cjson.encode({ alerts = {}, count = 0, generated_at = os.date("!%Y-%m-%dT%H:%M:%SZ") })
+    end
+    alerts_mod.trigger_alert_refresh()
+    ctx:set_header("Cache-Control", "public, max-age=30")
     ctx:send(200, body)
 end)
 

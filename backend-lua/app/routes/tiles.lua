@@ -36,17 +36,25 @@ local function set_cors_headers(ctx)
     end
 end
 
--- Minimal 1x1 transparent PNG (returned when tile has no data)
+-- PNG signature — used to reject corrupt blobs before they reach the browser
+-- (they used to surface as "Image corrupt or truncated" console spam on pan).
+local PNG_SIGNATURE = string.char(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+
+-- 1x1 transparent PNG (returned when a tile has no data). MUST be a valid PNG:
+-- the previous hand-written one had an invalid DEFLATE stream ("stored blocks"
+-- under a compression header) and a wrong IDAT CRC, so every cache-miss tile
+-- broke the browser image decoder ("Image corrupt or truncated" spam). This
+-- one is generated+zlib-9 with valid chunk CRCs (verified with PIL).
 local EMPTY_PNG = string.char(
     0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A, -- PNG signature
     0x00,0x00,0x00,0x0D,0x49,0x48,0x44,0x52, -- IHDR length + type
     0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x01, -- 1x1
     0x08,0x06,0x00,0x00,0x00,0x1F,0x15,0xC4, -- 8-bit RGBA + CRC
-    0x89,0x00,0x00,0x00,0x0A,0x49,0x44,0x41, -- IDAT length + type
-    0x54,0x78,0x9C,0x62,0x00,0x00,0x00,0x02, -- compressed row
-    0x00,0x01,0xE2,0x21,0xBC,0x33,0x00,0x00, -- CRC + IEND length
-    0x00,0x00,0x49,0x45,0x4E,0x44,0xAE,0x42, -- IEND type + CRC
-    0x60,0x82
+    0x89,0x00,0x00,0x00,0x0B,0x49,0x44,0x41, -- IDAT length (11) + type
+    0x54,0x78,0xDA,0x63,0x60,0x00,0x02,0x00, -- zlib (9) pixel row
+    0x00,0x05,0x00,0x01,0xE9,0xFA,0xDC,0xD8, -- + CRC
+    0x00,0x00,0x00,0x00,0x49,0x45,0x4E,0x44, -- IEND length + type
+    0xAE,0x42,0x60,0x82 -- IEND CRC
 )
 
 -- Open (and cache per-path) a tiles DB connection. Returns nil if missing.
@@ -94,7 +102,17 @@ local function lookup_tile(path, db, z, x, y)
     end
 
     local ok, data = pcall(query, db)
-    if ok then return data end
+    if ok then
+        -- Defensive: a blob without a PNG signature is corrupt — treat it as a
+        -- MISS (→ EMPTY_PNG) instead of serving broken bytes to the browser.
+        if data and data:sub(1, 8) ~= PNG_SIGNATURE then
+            logger.warn(string.format(
+                "Corrupt tile blob (bad PNG signature), serving as miss: %s z=%d x=%d y=%d",
+                path, z, x, y))
+            return nil
+        end
+        return data
+    end
 
     -- Stale connection: close, forget, reopen once and retry.
     logger.warn("Tiles DB read failed (stale conn?), reopening: " .. tostring(data))

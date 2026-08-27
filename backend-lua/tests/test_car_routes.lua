@@ -13,6 +13,21 @@ local tmp_car_db = "./yvy_car_route_" .. tostring(os.time()) .. ".db"
 local tmp_tiles_db = "./yvy_tiles_route_" .. tostring(os.time()) .. ".db"
 local FIXTURE = "./tests/fixtures/car_sample.json"
 
+-- tiles_car.db com 1 tile (z=1,x=0,y=0). O blob precisa ser um PNG VÁLIDO —
+-- lookup_tile rejeita blobs sem assinatura PNG (plan: tile-corruption-biome-
+-- speed), então o fixture usa um 1×1 vermelho real (70 bytes, zlib-9).
+local PNG_RED = string.char(
+    0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A, -- signature
+    0x00,0x00,0x00,0x0D,0x49,0x48,0x44,0x52,
+    0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x01,
+    0x08,0x06,0x00,0x00,0x00,0x1F,0x15,0xC4,0x89,
+    0x00,0x00,0x00,0x0D,0x49,0x44,0x41,0x54,
+    0x78,0xDA,0x63,0xF8,0xCF,0xC0,0xF0,0x1F,
+    0x00,0x05,0x00,0x01,0xFF,0x56,0xC7,0x2F,0x0D,
+    0x00,0x00,0x00,0x00,0x49,0x45,0x4E,0x44,
+    0xAE,0x42,0x60,0x82
+)
+
 -- Env ANTES de carregar módulos que cacheiam paths no load.
 env.set("CAR_DB_PATH", tmp_car_db)
 env.set("CAR_TILES_DB", tmp_tiles_db)
@@ -53,7 +68,7 @@ local build_ok, build_err = pcall(function()
         fetched_at TEXT NOT NULL, PRIMARY KEY (z, x, y))]])
     local ins = t:prepare("INSERT OR REPLACE INTO tiles (z,x,y,data,content_type,fetched_at) VALUES (?,?,?,?,?,?)")
     ins:bind(1, 1); ins:bind(2, 0); ins:bind(3, 0)
-    ins:bind_blob(4, "TILE-BYTES")
+    ins:bind_blob(4, PNG_RED)
     ins:bind(5, "image/png"); ins:bind(6, os.date("!%Y-%m-%dT00:00:00Z", os.time()))
     ins:step(); ins:finalize()
     t:close()
@@ -130,7 +145,7 @@ describe("car routes", function()
             tiles_routes.get_tile_car(ctx)
             assert.are_equal(200, ctx.status)
             assert.are_equal("image/png", ctx.content_type)
-            assert.are_equal("TILE-BYTES", ctx.body)
+            assert.are_equal(PNG_RED, ctx.body)
         end)
         it("tile ausente → 200 com EMPTY_PNG (transparente)", function()
             local ctx = fake_ctx({ z = "1", x = "5", y = "5" })

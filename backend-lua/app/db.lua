@@ -1065,6 +1065,47 @@ function _M.get_fires_by_biome(days, state)
     return result, total
 end
 
+-- Agregado de /api/biomes sobre a coluna $.biome persistida (plan:
+-- tile-corruption-biome-speed). Mirror exato de find_fires(-34, 5.5, -74, -34,
+-- limit) — mesmo WHERE/ORDER/LIMIT, sem brazil_only — mas só extrai o bioma:
+-- ~0.16s vs ~1.5s do find_fires + classify_fires (10k focos × 18 anéis).
+-- Retorna (counts, total): counts = {[nome] = n} (o grupo sem bioma fica
+-- sob a chave "") e total = nº de rows da janela (INCLUINDO sem bioma —
+-- igual ao #fires de antes). NULL vira '' via CASE (GROUP BY trataria NULL
+-- como grupo separado).
+function _M.count_fires_by_biome_window(sw_lat, ne_lat, sw_lng, ne_lng, limit)
+    limit = limit or 10000
+    local db = pool_acquire()
+    local rows = fetch_all(db, [[
+        SELECT biome, COUNT(*) AS cnt FROM (
+            SELECT CASE WHEN json_extract(data, '$.biome') IS NULL
+                        OR json_extract(data, '$.biome') = '' THEN ''
+                        ELSE json_extract(data, '$.biome') END AS biome
+            FROM fire_data
+            WHERE lat >= ? AND lat <= ? AND lon >= ? AND lon <= ?
+            ORDER BY acq_date DESC, lat, lon
+            LIMIT ?
+        ) GROUP BY biome
+    ]], {sw_lat, ne_lat, sw_lng, ne_lng, limit})
+    pool_release(db)
+
+    local counts = {}
+    local total = 0
+    local empty = 0
+    for _, r in ipairs(rows) do
+        local b = r.biome or r["biome"]
+        local cnt = tonumber(r.cnt or r["cnt"]) or 0
+        total = total + cnt
+        if b and b ~= "" then
+            counts[b] = cnt
+        else
+            empty = cnt
+        end
+    end
+    counts[""] = empty
+    return counts, total
+end
+
 -- Cobertura de atribuição de bioma (para o painel de freshness).
 function _M.count_fires_by_biome_present()
     local db = pool_acquire()

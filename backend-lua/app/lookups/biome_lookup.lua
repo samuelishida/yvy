@@ -107,6 +107,17 @@ function _M.loaded_count()
     return #biome_rings
 end
 
+-- Accessors p/ assemble a resposta de /api/biomes sem re-fazer ponto-em-polígono
+-- (agregado SQL usa a coluna $.biome persistida; color/order vêm das tabelas
+-- vivas do lookup — DB-first, já que lookup_data sobrescreve BIOME_COLORS).
+function _M.biome_order()
+    return BIOME_ORDER
+end
+
+function _M.color_for(name)
+    return biome_colors[name] or BIOME_COLORS[name] or ""
+end
+
 function _M.get_geojson()
     if #biome_rings == 0 then
         return { type = "FeatureCollection", features = {} }

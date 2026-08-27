@@ -101,4 +101,11 @@ redis.set("fires:classify:last_run", cjson.encode({
     count = total, duration = duration, by_nature = by_nature, version = version,
 }), 86400)
 
+-- Libera o lock para o próximo trigger (timer semanal do sinaflor com version
+-- monotônica / backfill rotineiro). SEM isto o lock (TTL 1800s) vira zumbi por
+-- 30min após cada run e o timer semanal colide com ele → started:false → a
+-- reclassificação nunca roda → zero permitido em prod (dots todos vermelhos).
+-- setnx garante um único run em voo; deletar no fim do dono é seguro.
+redis.delete("fires:classify:lock")
+
 logger.info("Fire classification done: " .. total .. " fires (v" .. version .. ") in " .. duration .. "s")
