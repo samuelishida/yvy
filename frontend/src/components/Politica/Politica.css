@@ -533,39 +533,6 @@
   flex-shrink: 0;
 }
 
-/* ── Geo bars ────────────────────────────────────────────────────────────── */
-.politica-geo__table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.politica-geo__table th {
-  text-align: left;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-muted);
-  font-weight: 600;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
-}
-
-.politica-geo__table td {
-  padding: 7px 8px;
-  border-bottom: 1px solid rgba(42, 53, 48, 0.5);
-  color: var(--ink-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.politica-geo__table td:first-child {
-  color: var(--ink);
-  font-weight: 500;
-}
-
-.politica-delta--up { color: #4ade80; }
-.politica-delta--down { color: #F08A85; }
-
 /* ── Sources list ────────────────────────────────────────────────────────── */
 .politica-sources__group {
   margin-bottom: 20px;
@@ -695,24 +662,6 @@
   .politica-nav {
     top: 56px;
     overflow-x: auto;
-  }
-  .politica-geo__table thead {
-    display: none;
-  }
-  .politica-geo__table,
-  .politica-geo__table tbody,
-  .politica-geo__table tr,
-  .politica-geo__table td {
-    display: block;
-    width: 100%;
-  }
-  .politica-geo__table tr {
-    border-bottom: 1px solid var(--border);
-    padding: 8px 0;
-  }
-  .politica-geo__table td {
-    border: none;
-    padding: 2px 0;
   }
 }
 

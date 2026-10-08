@@ -19,8 +19,6 @@ import PoliticaKpis from './PoliticaKpis';
 import PoliticaCompare from './PoliticaCompare';
 import PoliticaSeries from './PoliticaSeries';
 import PoliticaDossier from './PoliticaDossier';
-import PoliticaImpact from './PoliticaImpact';
-import PoliticaGeo from './PoliticaGeo';
 import PoliticaSources from './PoliticaSources';
 
 const DATA_URL = `${process.env.PUBLIC_URL || ''}/politica/data.json`;
@@ -32,8 +30,6 @@ const SECTIONS = [
   { id: 'dossier', key: 'navDossier', Comp: PoliticaDossier },
   { id: 'compare', key: 'navCompare', Comp: PoliticaCompare },
   { id: 'series', key: 'navSeries', Comp: PoliticaSeries },
-  { id: 'impact', key: 'navImpact', Comp: PoliticaImpact },
-  { id: 'geo', key: 'navGeo', Comp: PoliticaGeo },
 ];
 
 export const PoliticaContext = React.createContext(null);

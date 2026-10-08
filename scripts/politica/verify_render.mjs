@@ -67,8 +67,6 @@ const SECTIONS = [
   ['Compare', require(resolve(SRC, 'components/Politica/PoliticaCompare.js')).default],
   ['Series', require(resolve(SRC, 'components/Politica/PoliticaSeries.js')).default],
   ['Dossier', require(resolve(SRC, 'components/Politica/PoliticaDossier.js')).default],
-  ['Impact', require(resolve(SRC, 'components/Politica/PoliticaImpact.js')).default],
-  ['Geo', require(resolve(SRC, 'components/Politica/PoliticaGeo.js')).default],
   ['Sources', require(resolve(SRC, 'components/Politica/PoliticaSources.js')).default],
 ];
 
