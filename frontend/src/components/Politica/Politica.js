@@ -29,9 +29,9 @@ const DATA_URL = `${process.env.PUBLIC_URL || ''}/politica/data.json`;
 // never drift apart.
 const SECTIONS = [
   { id: 'kpis', key: 'navKpis', Comp: PoliticaKpis },
+  { id: 'dossier', key: 'navDossier', Comp: PoliticaDossier },
   { id: 'compare', key: 'navCompare', Comp: PoliticaCompare },
   { id: 'series', key: 'navSeries', Comp: PoliticaSeries },
-  { id: 'dossier', key: 'navDossier', Comp: PoliticaDossier },
   { id: 'impact', key: 'navImpact', Comp: PoliticaImpact },
   { id: 'geo', key: 'navGeo', Comp: PoliticaGeo },
 ];
