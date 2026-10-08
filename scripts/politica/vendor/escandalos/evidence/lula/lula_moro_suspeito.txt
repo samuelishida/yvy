@@ -1,0 +1,18 @@
+CLAIM: lula_moro_suspeito
+STATUS: condenado_anulado   VERDICT: CONFIRMADO   CONFIANCA: 5/5
+FONTES: g1_moro_2021, stf_468184
+------------------------------------------------------------------------------
+AFIRMACAO: o STF declarou Sergio Moro suspeito (HC 164.493); a 2a Turma em
+23/03/2021 e o Plenario em 23/06/2021 (7x4).
+
+DESENVOLVIMENTO 2026: o TRE-DF (15/07/2026) invocou a parcialidade de Moro
+para impedir a convalidacao de provas; o CNJ afastou a juiza Gabriela Hardt
+por 2 anos (04/08/2026).
+------------------------------------------------------------------------------
+CITACAO VERBATIM (a fonte que sustenta):
+  "O plenário do Supremo Tribunal Federal (STF) concluiu nesta quarta-feira (23) o julgamento que reconheceu, por 7 votos a 4, a competência da Segunda Turma da Corte para declarar parcial o ex-juiz Sergio Moro na condenação do ex-presidente Luiz Inácio Lula da Silva no caso do triplex no Guarujá."
+O QUE ISSO PROVA: Sustenta a suspeicao de Moro (HC 164.493), confirmada pela 2a Turma e pelo Plenario (7x4).
+POSICAO DA DEFESA: A defesa de Lula alegou parcialidade de Moro; o STF a reconheceu.
+------------------------------------------------------------------------------
+ARQUIVO BRUTO: https://g1.globo.com/politica/noticia/2021/06/23/plenario-do-stf-reconhece-decisao-da-segunda-turma-que-declarou-moro-parcial-ao-condenar-lula.ghtml
+ARQUIVO BRUTO: https://portal.stf.jus.br/noticias/verNoticiaDetalhe.asp?idConteudo=468184&ori=1

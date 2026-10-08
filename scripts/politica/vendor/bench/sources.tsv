@@ -1,0 +1,7 @@
+id	publisher	title	url	retrieved	kind	tier
+ibge_sidra	SIDRA/IBGE	Sistema IBGE de Recuperacao Automatica	https://apisidra.ibge.gov.br/	2026-10-07	api	official
+bcb_sgs	Banco Central do Brasil	Sistema Gerenciador de Series Temporais (SGS)	https://www3.bcb.gov.br/sgspub/	2026-10-07	api	official
+ipea_ipeadata	IPEA	IPEAdata - base de dados macroeconomicos	http://www.ipeadata.gov.br/	2026-10-07	api	official
+inpe_prodes	INPE	PRODES - Monitoramento do Desmatamento da Amazonia Legal	https://terrabrasilis.dpi.inpe.br/	2026-10-07	dataset	official
+inpe_deter	INPE	DETER - Deteccao do Desmatamento em Tempo Real	https://terrabrasilis.dpi.inpe.br/geoserver/wfs?service=WFS&request=GetCapabilities	2026-10-07	dataset	official
+tse_resultados	TSE	Repositorio de Resultados Eleitorais	https://dadosabertos.tse.jus.br/	2026-10-07	dataset	official

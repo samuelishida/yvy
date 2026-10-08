@@ -1,0 +1,16 @@
+CLAIM: flavio_depositos_2mi
+STATUS: denunciado_arquivado   VERDICT: CONFIRMADO   CONFIANCA: 5/5
+FONTES: g1_depositos_2019
+------------------------------------------------------------------------------
+AFIRMACAO: o MP-RJ (via quebra de sigilo) identificou R$ 2.062.360,52 em 483
+depositos de 13 assessores na conta de Queiroz.
+
+CORRECAO DA v1: o rascunho citava 'R$ 2,6 milhoes' e uma estimativa do TCE-RJ.
+NENHUMA das duas existe em fonte acessivel. O valor correto e R$ 2.062.360,52.
+------------------------------------------------------------------------------
+CITACAO VERBATIM (a fonte que sustenta):
+  "Foram identificados pelo menos 13 assessores que repassavam parte do salário à Queiroz. Ele recebeu 483 depósitos na conta bancária, que somados atingem R$ 2.062.360,52."
+O QUE ISSO PROVA: Sustenta o valor e a origem na conta de Queiroz.
+POSICAO DA DEFESA: A defesa de Flavio nega: afirma que nunca houve repasse às contas dele ou de suas empresas; Queiroz nega ser laranja.
+------------------------------------------------------------------------------
+ARQUIVO BRUTO: https://g1.globo.com/rj/rio-de-janeiro/noticia/2019/12/18/queiroz-recebeu-r-2-milhoes-em-483-depositos-de-assessores-ligados-a-flavio-bolsonaro-diz-mp.ghtml

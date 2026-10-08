@@ -1,0 +1,14 @@
+CLAIM: flavio_denunciado_2020
+STATUS: denunciado_arquivado   VERDICT: CONFIRMADO   CONFIANCA: 5/5
+FONTES: g1_denuncia_flavio_2020
+------------------------------------------------------------------------------
+AFIRMACAO: Flavio foi FORMALMENTE DENUNCIADO pelo MP-RJ em novembro de 2020,
+com Queiroz e mais 15, por organizacao criminosa, peculato, lavagem e
+apropriacao indébita.
+------------------------------------------------------------------------------
+CITACAO VERBATIM (a fonte que sustenta):
+  "O Ministério Público do Rio de Janeiro informou na noite desta terça-feira (3) que denunciou à Justiça o senador Flávio Bolsonaro (Republicanos-RJ), o ex-assessor Fabrício Queiroz e mais 15 investigados por organização criminosa, peculato, lavagem de dinheiro e apropriação indébita no esquema das 'rachadinhas'"
+O QUE ISSO PROVA: Sustenta a denuncia formal de 2020 e os crimes imputados.
+POSICAO DA DEFESA: Flávio sempre negou a pratica; a defesa sustenta que a denuncia foi rejeitada e o caso encerrado.
+------------------------------------------------------------------------------
+ARQUIVO BRUTO: https://g1.globo.com/rj/rio-de-janeiro/noticia/2020/11/04/ministerio-publico-do-rj-denuncia-flavio-bolsonaro-por-organizacao-criminosa-peculato-e-lavagem-de-dinheiro.ghtml

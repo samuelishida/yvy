@@ -9,6 +9,8 @@ const Dashboard     = React.lazy(() => import('./components/Dashboard'));
 const News          = React.lazy(() => import('./components/News'));
 const MapasTemáticos = React.lazy(() => import('./components/MapasTemáticos'));
 const RiskIntelligence = React.lazy(() => import('./components/RiskIntelligence/RiskIntelligence'));
+// /politica — hidden route: direct URL only, never linked from the Navbar.
+const Politica      = React.lazy(() => import('./components/Politica/Politica'));
 
 function App() {
   return (
@@ -26,6 +28,7 @@ function App() {
                 <Route path="/news" element={<News />} />
                 <Route path="/mapas-tematicos" element={<MapasTemáticos />} />
                 <Route path="/risk-intelligence" element={<RiskIntelligence />} />
+                <Route path="/politica" element={<Politica />} />
               </Routes>
             </Suspense>
           </main>

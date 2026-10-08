@@ -1,0 +1,15 @@
+CLAIM: flavio_stj_anulou_2021
+STATUS: denunciado_arquivado   VERDICT: CONFIRMADO   CONFIANCA: 5/5
+FONTES: g1_stj_2021, g1_tjrj_2022
+------------------------------------------------------------------------------
+AFIRMACAO: o STJ (5a Turma, 09/11/2021) anulou as decisoes do juiz Flavio
+Itabaiana -- INCLUSIVE as quebras de sigilo bancario e fiscal -- por foro por
+prerrogativa. A citacao sustenta explicitamente as quebras de sigilo.
+------------------------------------------------------------------------------
+CITACAO VERBATIM (a fonte que sustenta):
+  "Na peça, o órgão faz uma retrospectiva de todas as movimentações do processo, lembrando, por exemplo, a anulação de provas usadas na denúncia pelo Superior Tribunal de Justiça (STJ) e as quebras de sigilos bancário e fiscal do senador."
+O QUE ISSO PROVA: Sustenta que o STJ anulou provas E as quebras de sigilo bancario e fiscal.
+POSICAO DA DEFESA: A defesa de Flavio alegou que o juiz nao era competente (foro por prerrogativa); o STJ acolheu.
+------------------------------------------------------------------------------
+ARQUIVO BRUTO: https://g1.globo.com/politica/noticia/2021/11/09/stj-anula-todas-as-decisoes-de-juiz-contra-flavio-bolsonaro-nas-rachadinhas.ghtml
+ARQUIVO BRUTO: https://g1.globo.com/rj/rio-de-janeiro/noticia/2022/05/16/tj-rj-rejeita-denuncia-contra-flavio-bolsonaro-no-caso-das-rachadinhas.ghtml

@@ -1,0 +1,17 @@
+CLAIM: lula_fachin_anula_2021
+STATUS: condenado_anulado   VERDICT: CONFIRMADO   CONFIANCA: 5/5
+FONTES: agenciabrasil_stf_2021, stf_464261
+------------------------------------------------------------------------------
+AFIRMACAO: Fachin anulou as condenacoes de Lula em 08/03/2021 por incompetencia
+da 13a Vara de Curitiba; o Plenario confirmou em 15/04/2021 (8x3).
+
+Todas as condenacoes de Lula na Lava Jato foram anuladas. Nao ha condenacao
+com transito em julgado.
+------------------------------------------------------------------------------
+CITACAO VERBATIM (a fonte que sustenta):
+  "Por 8 votos a 3, o Supremo Tribunal Federal (STF) decidiu hoje (15) manter a decisão que anulou as condenações do ex-presidente Luiz Inácio Lula da Silva."
+O QUE ISSO PROVA: Sustenta que as condenacoes foram anuladas por incompetencia da 13a Vara de Curitiba e o Plenario confirmou por 8x3.
+POSICAO DA DEFESA: A defesa de Lula sustentou a incompetencia da 13a Vara e a suspeicao de Moro; o STF acolheu.
+------------------------------------------------------------------------------
+ARQUIVO BRUTO: https://agenciabrasil.ebc.com.br/justica/noticia/2021-04/stf-mantem-anulacao-das-condenacoes-de-lula
+ARQUIVO BRUTO: https://portal.stf.jus.br/noticias/verNoticiaDetalhe.asp?idConteudo=464261

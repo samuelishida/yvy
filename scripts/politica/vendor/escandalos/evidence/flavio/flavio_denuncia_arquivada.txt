@@ -1,0 +1,17 @@
+CLAIM: flavio_denuncia_arquivada
+STATUS: denunciado_arquivado   VERDICT: CONFIRMADO   CONFIANCA: 5/5
+FONTES: g1_tjrj_2022, g1_flavio_2026
+------------------------------------------------------------------------------
+AFIRMACAO: a denuncia foi REJEITADA pelo Orgao Especial do TJ-RJ em
+16/05/2022, a pedido do PROPRIO MP-RJ, SEM julgamento de merito.
+
+Consequencia: Flavio NUNCA foi condenado E nunca foi absolvido no merito.
+Chamar de 'condenado' ou 'absolvido' esta incorreto.
+------------------------------------------------------------------------------
+CITACAO VERBATIM (a fonte que sustenta):
+  "O Órgão Especial do Tribunal de Justiça do Rio de Janeiro acatou pedido do Ministério Público e rejeitou a denúncia contra o senador Flávio Bolsonaro (PL-RJ) no caso das 'rachadinhas'."
+O QUE ISSO PROVA: Sustenta que o TJ-RJ rejeitou a denuncia a pedido do proprio MP-RJ.
+POSICAO DA DEFESA: A defesa de Flavio afirmou que o caso esta encerrado e que eventuais desdobramentos serao combatidos judicialmente.
+------------------------------------------------------------------------------
+ARQUIVO BRUTO: https://g1.globo.com/rj/rio-de-janeiro/noticia/2022/05/16/tj-rj-rejeita-denuncia-contra-flavio-bolsonaro-no-caso-das-rachadinhas.ghtml
+ARQUIVO BRUTO: https://g1.globo.com/politica/noticia/2026/09/29/gilmar-mantem-quebra-de-sigilos-de-ex-assessora-de-flavio-bolsonaro-em-investigacao-sobre-rachadinha.ghtml

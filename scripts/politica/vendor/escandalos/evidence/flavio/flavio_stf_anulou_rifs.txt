@@ -1,0 +1,18 @@
+CLAIM: flavio_stf_anulou_rifs
+STATUS: denunciado_arquivado   VERDICT: CONFIRMADO   CONFIANCA: 5/5
+FONTES: g1_jn_rifs, stf_rifs_flavio
+------------------------------------------------------------------------------
+AFIRMACAO: o STF (2a Turma, 30/11/2021, Gilmar Mendes) anulou 4 dos 5 RIFs do
+Coaf que embasaram a investigacao.
+
+RIF = relatorio de movimentacao financeira atipica enviado pelo Coaf.
+NOTA: a expressao 'investigacao disfarcada' (que aparece na cobertura do caso)
+NAO consta nesta citacao; por isso nao e afirmada aqui como fato provado.
+------------------------------------------------------------------------------
+CITACAO VERBATIM (a fonte que sustenta):
+  "Consideraram ilegais quatro dos cinco relatórios de inteligência produzidos pelo Coaf sobre movimentações suspeitas de Flávio e outros denunciados, o que, na prática, esvazia a investigação."
+O QUE ISSO PROVA: Sustenta que 4 dos 5 RIFs do Coaf foram considerados ilegais. NAO sustenta a expressao 'investigacao disfarcada'.
+POSICAO DA DEFESA: A defesa de Flavio alegou que os relatorios do Coaf foram pedidos sem autorizacao judicial; o STF a acolheu.
+------------------------------------------------------------------------------
+ARQUIVO BRUTO: https://g1.globo.com/jornal-nacional/noticia/2021/11/30/stf-mantem-foro-privilegiado-de-flavio-bolsonaro-e-anula-provas-no-caso-das-rachadinhas.ghtml
+ARQUIVO BRUTO: https://portal.stf.jus.br/noticias/verNoticiaDetalhe.asp?idConteudo=477496

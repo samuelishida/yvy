@@ -1,0 +1,26 @@
+# Ledger de afirmacoes factuais. Ver bench/check_provenance.py.
+# status OK exige source_id presente em bench/sources.tsv E arquivo de evidencia existente e nao-vazio.
+# Gerado por bench/build_claims.py -- nao editar a mao.
+claim_id	axis	period	claim_pt	source_id	evidence	status
+econ_desoc	economia	03/2012 a 08/2026	Taxa de desocupacao media: 6.72% em 2023-2026 (Lula 3) contra 12.13% em 2019-2022 (Bolsonaro) e 8.28% em 2012-2016 (Dilma).	bcb_sgs	evidence/economia/claim_econ_desoc.txt	OK
+econ_desoc_min	economia	12/2025	O minimo da serie de desocupacao foi 5.10% em 12/2025 -- nao no ultimo mes (5.30% em 08/2026).	bcb_sgs	evidence/economia/claim_econ_desoc_min.txt	OK
+econ_desoc_pico	economia	09/2020 / 03/2021	O pico da desocupacao na serie foi 14.90%, atingido em 09/2020 e 03/2021 (2 meses empatados).	bcb_sgs	evidence/economia/claim_econ_desoc_pico.txt	OK
+econ_massa	economia	01/2003 a 08/2026	A massa de rendimento real media foi de R$ 6329469 milhoes em 2023-2026, contra R$ 4080525 milhoes em 2019-2022 e R$ 1608500 milhoes em 2003-2016.	bcb_sgs	evidence/economia/claim_econ_massa.txt	OK
+econ_ipca12m	economia	01/2003 a 08/2026	A inflacao acumulada em 12 meses ficou em media 4.61% em 2023-2026, contra 6.14% em 2019-2022 e 6.72% em 2003-2016.	bcb_sgs	evidence/economia/claim_econ_ipca12m.txt	OK
+econ_ipca_mensal	economia	08/2026	O IPCA de agosto de 2026 foi de -0.32% no mes.	bcb_sgs	evidence/economia/claim_econ_ipca_mensal.txt	OK
+soc_forca_trabalho	social	2º trimestre 2026	A forca de trabalho (pessoas de 14+ na semana de referencia) era de 108.9 milhoes no trimestre 2º trimestre 2026.	ibge_sidra	evidence/social/claim_soc_forca_trabalho.txt	OK
+soc_gini	social	2012 a 2025	O indice de Gini do rendimento domiciliar per capita foi de 0.511 em 2025, contra 0.540 em 2012.	ibge_sidra	evidence/social/claim_soc_gini.txt	OK
+soc_rendimento	social	2025	O rendimento medio mensal real das pessoas ocupadas foi de R$ 3560 em 2025.	ibge_sidra	evidence/social/claim_soc_rendimento.txt	OK
+soc_desoc_ibge	social	jun-jul-ago 2026	A taxa de desocupacao foi de 5.3% no trimestre jun-jul-ago 2026, segundo o IBGE.	ibge_sidra	evidence/social/claim_soc_desoc_ibge.txt	OK
+amb_prodes_medias	ambiente	2019-2025	A media anual de desmatamento na Amazonia Legal foi de 11617 km2 em 2019-2022 (pico do periodo) e 6511 km2 em 2023-2025: queda de 44.0% nas medias.	inpe_prodes	evidence/ambiente/claim_amb_prodes_medias.txt	OK
+amb_prodes_2022_2025	ambiente	2022 a 2025	Do pico de 12684 km2 (2022) ao valor de 5255 km2 (2025), o desmatamento mapeado caiu 58.6%.	inpe_prodes	evidence/ambiente/claim_amb_prodes_2022_2025.txt	OK
+amb_deter	ambiente	2022-2026	Os alertas de desmatamento do DETER somaram 29006 km2 em 2022 e 13278 km2 em 2025.	inpe_deter	evidence/ambiente/claim_amb_deter.txt	OK
+geo_br_1t	geografia	2022 vs 2026	No 1o turno presidencial, o PT caiu de 48.43% para 45.16% e a PL subiu de 43.20% para 47.03% entre 2022 e 2026.	tse_resultados	evidence/geografia/claim_geo_br_1t.txt	OK
+geo_uf_piores	geografia	2022 vs 2026	O PT perdeu mais em Goias (-8.5 pp), Tocantins (-7.0 pp) e Rio Grande do Sul (-6.6 pp).	tse_resultados	evidence/geografia/claim_geo_uf_piores.txt	OK
+geo_candidato_2026	geografia	2026	Os candidatos a presidencia em 2026 sao FLAVIO BOLSONARO (PL) e LULA (PT), lidos do cadastro do TSE.	tse_resultados	evidence/geografia/claim_geo_candidato_2026.txt	OK
+geo_mun_pl	geografia	2022 vs 2026	Os maiores ganhos da PL se deram em Humaita-AM (+13.8 pp) e Tailândia-PA (+12.7 pp).	tse_resultados	evidence/geografia/claim_geo_mun_pl.txt	OK
+econ_alimentos	economia	2020-2022 vs 2023-2026	Os precos de Alimentacao e bebidas subiram 37.5% entre 2020 e 2022 (ritmo composto de 0.89% ao mes) e 15.9% entre 2023 e agosto de 2026 (0.34% ao mes).	ibge_sidra	evidence/economia/claim_econ_alimentos.txt	OK
+econ_salario_real	economia	2003-2026	O salario minimo real medio foi de 1557 em 2023-2026, contra 1449 em 2019-2022 (valores reais, IPEAdata).	ipea_ipeadata	evidence/economia/claim_econ_salario_real.txt	OK
+geo_redutos	geografia	2022 vs 2026	Por maioria (>=50%): a PL passou de 1785 para 2576 municipios e o PT caiu de 3058 para 2435. Por pluralidade (PL>PT): a PL passou de 2209 para 2926.	tse_resultados	evidence/geografia/claim_geo_redutos.txt	OK
+geo_mun_pt	geografia	2022 vs 2026	Os maiores ganhos do PT foram em SOBRAL (+4.2 pp) e MACAPÁ (+2.4 pp).	tse_resultados	evidence/geografia/claim_geo_mun_pt.txt	OK
+econ_desoc_dilma	economia	2012-2016	A media de desocupacao em 2012-2016 foi de 8.28%.	bcb_sgs	evidence/economia/claim_econ_desoc_dilma.txt	OK

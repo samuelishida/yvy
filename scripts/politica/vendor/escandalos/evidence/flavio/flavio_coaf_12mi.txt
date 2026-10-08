@@ -1,0 +1,15 @@
+CLAIM: flavio_coaf_12mi
+STATUS: denunciado_arquivado   VERDICT: CONFIRMADO   CONFIANCA: 5/5
+FONTES: g1_coaf_2018
+------------------------------------------------------------------------------
+AFIRMACAO: o Coaf apontou R$ 1.236.838 de movimentacao atipica na conta de
+Queiroz entre jan/2016 e jan/2017.
+
+OBJETO: movimentacao de QUEIROZ, nao de Flavio.
+------------------------------------------------------------------------------
+CITACAO VERBATIM (a fonte que sustenta):
+  "Ele movimentou nessa conta o total de R$ 1.236.838 entre 1º de janeiro de 2016 e 31 de janeiro de 2017, o que foi considerado suspeito pelo conselho."
+O QUE ISSO PROVA: Sustenta a movimentacao atipica na conta de Queiroz apontada pelo Coaf.
+POSICAO DA DEFESA: A defesa de Flavio nega as acusacoes; Queiroz nega ser laranja.
+------------------------------------------------------------------------------
+ARQUIVO BRUTO: https://g1.globo.com/rj/rio-de-janeiro/noticia/2018/12/06/coaf-aponta-que-ex-motorista-de-flavio-bolsonaro-movimentou-mais-de-r-12-milhao-em-operacoes-suspeitas.ghtml

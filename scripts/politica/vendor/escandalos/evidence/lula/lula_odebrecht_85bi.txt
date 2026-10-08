@@ -1,0 +1,20 @@
+CLAIM: lula_odebrecht_85bi
+STATUS: condenado_anulado   VERDICT: CONFIRMADO   CONFIANCA: 5/5
+FONTES: ebc_odebrecht
+------------------------------------------------------------------------------
+AFIRMACAO: o acordo de leniencia da Odebrecht (dez/2016) fixou multa de
+R$ 8,5 bilhoes.
+
+OBJETO: e multa da EMPRESA Novonor/Odebrecht, nao valor de pessoa fisica.
+
+NOTA DE ALCANCE: a suspensao dessa multa por Toffoli (fev/2024, Pet 11.972)
+NAO consta nesta claim porque o portal do STF (que a noticiou) e renderizado
+por JS e nao entrega o texto a um fetch estatico. Nao foi incluido sem fonte
+verificavel.
+------------------------------------------------------------------------------
+CITACAO VERBATIM (a fonte que sustenta):
+  "a empresa se comprometeu a pagar multa de R$ 8,5 bilhões para que sejam suspensas todas ações que envolvem a empreiteira e a Braskem, uma das empresas do grupo"
+O QUE ISSO PROVA: Sustenta que o acordo de leniencia da Odebrecht fixou multa de R$ 8,5 bilhoes (dez/2016).
+POSICAO DA DEFESA: Nao se aplica: e multa da empresa Odebrecht/Novonor, nao de pessoa fisica.
+------------------------------------------------------------------------------
+ARQUIVO BRUTO: https://agenciabrasil.ebc.com.br/politica/noticia/2016-12/odebrecht-fecha-acordo-de-leniencia-com-eua-e-suica

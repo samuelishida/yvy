@@ -1,0 +1,16 @@
+CLAIM: lula_petrobras_62bi
+STATUS: condenado_anulado   VERDICT: CONFIRMADO   CONFIANCA: 5/5
+FONTES: agenciabrasil_petrobras
+------------------------------------------------------------------------------
+AFIRMACAO: a Petrobras reconheceu perda de R$ 6,2 bilhoes com os desvios da
+Lava Jato no balanco auditado de 2014.
+
+OBJETO: e perda da ESTATAL, nao valor atribuido a pessoa alguma. Metodologia:
+3% dos contratos 2004-2012 com 27 empresas do cartel.
+------------------------------------------------------------------------------
+CITACAO VERBATIM (a fonte que sustenta):
+  "A diretoria da Petrobras informou, há pouco, que a empresa teve prejuízo de R$ 6,2 bilhões com os desvios de recursos investigados pela Operação Lava Jato"
+O QUE ISSO PROVA: Sustenta a perda reconhecida pela propria Petrobras (estatal), no balanco de 2014.
+POSICAO DA DEFESA: Nao se aplica: nao e uma acusacao a pessoa; e o prejuizo reconhecido pela estatal.
+------------------------------------------------------------------------------
+ARQUIVO BRUTO: https://agenciabrasil.ebc.com.br/economia/noticia/2015-04/petrobras-teve-prejuizo-de-r-216-bilhoes-no-ano-passado

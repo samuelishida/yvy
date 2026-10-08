@@ -1,0 +1,17 @@
+CLAIM: lula_mensalao_nunca_reu
+STATUS: nunca_reu   VERDICT: CONFIRMADO   CONFIANCA: 5/5
+FONTES: congressoemfoco_mensalao, stf_464261
+------------------------------------------------------------------------------
+AFIRMACAO: Lula nunca foi reu no Mensalao (AP 470); o STF rejeitou duas vezes
+sua inclusao. Dos 38 reus, 24 foram condenados apos os embargos infringentes.
+
+RESSALVA (contagem): o placar ORIGINAL de 2012 foi 25 condenados (fonte
+oficial do STF); 24 e o resultado APOS os embargos infringentes.
+------------------------------------------------------------------------------
+CITACAO VERBATIM (a fonte que sustenta):
+  "Os ministros do Supremo Tribunal Federal (STF) negaram novamente a inclusão do ex-presidente da República Luiz Inácio Lula da Silva no processo de julgamento do mensalão."
+O QUE ISSO PROVA: Sustenta que o STF rejeitou incluir Lula como réu; a rejeição foi reiterada.
+POSICAO DA DEFESA: A defesa de Lula sempre afirmou que ele não era réu no caso; o STF confirmou isso ao rejeitar sua inclusão.
+------------------------------------------------------------------------------
+ARQUIVO BRUTO: https://www.congressoemfoco.com.br/noticia/59918/stf-rejeita-novamente-inclusao-de-lula-no-mensalao
+ARQUIVO BRUTO: https://portal.stf.jus.br/noticias/verNoticiaDetalhe.asp?idConteudo=464261

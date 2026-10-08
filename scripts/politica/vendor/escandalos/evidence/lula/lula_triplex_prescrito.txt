@@ -1,0 +1,17 @@
+CLAIM: lula_triplex_prescrito
+STATUS: prescrito   VERDICT: CONFIRMADO   CONFIANCA: 5/5
+FONTES: g1_triplex_2022
+------------------------------------------------------------------------------
+AFIRMACAO: o caso do triplex foi ARQUIVADO por PRESCRICAO em janeiro de 2022
+(juiza Pollyanna Alves, 12a Vara Federal Criminal de Brasilia).
+
+A decisao reconhece a prescricao e explica que o prazo para reus com mais de
+70 anos e reduzido pela metade (art. 115 do Codigo Penal). A prescricao decorre
+da anulacao dos atos de Moro pelo STF. Nao houve absolvicao de merito.
+------------------------------------------------------------------------------
+CITACAO VERBATIM (a fonte que sustenta):
+  "Na decisão, a juíza reconhece que houve prescrição, já que o prazo para réus com mais de 70 anos é reduzido pela metade."
+O QUE ISSO PROVA: Sustenta a prescricao e a regra do artigo 115 do Codigo Penal (prazo pela metade apos os 70 anos).
+POSICAO DA DEFESA: A prescricao foi reconhecida a pedido do MPF, que apontou a extincao do prazo; nao houve absolvicao de merito.
+------------------------------------------------------------------------------
+ARQUIVO BRUTO: https://g1.globo.com/politica/noticia/2022/01/28/justica-do-df-arquiva-caso-do-triplex-do-guaruja-envolvendo-o-ex-presidente-lula.ghtml

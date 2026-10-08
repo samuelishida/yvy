@@ -1,0 +1,17 @@
+CLAIM: flavio_gilmar_negou_reabrir
+STATUS: denunciado_arquivado   VERDICT: CONFIRMADO   CONFIANCA: 5/5
+FONTES: poder360_gilmar_2025
+------------------------------------------------------------------------------
+AFIRMACAO: em fev/2025 Gilmar Mendes negou recursos do MP para reabrir a
+apuracao.
+
+DESENVOLVIMENTO 2026: o TJ-RJ barrou nova tentativa de reabertura (mar/2026);
+uma peticao pediu a retomada (set/2026); a acao civil de improbidade de 2023
+NAO tem Flavio como alvo.
+------------------------------------------------------------------------------
+CITACAO VERBATIM (a fonte que sustenta):
+  "O ministro do STF (Supremo Tribunal Federal) Gilmar Mendes negou na 4ª feira (26.fev.2025) recursos do MPRJ (Ministério Público do Rio de Janeiro) para que fosse reaberto o caso das 'rachadinhas'"
+O QUE ISSO PROVA: Sustenta que a reabertura foi negada em fev/2025.
+POSICAO DA DEFESA: A defesa de Flavio sustenta que o caso esta encerrado.
+------------------------------------------------------------------------------
+ARQUIVO BRUTO: https://www.poder360.com.br/poder-justica/gilmar-nega-pedido-para-reabrir-acao-contra-flavio-por-rachadinha/

@@ -1,0 +1,43 @@
+{
+  "_comment": "Coverage map for the 36 corpus claims (22 numeric + 14 legal). `surfaced` ∪ `excluded` MUST equal every claim_id in eleicao-2026/bench/claims.tsv and eleicao-2026/escandalos/claims.tsv. It is a COVERAGE check (many-to-one allowed), not a bijection: 4 unemployment claims map to one indicator. Gate 1 also spot-checks 3 surfaced claims' values against claims.tsv.",
+  "map": {
+    "econ_desoc": "kpis[econ_desoc].value",
+    "econ_desoc_dilma": "kpis[econ_desoc].compare[2].value",
+    "econ_desoc_min": "kpis[econ_desoc].notes.min.value",
+    "econ_desoc_pico": "kpis[econ_desoc].notes.max.value",
+    "econ_massa": "kpis[econ_massa].value",
+    "econ_ipca12m": "kpis[econ_ipca12m].value",
+    "soc_gini": "kpis[soc_gini].value",
+    "soc_rendimento": "kpis[soc_rendimento].value",
+    "amb_prodes_medias": "kpis[amb_prodes_medias].value",
+    "amb_prodes_2022_2025": "series[prodes]",
+    "amb_deter": "series[deter]",
+    "geo_br_1t": "kpis[geo_br_1t_pt].value",
+    "geo_uf_piores": "geo.uf_losers[0]",
+    "geo_mun_pl": "geo.municipalities[0]",
+    "geo_mun_pt": "geo.municipalities[8]",
+    "geo_redutos": "geo.summary",
+    "lula_mensalao_nunca_reu": "cases[lula_mensalao]",
+    "lula_fachin_anula_2021": "cases[lula_lava_jato]",
+    "lula_moro_suspeito": "cases[lula_lava_jato]",
+    "lula_triplex_prescrito": "cases[lula_triplex]",
+    "lula_atibaia_prescrito": "cases[lula_atibaia]",
+    "lula_petrobras_62bi": "cases[lula_lava_jato].financial[0]",
+    "lula_odebrecht_85bi": "cases[lula_lava_jato].financial[1]",
+    "flavio_denunciado_2020": "cases[flavio_rachadinha]",
+    "flavio_denuncia_arquivada": "cases[flavio_rachadinha]",
+    "flavio_stj_anulou_2021": "cases[flavio_rachadinha]",
+    "flavio_stf_anulou_rifs": "cases[flavio_rachadinha]",
+    "flavio_gilmar_negou_reabrir": "cases[flavio_rachadinha]",
+    "flavio_depositos_2mi": "cases[flavio_rachadinha].financial[0]",
+    "flavio_coaf_12mi": "cases[flavio_rachadinha].financial[1]"
+  },
+  "excluded": [
+    { "claim_id": "econ_ipca_mensal", "reason_pt": "IPCA de um único mês — recorte datado, não exibido no painel para não sugerir tendência.", "reason_en": "Single-month IPCA — a dated snapshot, not shown to avoid implying a trend." },
+    { "claim_id": "soc_forca_trabalho", "reason_pt": "Força de trabalho (108,9 mi) — indicador de nível, não exibido para manter a grade de KPIs enxuta.", "reason_en": "Labour force (108.9 m) — a level indicator, omitted to keep the KPI grid lean." },
+    { "claim_id": "soc_desoc_ibge", "reason_pt": "Desemprego trimestral do IBGE (5,3%) — fonte distinta da média BCB exibida; evitado para não confundir duas metodologias.", "reason_en": "IBGE quarterly unemployment (5.3%) — a different source from the displayed BCB average; omitted to avoid conflating two methodologies." },
+    { "claim_id": "geo_candidato_2026", "reason_pt": "Fato do cadastro do TSE (quem são os candidatos), não um número do painel.", "reason_en": "A TSE registry fact (who the candidates are), not a panel number." },
+    { "claim_id": "econ_alimentos", "reason_pt": "Preços de alimentos — subgrupo do IPCA; o painel mostra o IPCA cheio.", "reason_en": "Food prices — an IPCA subgroup; the panel shows headline IPCA." },
+    { "claim_id": "econ_salario_real", "reason_pt": "Salário mínimo real (IPEAdata) — não exibido nesta versão do painel.", "reason_en": "Real minimum wage (IPEAdata) — not shown in this version of the panel." }
+  ]
+}

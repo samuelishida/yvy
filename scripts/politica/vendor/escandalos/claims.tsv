@@ -1,0 +1,16 @@
+# Ledger de afirmacoes. Ver check_provenance.py. 'quote' e verbatim da fonte.
+claim_id	side	grupo	topic	status	verdict	confidence	source_ids	evidence
+lula_mensalao_nunca_reu	lula	Mensalao	Mensalao	nunca_reu	CONFIRMADO	5	congressoemfoco_mensalao,stf_464261	evidence/lula/lula_mensalao_nunca_reu.txt
+lula_fachin_anula_2021	lula	Lava Jato	Lava Jato / Petrolao	condenado_anulado	CONFIRMADO	5	agenciabrasil_stf_2021,stf_464261	evidence/lula/lula_fachin_anula_2021.txt
+lula_moro_suspeito	lula	Lava Jato	Lava Jato / Petrolao	condenado_anulado	CONFIRMADO	5	g1_moro_2021,stf_468184	evidence/lula/lula_moro_suspeito.txt
+lula_triplex_prescrito	lula	Triplex	Triplex do Guaruja	prescrito	CONFIRMADO	5	g1_triplex_2022	evidence/lula/lula_triplex_prescrito.txt
+lula_atibaia_prescrito	lula	Atibaia	Sitio de Atibaia	prescrito	CONFIRMADO	5	conjur_atibaia_2025,stf_468184	evidence/lula/lula_atibaia_prescrito.txt
+lula_petrobras_62bi	lula	Impacto financeiro	Impacto financeiro	condenado_anulado	CONFIRMADO	5	agenciabrasil_petrobras	evidence/lula/lula_petrobras_62bi.txt
+lula_odebrecht_85bi	lula	Impacto financeiro	Impacto financeiro	condenado_anulado	CONFIRMADO	5	ebc_odebrecht	evidence/lula/lula_odebrecht_85bi.txt
+flavio_denunciado_2020	flavio	Rachadinha	Rachadinha na ALERJ	denunciado_arquivado	CONFIRMADO	5	g1_denuncia_flavio_2020	evidence/flavio/flavio_denunciado_2020.txt
+flavio_denuncia_arquivada	flavio	Rachadinha	Rachadinha na ALERJ	denunciado_arquivado	CONFIRMADO	5	g1_tjrj_2022,g1_flavio_2026	evidence/flavio/flavio_denuncia_arquivada.txt
+flavio_stj_anulou_2021	flavio	Rachadinha	Rachadinha na ALERJ	denunciado_arquivado	CONFIRMADO	5	g1_stj_2021,g1_tjrj_2022	evidence/flavio/flavio_stj_anulou_2021.txt
+flavio_stf_anulou_rifs	flavio	Rachadinha	Rachadinha na ALERJ	denunciado_arquivado	CONFIRMADO	5	g1_jn_rifs,stf_rifs_flavio	evidence/flavio/flavio_stf_anulou_rifs.txt
+flavio_gilmar_negou_reabrir	flavio	Rachadinha	Rachadinha na ALERJ	denunciado_arquivado	CONFIRMADO	5	poder360_gilmar_2025	evidence/flavio/flavio_gilmar_negou_reabrir.txt
+flavio_depositos_2mi	flavio	Impacto financeiro	Impacto financeiro	denunciado_arquivado	CONFIRMADO	5	g1_depositos_2019	evidence/flavio/flavio_depositos_2mi.txt
+flavio_coaf_12mi	flavio	Impacto financeiro	Impacto financeiro	denunciado_arquivado	CONFIRMADO	5	g1_coaf_2018	evidence/flavio/flavio_coaf_12mi.txt

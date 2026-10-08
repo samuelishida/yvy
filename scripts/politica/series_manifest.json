@@ -1,0 +1,201 @@
+{
+  "_comment": "Raw-file manifest for /politica. `file` is relative to evidence/. `resolve` tells both build_data.mjs and verify_values.mjs (Gate 2) how to turn the raw file into the number. No formula is ever hard-coded in the panel: if it is not here, it cannot be rendered.",
+  "series": [
+    {
+      "id": "desoc",
+      "file": "_raw_bcb/raw/sgs_24369.json",
+      "kind": "sgs",
+      "unit": "%",
+      "label_pt": "Desemprego (%)",
+      "label_en": "Unemployment (%)",
+      "cap_years": 10,
+      "partial_end": false,
+      "sources": ["bcb_sgs"]
+    },
+    {
+      "id": "ipca12m",
+      "file": "economia/raw/ipca12m_serie.json",
+      "kind": "sgs",
+      "unit": "%",
+      "label_pt": "Inflação em 12 meses (%)",
+      "label_en": "Inflation over 12 months (%)",
+      "cap_years": 10,
+      "partial_end": false,
+      "sources": ["bcb_sgs"]
+    },
+    {
+      "id": "prodes",
+      "file": "ambiente/prodes_amazonia_anual.csv",
+      "kind": "csv_year",
+      "unit": "km²",
+      "label_pt": "Desmatamento na Amazônia (km²/ano)",
+      "label_en": "Amazon deforestation (km²/year)",
+      "cap_years": 20,
+      "partial_end": false,
+      "sources": ["inpe_prodes"]
+    },
+    {
+      "id": "deter",
+      "file": "ambiente/deter_amazonia_mensal.csv",
+      "kind": "csv_month",
+      "unit": "km²",
+      "label_pt": "Alertas de desmatamento (DETER, km²/mês)",
+      "label_en": "Deforestation alerts (DETER, km²/month)",
+      "cap_years": 10,
+      "partial_end": true,
+      "sources": ["inpe_deter"]
+    },
+    {
+      "id": "gini",
+      "file": "social/raw/sidra_7435_gini.json",
+      "kind": "sidra",
+      "unit": "índice",
+      "label_pt": "Índice de Gini (0 = igual, 1 = desigual)",
+      "label_en": "Gini index (0 = equal, 1 = unequal)",
+      "cap_years": 0,
+      "partial_end": false,
+      "sources": ["ibge_sidra"]
+    }
+  ],
+  "kpis": [
+    {
+      "id": "econ_desoc",
+      "unit": "%",
+      "direction": "lower_is_better",
+      "label_pt": "Desemprego médio",
+      "label_en": "Average unemployment",
+      "plain_pt": "Menos gente procurando emprego e não achando.",
+      "plain_en": "Fewer people looking for work without finding it.",
+      "sources": ["bcb_sgs"],
+      "resolve": { "kind": "agg", "file": "_raw_bcb/raw/sgs_24369.json", "fileKind": "sgs", "spec": { "agg": "mean", "from": 2023, "to": 2026 } },
+      "compare": [
+        { "label_pt": "2023–2026 (Lula 3)", "label_en": "2023–2026 (Lula 3)", "resolve": { "kind": "agg", "file": "_raw_bcb/raw/sgs_24369.json", "fileKind": "sgs", "spec": { "agg": "mean", "from": 2023, "to": 2026 } } },
+        { "label_pt": "2019–2022 (Bolsonaro)", "label_en": "2019–2022 (Bolsonaro)", "resolve": { "kind": "agg", "file": "_raw_bcb/raw/sgs_24369.json", "fileKind": "sgs", "spec": { "agg": "mean", "from": 2019, "to": 2022 } } },
+        { "label_pt": "2012–2016 (Dilma)", "label_en": "2012–2016 (Dilma)", "resolve": { "kind": "agg", "file": "_raw_bcb/raw/sgs_24369.json", "fileKind": "sgs", "spec": { "agg": "mean", "from": 2012, "to": 2016 } } }
+      ]
+    },
+    {
+      "id": "econ_ipca12m",
+      "unit": "%",
+      "direction": "lower_is_better",
+      "label_pt": "Inflação média (12 meses)",
+      "label_en": "Average inflation (12 months)",
+      "plain_pt": "O quanto os preços subiram, em média, por ano.",
+      "plain_en": "How much prices rose, on average, per year.",
+      "sources": ["bcb_sgs"],
+      "resolve": { "kind": "agg", "file": "economia/raw/ipca12m_serie.json", "fileKind": "sgs", "spec": { "agg": "mean", "from": 2023, "to": 2026 } },
+      "compare": [
+        { "label_pt": "2023–2026 (Lula 3)", "label_en": "2023–2026 (Lula 3)", "resolve": { "kind": "agg", "file": "economia/raw/ipca12m_serie.json", "fileKind": "sgs", "spec": { "agg": "mean", "from": 2023, "to": 2026 } } },
+        { "label_pt": "2019–2022 (Bolsonaro)", "label_en": "2019–2022 (Bolsonaro)", "resolve": { "kind": "agg", "file": "economia/raw/ipca12m_serie.json", "fileKind": "sgs", "spec": { "agg": "mean", "from": 2019, "to": 2022 } } },
+        { "label_pt": "2003–2016 (Lula/Dilma)", "label_en": "2003–2016 (Lula/Dilma)", "resolve": { "kind": "agg", "file": "economia/raw/ipca12m_serie.json", "fileKind": "sgs", "spec": { "agg": "mean", "from": 2003, "to": 2016 } } }
+      ]
+    },
+    {
+      "id": "econ_massa",
+      "unit": "R$ milhões",
+      "direction": "higher_is_better",
+      "label_pt": "Massa de rendimento real",
+      "label_en": "Real labour income mass",
+      "plain_pt": "A soma de tudo que os trabalhadores recebem, corrigida pela inflação.",
+      "plain_en": "The total income of all workers, adjusted for inflation.",
+      "sources": ["bcb_sgs"],
+      "resolve": { "kind": "agg", "file": "economia/raw/massa_rendimento_serie.json", "fileKind": "sgs", "spec": { "agg": "mean", "from": 2023, "to": 2026 } },
+      "compare": [
+        { "label_pt": "2023–2026 (Lula 3)", "label_en": "2023–2026 (Lula 3)", "resolve": { "kind": "agg", "file": "economia/raw/massa_rendimento_serie.json", "fileKind": "sgs", "spec": { "agg": "mean", "from": 2023, "to": 2026 } } },
+        { "label_pt": "2019–2022 (Bolsonaro)", "label_en": "2019–2022 (Bolsonaro)", "resolve": { "kind": "agg", "file": "economia/raw/massa_rendimento_serie.json", "fileKind": "sgs", "spec": { "agg": "mean", "from": 2019, "to": 2022 } } },
+        { "label_pt": "2003–2016 (Lula/Dilma)", "label_en": "2003–2016 (Lula/Dilma)", "resolve": { "kind": "agg", "file": "economia/raw/massa_rendimento_serie.json", "fileKind": "sgs", "spec": { "agg": "mean", "from": 2003, "to": 2016 } } }
+      ]
+    },
+    {
+      "id": "soc_gini",
+      "unit": "índice",
+      "direction": "lower_is_better",
+      "label_pt": "Desigualdade (Gini)",
+      "label_en": "Inequality (Gini)",
+      "plain_pt": "Quanto mais perto de zero, mais parecidas são as rendas.",
+      "plain_en": "The closer to zero, the more similar incomes are.",
+      "sources": ["ibge_sidra"],
+      "resolve": { "kind": "agg", "file": "social/raw/sidra_7435_gini.json", "fileKind": "sidra", "spec": { "agg": "value_at", "year": 2025 } },
+      "compare": [
+        { "label_pt": "2025", "label_en": "2025", "resolve": { "kind": "agg", "file": "social/raw/sidra_7435_gini.json", "fileKind": "sidra", "spec": { "agg": "value_at", "year": 2025 } } },
+        { "label_pt": "2012", "label_en": "2012", "resolve": { "kind": "agg", "file": "social/raw/sidra_7435_gini.json", "fileKind": "sidra", "spec": { "agg": "value_at", "year": 2012 } } }
+      ]
+    },
+    {
+      "id": "soc_rendimento",
+      "unit": "R$",
+      "direction": "higher_is_better",
+      "label_pt": "Rendimento médio mensal real",
+      "label_en": "Average real monthly income",
+      "plain_pt": "Quanto uma pessoa ocupada ganha por mês, em média.",
+      "plain_en": "What an employed person earns per month, on average.",
+      "sources": ["ibge_sidra"],
+      "resolve": { "kind": "agg", "file": "social/raw/sidra_7441_rendimento.json", "fileKind": "sidra", "spec": { "agg": "value_at", "year": 2025 } },
+      "compare": [
+        { "label_pt": "2025", "label_en": "2025", "resolve": { "kind": "agg", "file": "social/raw/sidra_7441_rendimento.json", "fileKind": "sidra", "spec": { "agg": "value_at", "year": 2025 } } },
+        { "label_pt": "2012", "label_en": "2012", "resolve": { "kind": "agg", "file": "social/raw/sidra_7441_rendimento.json", "fileKind": "sidra", "spec": { "agg": "value_at", "year": 2012 } } }
+      ]
+    },
+    {
+      "id": "amb_prodes_medias",
+      "unit": "km²",
+      "direction": "lower_is_better",
+      "label_pt": "Desmatamento médio anual",
+      "label_en": "Average annual deforestation",
+      "plain_pt": "Quantos km² de floresta foram derrubados por ano, em média.",
+      "plain_en": "How many km² of forest were cleared per year, on average.",
+      "sources": ["inpe_prodes"],
+      "resolve": { "kind": "agg", "file": "ambiente/prodes_amazonia_anual.csv", "fileKind": "csv_year", "spec": { "agg": "year_mean", "from": 2023, "to": 2025 } },
+      "compare": [
+        { "label_pt": "2023–2025 (Lula 3)", "label_en": "2023–2025 (Lula 3)", "resolve": { "kind": "agg", "file": "ambiente/prodes_amazonia_anual.csv", "fileKind": "csv_year", "spec": { "agg": "year_mean", "from": 2023, "to": 2025 } } },
+        { "label_pt": "2019–2022 (Bolsonaro)", "label_en": "2019–2022 (Bolsonaro)", "resolve": { "kind": "agg", "file": "ambiente/prodes_amazonia_anual.csv", "fileKind": "csv_year", "spec": { "agg": "year_mean", "from": 2019, "to": 2022 } } }
+      ]
+    },
+    {
+      "id": "geo_br_1t_pt",
+      "unit": "%",
+      "direction": "higher_is_better",
+      "label_pt": "Voto do PT (1º turno)",
+      "label_en": "PT vote share (1st round)",
+      "plain_pt": "A fatia de votos válidos do PT para presidente, no Brasil inteiro.",
+      "plain_en": "The PT's share of valid presidential votes, nationwide.",
+      "sources": ["tse_resultados"],
+      "resolve": { "kind": "geo_national", "file": "geografia/municipios_presidente_1t.csv", "party": "pt", "year": 2026 },
+      "compare": [
+        { "label_pt": "2026", "label_en": "2026", "resolve": { "kind": "geo_national", "file": "geografia/municipios_presidente_1t.csv", "party": "pt", "year": 2026 } },
+        { "label_pt": "2022", "label_en": "2022", "resolve": { "kind": "geo_national", "file": "geografia/municipios_presidente_1t.csv", "party": "pt", "year": 2022 } }
+      ]
+    },
+    {
+      "id": "geo_br_1t_pl",
+      "unit": "%",
+      "direction": "higher_is_better",
+      "label_pt": "Voto da PL (1º turno)",
+      "label_en": "PL vote share (1st round)",
+      "plain_pt": "A fatia de votos válidos da PL para presidente, no Brasil inteiro.",
+      "plain_en": "The PL's share of valid presidential votes, nationwide.",
+      "sources": ["tse_resultados"],
+      "resolve": { "kind": "geo_national", "file": "geografia/municipios_presidente_1t.csv", "party": "pl", "year": 2026 },
+      "compare": [
+        { "label_pt": "2026", "label_en": "2026", "resolve": { "kind": "geo_national", "file": "geografia/municipios_presidente_1t.csv", "party": "pl", "year": 2026 } },
+        { "label_pt": "2022", "label_en": "2022", "resolve": { "kind": "geo_national", "file": "geografia/municipios_presidente_1t.csv", "party": "pl", "year": 2022 } }
+      ]
+    }
+  ],
+  "superlatives": [
+    { "id": "desoc_min", "kind": "argmin", "file": "_raw_bcb/raw/sgs_24369.json", "fileKind": "sgs", "unit": "%", "sources": ["bcb_sgs"] },
+    { "id": "desoc_max", "kind": "argmax", "file": "_raw_bcb/raw/sgs_24369.json", "fileKind": "sgs", "unit": "%", "sources": ["bcb_sgs"] }
+  ],
+  "geo": {
+    "uf_file": "geografia/uf_presidente_1t.csv",
+    "mun_file": "geografia/municipios_presidente_1t.csv",
+    "sources": ["tse_resultados"]
+  },
+  "_periods_comment": "Presidential terms for the chart demarcations. `from`/`to` are the exact data-tick bounds (YYYY-MM for monthly series, YYYY for annual). Each chart clamps these to the ticks it actually has, so a term that precedes a series' start simply is not drawn.",
+  "periods": [
+    { "id": "dilma2", "label_pt": "Dilma 2 (2015–2016)", "label_en": "Dilma 2 (2015–2016)", "short_pt": "Dilma 2", "short_en": "Dilma 2", "from": "2015-01", "to": "2016-08", "from_year": "2015", "to_year": "2016", "tone": "neutral" },
+    { "id": "temer", "label_pt": "Temer (2016–2018)", "label_en": "Temer (2016–2018)", "short_pt": "Temer", "short_en": "Temer", "from": "2016-08", "to": "2018-12", "from_year": "2016", "to_year": "2018", "tone": "neutral" },
+    { "id": "bolsonaro", "label_pt": "Bolsonaro (2019–2022)", "label_en": "Bolsonaro (2019–2022)", "short_pt": "Bolsonaro", "short_en": "Bolsonaro", "from": "2019-01", "to": "2022-12", "from_year": "2019", "to_year": "2022", "tone": "a" },
+    { "id": "lula3", "label_pt": "Lula 3 (2023–2026)", "label_en": "Lula 3 (2023–2026)", "short_pt": "Lula 3", "short_en": "Lula 3", "from": "2023-01", "to": "2026-09", "from_year": "2023", "to_year": "2025", "tone": "b" }
+  ]
+}
