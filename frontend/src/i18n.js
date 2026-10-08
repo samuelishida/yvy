@@ -10,6 +10,7 @@ export const translations = {
       news: 'Notícias',
       dashboard: 'Dashboard',
       thematicMaps: 'Mapas Temáticos',
+      politica: 'Política',
       brandSub: 'Observabilidade Ambiental · Brasil',
     },
     home: {
@@ -345,6 +346,7 @@ export const translations = {
       news: 'News',
       dashboard: 'Dashboard',
       thematicMaps: 'Thematic Maps',
+      politica: 'Politics',
       brandSub: 'Environmental Observability · Brazil',
     },
     home: {

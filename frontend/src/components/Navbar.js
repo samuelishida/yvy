@@ -30,6 +30,14 @@ export default function Navbar() {
 
   const close = () => setOpen(false);
 
+  // Treat "/politica" and "/politica/" as the same route: the CRA dev server
+  // appends a trailing slash, which would otherwise leave the active link
+  // unhighlighted in dev but not in production.
+  const isActive = (path) => {
+    const current = location.pathname.replace(/\/+$/, '') || '/';
+    return current === path;
+  };
+
   return (
     <nav className="navbar">
       <div className="navbar-brand">
@@ -42,38 +50,45 @@ export default function Navbar() {
       <div className={`nav-links ${open ? 'nav-links--open' : ''}`}>
         <Link
           to="/"
-          className={location.pathname === '/' ? 'nav-link nav-link--active' : 'nav-link'}
+          className={isActive('/') ? 'nav-link nav-link--active' : 'nav-link'}
           onClick={close}
         >
           {t('nav.home')}
         </Link>
         <Link
           to="/news"
-          className={location.pathname === '/news' ? 'nav-link nav-link--active' : 'nav-link'}
+          className={isActive('/news') ? 'nav-link nav-link--active' : 'nav-link'}
           onClick={close}
         >
           {t('nav.news')}
         </Link>
         <Link
           to="/dashboard"
-          className={location.pathname === '/dashboard' ? 'nav-link nav-link--active' : 'nav-link'}
+          className={isActive('/dashboard') ? 'nav-link nav-link--active' : 'nav-link'}
           onClick={close}
         >
           {t('nav.dashboard')}
         </Link>
         <Link
           to="/mapas-tematicos"
-          className={location.pathname === '/mapas-tematicos' ? 'nav-link nav-link--active' : 'nav-link'}
+          className={isActive('/mapas-tematicos') ? 'nav-link nav-link--active' : 'nav-link'}
           onClick={close}
         >
           {t('nav.thematicMaps')}
         </Link>
         <Link
           to="/risk-intelligence"
-          className={location.pathname === '/risk-intelligence' ? 'nav-link nav-link--active' : 'nav-link'}
+          className={isActive('/risk-intelligence') ? 'nav-link nav-link--active' : 'nav-link'}
           onClick={close}
         >
           {t('risk.nav')}
+        </Link>
+        <Link
+          to="/politica"
+          className={isActive('/politica') ? 'nav-link nav-link--active' : 'nav-link'}
+          onClick={close}
+        >
+          {t('nav.politica')}
         </Link>
       </div>
 
