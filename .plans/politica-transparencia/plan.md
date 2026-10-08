@@ -7,6 +7,15 @@
 > schema; (d) `/politica` com `noindex`; (e) manifesto de arquivos brutos para
 > séries/geografia; (f) dados financeiros alinhados com corpus (`suspenso_2024`,
 > nenhum arredondamento para cifras banidas).
+>
+> **Reversão 2026-10-07 (decisão do usuário).** (i) **A rota agora É pública**:
+> a aba "Política" entra no `Navbar.js` (`to="/politica"` + chave `nav.politica`
+> pt/en). A decisão original "sem link no Navbar" foi revertida pelo usuário. O
+> `noindex` permanece (público ≠ indexado). (j) **Os jobs de CI foram revertidos**:
+> `make politica` segue como a verificação canônica, mas **não** roda no GitHub
+> Actions — o job `politica-check` falhou em ambiente limpo e o usuário optou por
+> manter o `ci.yml` exatamente como estava antes. Os gates e o `Makefile` seguem
+> intactos; `make politica-data` / `make politica-check` continuam válidos.
 
 ## Context
 
