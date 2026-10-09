@@ -62,12 +62,23 @@ const cases = [
     script: 'check_provenance.mjs',
     expectFail: true,
   },
+  {
+    name: 'E — strict status check cannot fall back to general sources',
+    file: join(dir, 'e.json'),
+    make: (d) => {
+      d.cases.find((c) => c.id === 'flavio_master').status_sources = ['missing_status_source'];
+      return d;
+    },
+    script: 'verify_citations.mjs',
+    expectFail: true,
+    liveOnly: false,
+  },
 ];
 
 let failures = 0;
 for (const c of cases) {
   writeFileSync(c.file, JSON.stringify(c.make(clone())));
-  if (process.argv.includes('--skip-live') && c.script === 'verify_citations.mjs') {
+  if (process.argv.includes('--skip-live') && c.script === 'verify_citations.mjs' && c.liveOnly !== false) {
     console.log(`SKIP  ${c.name} (live fetch skipped)`);
     continue;
   }

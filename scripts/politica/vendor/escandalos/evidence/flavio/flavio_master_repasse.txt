@@ -1,0 +1,23 @@
+CLAIM: flavio_master_repasse
+STATUS: sob_investigacao   VERDICT: CONFIRMADO   CONFIANCA: 4/5
+FONTES: poder360_flavio_vorcaro, folha_dark_horse
+------------------------------------------------------------------------------
+AFIRMACAO: Vorcaro transferiu US$ 10,6 milhoes (~R$ 61 milhoes) de fev a
+mai/2025, via Entre Investimentos e Participacoes, ao fundo Havengate
+Development Fund LP, no Texas (EUA).
+
+OBJETO: valores repassados por VORCARO (Banco Master) a um fundo nos EUA
+associado a producao do filme. NAO e valor atribuido a Flavio nem a pessoa
+fisica alguma; e o total do acordo com o banqueiro (R$ 134 mi), dos quais
+esses R$ 61 mi foram efetivamente pagos.
+
+NOTA: a Folha registra prejuizos de R$ 60 bi do esquema do Master e que o
+valor combinado era de R$ 134 mi, dos quais R$ 61 mi ja haviam sido pagos.
+------------------------------------------------------------------------------
+CITACAO VERBATIM (a fonte que sustenta):
+  "De fevereiro a maio de 2025, segundo o Intercept Brasil, o ex-banqueiro transferiu US$10,6 milhões, valor correspondente a R$61 milhões na cotação do período."
+O QUE ISSO PROVA: Sustenta o valor efetivamente transferido (US$ 10,6 mi / ~R$ 61 mi) e o periodo (fev-mai/2025).
+POSICAO DA DEFESA: Flavio nega que recursos tenham sido destinados ao irmao Eduardo; afirma que os aportes foram a fundo especifico da producao, com estrutura juridica propria e fiscalizacao nos EUA.
+------------------------------------------------------------------------------
+ARQUIVO BRUTO: https://www.poder360.com.br/poder-congresso/flavio-diz-que-rompeu-com-vorcaro-apos-acusacoes-virem-a-publico/
+ARQUIVO BRUTO: https://www1.folha.uol.com.br/poder/2026/05/fundo-dos-eua-emendas-e-banco-master-quem-e-quem-no-caso-das-conversas-de-flavio-e-vorcaro.shtml

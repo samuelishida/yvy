@@ -18,6 +18,7 @@ export const ENUM_CASE_STATUS = [
   'absolvido', // acquitted on the merits
   'prescrito', // charges time-barred
   'em_curso', // still running
+  'sob_investigacao', // under active investigation; no finding implied
   'nunca_reu', // never a defendant
   'nao_confirmado', // not confirmed — build must fail if this reaches the panel
 ];
@@ -26,6 +27,7 @@ export const ENUM_CASE_STATUS = [
 // never to the case itself.
 export const ENUM_EVIDENCE_STATE = [
   'alegado_na_denuncia', // alleged in the indictment
+  'alegado_em_apuracao', // allegation under investigation, not proven
   'usado_no_processo', // used in the proceedings
   'anulado', // annulled by a court
 ];
@@ -189,6 +191,16 @@ export function validate(data) {
     }
     if (!ENUM_CASE_STATUS.includes(c.status)) {
       E(`${w}.status: "${c.status}" not in ${ENUM_CASE_STATUS.join('|')}`);
+    }
+    const requiresStatusSources = ['flavio_master', 'flavio_imoveis'].includes(c.id);
+    if (requiresStatusSources && (!isArr(c.status_sources) || c.status_sources.length === 0)) {
+      E(`${w}.status_sources: required and must be non-empty for ${c.id}`);
+    }
+    if (c.status_sources !== undefined) {
+      if (!isArr(c.status_sources)) E(`${w}.status_sources: expected array`);
+      else for (const id of c.status_sources) {
+        if (!sourceIds.has(id)) E(`${w}.status_sources: unknown source id "${id}"`);
+      }
     }
     // `nao_confirmado` is a valid enum value but a hard build failure on the panel.
     if (c.status === 'nao_confirmado') E(`${w}.status: "nao_confirmado" must not ship (Inc 8)`);

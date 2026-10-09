@@ -27,7 +27,7 @@ const SIBLING = resolve(REPO, '../eleicao-2026');
 const OUT_JSON = resolve(REPO, 'frontend/public/politica/data.json');
 const OUT_LOCK = resolve(REPO, 'frontend/public/politica/data.json.lock');
 
-const VINTAGE = '2026-10-07';
+const VINTAGE = '2026-10-09';
 const round = (v, d = 2) => Math.round(v * 10 ** d) / 10 ** d;
 
 // ── source resolution (sibling first, vendor fallback) ───────────────────────
@@ -216,9 +216,9 @@ function build() {
       vintage: VINTAGE,
       generated_by: 'scripts/politica/build_data.mjs',
       scope_note_pt:
-        'Recorte datado de 07/10/2026. Números de governo vêm de arquivos brutos oficiais e são recalculados; cada fonte é um link. Os casos jurídicos mostram o status processual em out/2026 — condenações anuladas não são condenações atuais.',
+        'Recorte datado de 09/10/2026. Números de governo vêm de arquivos brutos oficiais e são recalculados; cada fonte é um link. Os casos jurídicos mostram o status processual em out/2026 — condenações anuladas não são condenações atuais.',
       scope_note_en:
-        'A snapshot dated 2026-10-07. Government numbers come from official raw files and are re-derived; every source is a link. Legal cases show the procedural status as of Oct/2026 — annulled convictions are not current convictions.',
+        'A snapshot dated 2026-10-09. Government numbers come from official raw files and are re-derived; every source is a link. Legal cases show the procedural status as of Oct/2026 — annulled convictions are not current convictions.',
       series_cap_pt: 'séries limitadas aos últimos anos indicados em cada gráfico',
       series_cap_en: 'series capped to the last years shown on each chart',
       series_cap: 'últimos 10 anos',
@@ -229,7 +229,7 @@ function build() {
         // Honest label: the upstream rate measures that each citation is PRESENT on
         // a live source; whether a given excerpt fully PROVES the status is a
         // separate judgement the panel discloses per case (citation_scope).
-        upstream: { sourced_claims_rate: '14/14', citation_presence_rate: '14/14' },
+        upstream: { sourced_claims_rate: '18/18', citation_presence_rate: '18/18' },
       },
     },
     kpis,
@@ -285,7 +285,7 @@ function vendorEvidence() {
     mkdirSync(dirname(to), { recursive: true });
     copyFileSync(from, to);
   }
-  // evidence/*.txt for the 14 claims
+  // evidence/*.txt for all legal claims in the sibling ledger
   const evSrc = join(SIBLING, 'escandalos/evidence');
   for (const side of ['lula', 'flavio']) {
     const dir = join(evSrc, side);

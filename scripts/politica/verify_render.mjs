@@ -64,7 +64,6 @@ const { I18nProvider, translations } = require(resolve(SRC, 'i18n.js'));
 const { PoliticaContext, PoliticaBody } = require(resolve(SRC, 'components/Politica/Politica.js'));
 const SECTIONS = [
   ['Kpis', require(resolve(SRC, 'components/Politica/PoliticaKpis.js')).default],
-  ['Compare', require(resolve(SRC, 'components/Politica/PoliticaCompare.js')).default],
   ['Series', require(resolve(SRC, 'components/Politica/PoliticaSeries.js')).default],
   ['Dossier', require(resolve(SRC, 'components/Politica/PoliticaDossier.js')).default],
   ['Sources', require(resolve(SRC, 'components/Politica/PoliticaSources.js')).default],
@@ -77,6 +76,17 @@ const FULL_PAGE = [['PageBody', PoliticaBody]];
 
 const data = JSON.parse(readFileSync(DATA, 'utf8'));
 
+function renderWithLanguage(lang, render) {
+  const previous = global.localStorage;
+  global.localStorage = { getItem: () => lang, setItem: () => {} };
+  try {
+    return render();
+  } finally {
+    if (previous === undefined) delete global.localStorage;
+    else global.localStorage = previous;
+  }
+}
+
 // ── render each section, collect visible text ───────────────────────────────
 function renderSection(Comp, lang) {
   const el = React.createElement(
@@ -88,7 +98,7 @@ function renderSection(Comp, lang) {
       React.createElement(Comp),
     ),
   );
-  return renderToStaticMarkup(el);
+  return renderWithLanguage(lang, () => renderToStaticMarkup(el));
 }
 
 // Full page: renders PoliticaBody, which creates its own provider — so this hits
@@ -99,7 +109,7 @@ function renderFullPage(lang) {
     null,
     React.createElement(PoliticaBody, { data, lang }),
   );
-  return renderToStaticMarkup(el);
+  return renderWithLanguage(lang, () => renderToStaticMarkup(el));
 }
 
 // Strip tags so we inspect only the text a reader sees (props never reach here,
@@ -164,6 +174,19 @@ function nearAllowed(cand, decimals, allowed) {
   return allowed.some((a) => Math.abs(a - cand) <= tol);
 }
 
+function escapeAttr(value) {
+  return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function caseMarkup(html, caseId) {
+  const marker = `data-case-id="${caseId}"`;
+  const at = html.indexOf(marker);
+  if (at < 0) return null;
+  const start = html.lastIndexOf('<article', at);
+  const close = html.indexOf('</article>', at);
+  return start < 0 || close < 0 ? null : html.slice(start, close + '</article>'.length);
+}
+
 // Collect every number the JSON can legitimately produce: numeric leaves AND
 // digit tokens embedded in strings ("2005–2014", "38 réus", "R$ 6,2 bi"). The
 // latter are just as data-driven as the former — both live in data.json.
@@ -217,10 +240,64 @@ function main() {
 
   if (renderedChars < 500) errors.push(`render produced only ${renderedChars} chars — components likely failed to render`);
 
-  // Also assert the two structural promises the plan makes.
-  const dossierHtml = visibleText(renderSection(SECTIONS.find((s) => s[0] === 'Dossier')[1], 'pt'));
-  if (/"status":/i.test(dossierHtml)) errors.push('dossier: raw enum leaked as JSON');
-  if (dossierHtml.includes('politica.')) errors.push('dossier: an i18n key leaked raw (missing translation)');
+  // Assert legal-card content, translations, evidence labels, and direct status
+  // links in both locales. `SourceRef` normally collapses sources after the first
+  // into a count; status-source wrappers ensure each required link is visible.
+  const Dossier = SECTIONS.find((s) => s[0] === 'Dossier')[1];
+  const caseById = new Map(data.cases.map((c) => [c.id, c]));
+  const sourceById = new Map(data.sources.map((s) => [s.id, s]));
+  for (const lang of ['pt', 'en']) {
+    const html = renderSection(Dossier, lang);
+    const dossierText = visibleText(html);
+    if (/"status":/i.test(dossierText)) errors.push(`dossier [${lang}]: raw enum leaked as JSON`);
+    if (dossierText.includes('politica.')) errors.push(`dossier [${lang}]: an i18n key leaked raw`);
+    const cardCount = (html.match(/data-case-id=/g) || []).length;
+    if (cardCount !== 7) errors.push(`dossier [${lang}]: expected 7 case cards, found ${cardCount}`);
+
+    for (const c of data.cases) {
+      const article = caseMarkup(html, c.id);
+      if (!article) {
+        errors.push(`dossier [${lang}]: case ${c.id} did not render`);
+        continue;
+      }
+      const text = visibleText(article);
+      const dict = translations[lang].politica;
+      if (!text.includes(dict[`status_${c.status}`] || '')) errors.push(`dossier [${lang}]: missing status label for ${c.id}`);
+      if (!text.includes(dict[`statusPhrase_${c.status}`] || '')) errors.push(`dossier [${lang}]: missing status phrase for ${c.id}`);
+      for (const e of c.evidence || []) {
+        if (!text.includes(dict[`state_${e.state}`] || '')) errors.push(`dossier [${lang}]: missing evidence label ${e.state} on ${c.id}`);
+        const artifact = lang === 'en' ? e.artifact_en || e.artifact_pt : e.artifact_pt;
+        if (artifact && !text.includes(artifact)) errors.push(`dossier [${lang}]: missing evidence text on ${c.id}`);
+      }
+
+      if (['flavio_master', 'flavio_imoveis'].includes(c.id)) {
+        const citation = lang === 'en' ? c.status_citation_en : c.status_citation_pt;
+        const citationAt = article.indexOf(citation);
+        if (citationAt < 0) errors.push(`dossier [${lang}]: missing status quote on ${c.id}`);
+        for (const id of c.status_sources || []) {
+          const source = sourceById.get(id);
+          if (!source) {
+            errors.push(`dossier [${lang}]: unknown status source ${id} on ${c.id}`);
+            continue;
+          }
+          const sourceMarker = `data-source-id="${id}"`;
+          const sourceAt = article.indexOf(sourceMarker);
+          if (sourceAt < 0 || citationAt < 0 || sourceAt < citationAt || sourceAt - citationAt > 1600) {
+            errors.push(`dossier [${lang}]: status source ${id} is not linked beside ${c.id} quote`);
+            continue;
+          }
+          const href = `href="${escapeAttr(source.url)}"`;
+          if (!article.includes(href, sourceAt)) errors.push(`dossier [${lang}]: status source ${id} has no direct URL on ${c.id}`);
+        }
+      }
+    }
+  }
+
+  const master = caseById.get('flavio_master');
+  if (!master || master.status !== 'sob_investigacao') errors.push('data: missing flavio_master investigation status');
+  else if (!master.evidence.some((e) => e.state === 'alegado_em_apuracao')) errors.push('data: master allegations lack alegado_em_apuracao state');
+  const properties = caseById.get('flavio_imoveis');
+  if (!properties || !properties.evidence.some((e) => e.state === 'anulado')) errors.push('data: property card lacks separate annulled-evidence item');
 
   const rate = errors.length === 0 ? 100.0 : 0.0;
   console.log(`METRIC=politica_render_rate value=${rate.toFixed(1)}`);

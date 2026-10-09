@@ -1,0 +1,24 @@
+CLAIM: flavio_imoveis_barra
+STATUS: denunciado_arquivado   VERDICT: CONFIRMADO   CONFIANCA: 4/5
+FONTES: congressoemfoco_imoveis_barra
+------------------------------------------------------------------------------
+AFIRMACAO: contas de Flavio e de sua esposa Fernanda receberam R$ 295,5 mil
+em dinheiro vivo, por meio de 146 depositos de origem desconhecida, entre
+abr/2014 e ago/2018, usados -- segundo o MP -- para pagar parcelas de um
+apartamento na Barra da Tijuca (Avenida Lucio Costa), declarado por
+R$ 2,55 milhoes.
+
+NOTA (coisinha guardada): Flavio pagou R$ 30 mil em especie ao vendedor
+David Macedo Neto por 'moveis' do apartamento. Ao promotor, justificou que
+tinha 'uma coisinha guardada em casa'. Nao houve contrato para os moveis.
+
+STATUS (out/2026): mesma denuncia das rachadinhas -- arquivada em 2022.
+Flavio NUNCA foi condenado. As provas financeiras foram anuladas (STJ/STF);
+o registro historico dos fatos permanece documentado.
+------------------------------------------------------------------------------
+CITACAO VERBATIM (a fonte que sustenta):
+  "O senador Flávio Bolsonaro (Republicanos-RJ) e sua esposa, a dentista Fernanda Bolsonaro, receberam um total de R$ 295,5 mil em dinheiro vivo, por meio de 146 depósitos de origem desconhecida, entre abril de 2014 e agosto de 2018."
+O QUE ISSO PROVA: Sustenta o volume de depositos em dinheiro vivo (R$ 295,5 mil, 146 depositos) apontado pelo MP para o pagamento do apartamento na Barra.
+POSICAO DA DEFESA: A defesa qualificou a denuncia como 'insustentavel', alegando erros processuais e na narrativa; as provas financeiras foram anuladas pelo STJ e a denuncia arquivada.
+------------------------------------------------------------------------------
+ARQUIVO BRUTO: https://www.congressoemfoco.com.br/noticia/22707/mp-diz-que-flavio-bolsonaro-pagou-apartamento-com-dinheiro-de-origem-desconhecida

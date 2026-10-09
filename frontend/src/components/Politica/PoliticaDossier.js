@@ -41,7 +41,7 @@ function CaseCard({ c, sources }) {
   const max = c.financial.length ? Math.max(...c.financial.map((f) => f.value)) : 1;
 
   return (
-    <article className={`politica-card politica-card--side-${c.side}`}>
+    <article className={`politica-card politica-card--side-${c.side}`} data-case-id={c.id}>
       <div className="politica-card__head">
         <h3 className="politica-card__name">{name}</h3>
         <span className="politica-card__period">{c.period}</span>
@@ -96,14 +96,20 @@ function CaseCard({ c, sources }) {
         <div className="politica-block" style={{ borderTop: 'none', marginTop: 0 }}>
           <p className="politica-block__label">{t('politica.citation')}</p>
           {citation ? <blockquote className="politica-quote">{citation}</blockquote> : null}
+          <div className="politica-status-sources">
+            {Array.isArray(c.status_sources) && c.status_sources.length > 0
+              ? c.status_sources.map((id) => (
+                <span key={id} data-source-id={id}>
+                  <SourceRef ids={[id]} sources={sources} />
+                </span>
+              ))
+              : <SourceRef ids={c.sources} sources={sources} />}
+          </div>
           {citationScope ? (
             <p className="politica-block__text" style={{ fontSize: 12, fontStyle: 'italic' }}>{citationScope}</p>
           ) : null}
           <p className="politica-block__label" style={{ marginTop: 10 }}>{t('politica.defense')}</p>
           <p className="politica-block__text">{defense}</p>
-          <div style={{ marginTop: 10 }}>
-            <SourceRef ids={c.sources} sources={sources} />
-          </div>
         </div>
       </details>
     </article>

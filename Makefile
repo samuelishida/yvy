@@ -1,6 +1,6 @@
 # Yvy Makefile — Lua-only stack
 
-.PHONY: setup run lua stop test-lua migrate-lua sqlite-access setup-lua run-lua ingest-sinaflor sync-sinaflor ingest-mapbiomas sync-mapbiomas ingest-area-efetiva sync-area-efetiva ingest-embargo sync-embargo car-weekly area-efetiva-weekly mapbiomas-weekly politica-data politica-check politica
+.PHONY: setup run lua stop test-lua migrate-lua sqlite-access setup-lua run-lua ingest-sinaflor sync-sinaflor ingest-mapbiomas sync-mapbiomas ingest-area-efetiva sync-area-efetiva ingest-embargo sync-embargo car-weekly area-efetiva-weekly mapbiomas-weekly politica-upstream-check politica-data politica-check-static politica-citations politica-check politica
 
 # ── Setup ──────────────────────────────────────────────────────────────────────
 
@@ -81,19 +81,29 @@ area-efetiva-weekly:
 
 
 # ── /politica (rota oculta, dado curado) ────────────────────────────
-# politica-data  : regenera data.json + lock + vendor snapshot (precisa de ../eleicao-2026)
-# politica-check : valida o JSON commitado (roda em clone limpo, sem repo irmao)
-# politica       : os dois
+# politica-data         : valida corpus upstream e regenera snapshot/JSON/lock
+# politica-check-static : gates determinísticos (precisa de frontend/npm ci)
+# politica-citations   : gate live de citações de status
+# politica-check       : gates estáticos + live (local, antes de merge)
 
-politica-data:
+politica-upstream-check:
+	python3 ../eleicao-2026/escandalos/check_provenance.py
+	python3 ../eleicao-2026/escandalos/verify_citations.py
+
+politica-data: politica-upstream-check
 	node scripts/politica/build_data.mjs --refresh-vendor
 
-politica-check:
+politica-check-static:
 	node scripts/politica/schema.mjs
 	node scripts/politica/check_provenance.mjs --vendor
 	node scripts/politica/check_sources.mjs
 	node scripts/politica/verify_values.mjs --vendor
-	node scripts/politica/verify_citations.mjs
 	node scripts/politica/negative_tests.mjs --skip-live
+	node scripts/politica/verify_render.mjs
+
+politica-citations:
+	node scripts/politica/verify_citations.mjs
+
+politica-check: politica-check-static politica-citations
 
 politica: politica-data politica-check

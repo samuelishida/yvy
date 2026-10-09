@@ -1,5 +1,5 @@
 {
-  "_comment": "Coverage map for the 36 corpus claims (22 numeric + 14 legal). `surfaced` ∪ `excluded` MUST equal every claim_id in eleicao-2026/bench/claims.tsv and eleicao-2026/escandalos/claims.tsv. It is a COVERAGE check (many-to-one allowed), not a bijection: 4 unemployment claims map to one indicator. Gate 1 also spot-checks 3 surfaced claims' values against claims.tsv.",
+  "_comment": "Coverage map for the 40 corpus claims (22 numeric + 18 legal). `surfaced` ∪ `excluded` MUST equal every claim_id in eleicao-2026/bench/claims.tsv and eleicao-2026/escandalos/claims.tsv. It is a COVERAGE check (many-to-one allowed), not a bijection: 4 unemployment claims map to one indicator. Gate 1 also spot-checks 3 surfaced claims' values against claims.tsv.",
   "map": {
     "econ_desoc": "kpis[econ_desoc].value",
     "econ_desoc_dilma": "kpis[econ_desoc].compare[2].value",
@@ -30,7 +30,11 @@
     "flavio_stf_anulou_rifs": "cases[flavio_rachadinha]",
     "flavio_gilmar_negou_reabrir": "cases[flavio_rachadinha]",
     "flavio_depositos_2mi": "cases[flavio_rachadinha].financial[0]",
-    "flavio_coaf_12mi": "cases[flavio_rachadinha].financial[1]"
+    "flavio_coaf_12mi": "cases[flavio_rachadinha].financial[1]",
+    "flavio_master_filme": "cases[flavio_master]",
+    "flavio_master_repasse": "cases[flavio_master]",
+    "flavio_imoveis_copacabana": "cases[flavio_imoveis]",
+    "flavio_imoveis_barra": "cases[flavio_imoveis]"
   },
   "excluded": [
     { "claim_id": "econ_ipca_mensal", "reason_pt": "IPCA de um único mês — recorte datado, não exibido no painel para não sugerir tendência.", "reason_en": "Single-month IPCA — a dated snapshot, not shown to avoid implying a trend." },

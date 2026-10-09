@@ -16,7 +16,6 @@ import '../Dashboard.css';
 import './Politica.css';
 
 import PoliticaKpis from './PoliticaKpis';
-import PoliticaCompare from './PoliticaCompare';
 import PoliticaSeries from './PoliticaSeries';
 import PoliticaDossier from './PoliticaDossier';
 import PoliticaSources from './PoliticaSources';
@@ -28,7 +27,6 @@ const DATA_URL = `${process.env.PUBLIC_URL || ''}/politica/data.json`;
 const SECTIONS = [
   { id: 'kpis', key: 'navKpis', Comp: PoliticaKpis },
   { id: 'dossier', key: 'navDossier', Comp: PoliticaDossier },
-  { id: 'compare', key: 'navCompare', Comp: PoliticaCompare },
   { id: 'series', key: 'navSeries', Comp: PoliticaSeries },
 ];
 

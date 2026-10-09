@@ -4,7 +4,7 @@ lula_mensalao_nunca_reu	lula	Mensalao	Mensalao	nunca_reu	CONFIRMADO	5	congressoe
 lula_fachin_anula_2021	lula	Lava Jato	Lava Jato / Petrolao	condenado_anulado	CONFIRMADO	5	agenciabrasil_stf_2021,stf_464261	evidence/lula/lula_fachin_anula_2021.txt
 lula_moro_suspeito	lula	Lava Jato	Lava Jato / Petrolao	condenado_anulado	CONFIRMADO	5	g1_moro_2021,stf_468184	evidence/lula/lula_moro_suspeito.txt
 lula_triplex_prescrito	lula	Triplex	Triplex do Guaruja	prescrito	CONFIRMADO	5	g1_triplex_2022	evidence/lula/lula_triplex_prescrito.txt
-lula_atibaia_prescrito	lula	Atibaia	Sitio de Atibaia	prescrito	CONFIRMADO	5	conjur_atibaia_2025,stf_468184	evidence/lula/lula_atibaia_prescrito.txt
+lula_atibaia_prescrito	lula	Atibaia	Sitio de Atibaia	prescrito	CONFIRMADO	5	conjur_atibaia_2025,jbr_atibaia_2025,stf_468184	evidence/lula/lula_atibaia_prescrito.txt
 lula_petrobras_62bi	lula	Impacto financeiro	Impacto financeiro	condenado_anulado	CONFIRMADO	5	agenciabrasil_petrobras	evidence/lula/lula_petrobras_62bi.txt
 lula_odebrecht_85bi	lula	Impacto financeiro	Impacto financeiro	condenado_anulado	CONFIRMADO	5	ebc_odebrecht	evidence/lula/lula_odebrecht_85bi.txt
 flavio_denunciado_2020	flavio	Rachadinha	Rachadinha na ALERJ	denunciado_arquivado	CONFIRMADO	5	g1_denuncia_flavio_2020	evidence/flavio/flavio_denunciado_2020.txt
@@ -14,3 +14,7 @@ flavio_stf_anulou_rifs	flavio	Rachadinha	Rachadinha na ALERJ	denunciado_arquivad
 flavio_gilmar_negou_reabrir	flavio	Rachadinha	Rachadinha na ALERJ	denunciado_arquivado	CONFIRMADO	5	poder360_gilmar_2025	evidence/flavio/flavio_gilmar_negou_reabrir.txt
 flavio_depositos_2mi	flavio	Impacto financeiro	Impacto financeiro	denunciado_arquivado	CONFIRMADO	5	g1_depositos_2019	evidence/flavio/flavio_depositos_2mi.txt
 flavio_coaf_12mi	flavio	Impacto financeiro	Impacto financeiro	denunciado_arquivado	CONFIRMADO	5	g1_coaf_2018	evidence/flavio/flavio_coaf_12mi.txt
+flavio_master_filme	flavio	Banco Master	Banco Master / Dark Horse	sob_investigacao	CONFIRMADO	4	poder360_flavio_vorcaro,g1_master_rioprevidencia,folha_dark_horse	evidence/flavio/flavio_master_filme.txt
+flavio_master_repasse	flavio	Impacto financeiro	Impacto financeiro	sob_investigacao	CONFIRMADO	4	poder360_flavio_vorcaro,folha_dark_horse	evidence/flavio/flavio_master_repasse.txt
+flavio_imoveis_copacabana	flavio	Imoveis / dinheiro vivo	Imoveis com dinheiro vivo	denunciado_arquivado	CONFIRMADO	4	g1_imoveis_638mil	evidence/flavio/flavio_imoveis_copacabana.txt
+flavio_imoveis_barra	flavio	Imoveis / dinheiro vivo	Imoveis com dinheiro vivo	denunciado_arquivado	CONFIRMADO	4	congressoemfoco_imoveis_barra	evidence/flavio/flavio_imoveis_barra.txt

@@ -1,0 +1,33 @@
+CLAIM: flavio_master_filme
+STATUS: sob_investigacao   VERDICT: CONFIRMADO   CONFIANCA: 4/5
+FONTES: poder360_flavio_vorcaro, g1_master_rioprevidencia, folha_dark_horse
+------------------------------------------------------------------------------
+AFIRMACAO: Flavio negociou com Daniel Vorcaro (dono do Banco Master) o
+financiamento do filme biografico 'Dark Horse' sobre Jair Bolsonaro, no valor
+de R$ 134 milhoes (US$ 24 milhoes). Segundo o Intercept Brasil, US$ 10,6
+milhoes (~R$ 61 milhoes) foram efetivamente repassados de fev a mai/2025
+via Entre Investimentos ao fundo Havengate Development Fund LP (Texas),
+ligado a Paulo Calixto, advogado de Eduardo Bolsonaro.
+
+CONTEXTO (sem imputacao): o governo do Rio (Castro/PL) foi o maior investidor
+publico no Master -- R$ 970 mi em Letras Financeiras (Rioprevidencia, nov/2023
+a jul/2024) e R$ 231,6 mi em CDBs (Cedae). A G1 registra explicitamente que
+NAO ha indicio de relacao entre esses investimentos e o pedido de Flavio.
+
+CRONOLOGIA: a proximidade com Vorcaro comecou em dez/2024, mesmo periodo em
+que a Rioprevidencia ampliou aportes em fundos ligados ao Master (R$ 2,01 bi
+entre dez/2024 e out/2025, segundo decisao do STF). O primeiro encontro
+presencial Flavio-Vorcaro teria sido em 11/12/2024, na residencia de Vorcaro.
+
+STATUS (out/2026): NAO ha denuncia formal contra Flavio neste caso. O Banco
+Master foi liquidado pelo BC em 18/11/2025; Vorcaro foi preso (operacao
+Compliance Zero). Flavio nega irregularidade e pede CPI.
+------------------------------------------------------------------------------
+CITACAO VERBATIM (a fonte que sustenta):
+  "Mensagens e áudios publicados pelo Intercept Brasil indicam repasses de US$ 24 milhões (o equivalente a R$ 134 milhões de acordo com a cotação da época) para a produção cinematográfica"
+O QUE ISSO PROVA: Sustenta que ha mensagens e audios publicados indicando o acordo de R$ 134 milhoes e o contexto do financiamento do filme.
+POSICAO DA DEFESA: Flavio afirma que buscou investimento privado para obra cultural nos EUA, sem recurso publico, sem Lei Rouanet e sem contrapartida ligada ao mandato; nega que recursos tenham sido destinados ao irmao Eduardo; encerrou a relacao com Vorcaro quando as acusacoes vieram a publico e exige CPI do Master.
+------------------------------------------------------------------------------
+ARQUIVO BRUTO: https://www.poder360.com.br/poder-congresso/flavio-diz-que-rompeu-com-vorcaro-apos-acusacoes-virem-a-publico/
+ARQUIVO BRUTO: https://g1.globo.com/politica/blog/octavio-guedes/post/2026/05/19/valor-pedido-por-flavio-bolsonaro-a-vorcaro-equivale-a-11percent-do-total-investido-pelo-governo-do-rio-no-banco-master.ghtml
+ARQUIVO BRUTO: https://www1.folha.uol.com.br/poder/2026/05/fundo-dos-eua-emendas-e-banco-master-quem-e-quem-no-caso-das-conversas-de-flavio-e-vorcaro.shtml

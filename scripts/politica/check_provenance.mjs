@@ -6,7 +6,7 @@
 //         (has `sources`) carries a non-empty sources[] that resolves in sources[].
 //   G1.2  Every cited source id exists; every source URL starts with http.
 //   G1.3  Crosswalk COVERAGE: `surfaced` ∪ `excluded` = every claim_id in the two
-//         corpus ledgers (22 numeric + 14 legal = 36). Not a bijection — 4
+//         corpus ledgers (22 numeric + 18 legal = 40). Not a bijection — 4
 //         unemployment claims map to one KPI on purpose.
 //   G1.4  SAMPLE VALUE CHECK: for 3 surfaced numeric claims, the value reachable
 //         at the crosswalk's data_path must equal the value in claims.tsv. This
@@ -36,6 +36,10 @@ const argPath = (flag) => {
 };
 const DATA = argPath('--data') || resolve(REPO, 'frontend/public/politica/data.json');
 const SIZE_ALERT = 500 * 1024;
+const NEW_CASE_CLAIMS = {
+  flavio_master: ['flavio_master_filme', 'flavio_master_repasse'],
+  flavio_imoveis: ['flavio_imoveis_copacabana', 'flavio_imoveis_barra'],
+};
 
 const readJson = (p) => JSON.parse(readFileSync(p, 'utf8'));
 const useVendor = process.argv.includes('--vendor');
@@ -96,6 +100,34 @@ function main() {
   for (const [id, path] of Object.entries(crosswalk.map)) {
     const { found } = resolveDataPath(data, path);
     if (!found) errors.push(`crosswalk: "${id}" → "${path}" does not resolve in data.json`);
+  }
+  for (const [caseId, expectedIds] of Object.entries(NEW_CASE_CLAIMS)) {
+    const expected = [...expectedIds].sort();
+    const target = data.cases.find((c) => c.id === caseId);
+    if (!target) {
+      errors.push(`case membership: missing case "${caseId}"`);
+      continue;
+    }
+    const actual = [...(target.claim_ids || [])].sort();
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      errors.push(`case membership: ${caseId} claim_ids must be ${expected.join(',')}; got ${actual.join(',')}`);
+    }
+    for (const claimId of expectedIds) {
+      const claimCases = data.cases.filter((c) => (c.claim_ids || []).includes(claimId));
+      const evidenceCases = data.cases.filter((c) =>
+        (c.evidence || []).some((e) => e.claim_id === claimId),
+      );
+      if (claimCases.length !== 1 || claimCases[0]?.id !== caseId) {
+        errors.push(`case membership: ${claimId} must appear only in ${caseId}.claim_ids`);
+      }
+      if (evidenceCases.length !== 1 || evidenceCases[0]?.id !== caseId) {
+        errors.push(`case evidence: ${claimId} must appear only in ${caseId}.evidence[]`);
+      }
+      const expectedPath = `cases[${caseId}]`;
+      if (crosswalk.map[claimId] !== expectedPath) {
+        errors.push(`crosswalk: ${claimId} must map to ${expectedPath}`);
+      }
+    }
   }
 
   // ── G1.4 sample value check (independent of the recompute module) ─────────

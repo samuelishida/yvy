@@ -1,19 +1,21 @@
 CLAIM: lula_atibaia_prescrito
 STATUS: prescrito   VERDICT: CONFIRMADO   CONFIANCA: 5/5
-FONTES: conjur_atibaia_2025, stf_468184
+FONTES: conjur_atibaia_2025, jbr_atibaia_2025, stf_468184
 ------------------------------------------------------------------------------
-AFIRMACAO: a condenacao de Atibaia foi anulada (Gilmar, 24/06/2021) e o TRF-1
-negou a reabertura em 30/07/2025.
+AFIRMACAO: o TRF-1 negou em 30/07/2025 o pedido do MPF para suspender o
+encerramento do processo enquanto o STF analisava o alcance da nulidade.
 
-NOTA: o que a citacao verbatim sustenta e a NEGATIVA DE REABERTURA. A data de
-24/06/2021 vem da fonte secundaria stf_468184 (Gilmar estende a suspeicao),
-tambem ligada a esta claim. Este projeto NAO afirma aqui a regra do art. 115,
-que pertence ao caso do triplex (onde a fonte a sustenta).
+NOTA: o recurso do MPF nao suspendia automaticamente a decisao, e apenas o STF
+poderia ordenar a suspensao. O processo ja havia sido encerrado em Brasilia por
+prescricao da punibilidade de Lula, com reducao do prazo por idade superior a
+70 anos. A fonte stf_468184 registra que o STF estendeu ao caso a suspeicao
+reconhecida no triplex.
 ------------------------------------------------------------------------------
 CITACAO VERBATIM (a fonte que sustenta):
-  "A 10ª Turma do Tribunal Regional Federal da 1ª Região rejeitou, por unanimidade, um pedido de reabertura da ação penal do sítio de Atibaia, derivada da 'lava jato'."
-O QUE ISSO PROVA: Sustenta que o TRF-1 negou, por unanimidade, a reabertura da acao.
-POSICAO DA DEFESA: A defesa de Lula sempre negou as acusacoes; a acao ja havia sido anulada e extinta.
+  "o agravo em tramitação no STF não tem efeito suspensivo"
+O QUE ISSO PROVA: Sustenta um dos fundamentos para o TRF-1 negar suspensao do encerramento.
+POSICAO DA DEFESA: A defesa de Lula sempre negou as acusacoes.
 ------------------------------------------------------------------------------
 ARQUIVO BRUTO: https://www.conjur.com.br/2025-jul-30/trf-1-nega-pedido-para-reabrir-acao-contra-lula-por-sitio-de-atibaia
+ARQUIVO BRUTO: https://jornaldebrasilia.com.br/noticias/politica-e-poder/trf-1-rejeita-recurso-do-mpf-e-mantem-encerrada-acao-do-sitio-de-atibaia-contra-lula/
 ARQUIVO BRUTO: https://portal.stf.jus.br/noticias/verNoticiaDetalhe.asp?idConteudo=468184&ori=1

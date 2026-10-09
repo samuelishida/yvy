@@ -164,3 +164,6 @@ jobs:
         env:
           CI: true
           DISABLE_ESLINT_PLUGIN: true
+
+      - name: Validate political panel data
+        run: make politica-check-static

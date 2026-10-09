@@ -199,6 +199,14 @@
   color: inherit;
 }
 
+.politica-status-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
 /* ── Hero KPI number ─────────────────────────────────────────────────────── */
 .politica-big {
   font-family: var(--font-display, 'IBM Plex Sans');
@@ -304,6 +312,17 @@
   color: #5EC8E0;
 }
 
+/* sob_investigacao — magnifying glass, violet: inquiry without a finding */
+.politica-status--sob_investigacao {
+  color: #C4B5FD;
+  border-color: rgba(167, 139, 250, 0.5);
+  background: rgba(139, 92, 246, 0.12);
+}
+.politica-status--sob_investigacao .politica-status__icon {
+  background: rgba(139, 92, 246, 0.2);
+  color: #C4B5FD;
+}
+
 /* nao_confirmado — question, ember high: MUST NOT ship (build fails) */
 .politica-status--nao_confirmado {
   color: #F08A85;
@@ -340,6 +359,11 @@
   color: #F5B071;
   border-color: rgba(251, 146, 60, 0.4);
   background: rgba(251, 146, 60, 0.08);
+}
+.politica-state--alegado_em_apuracao {
+  color: #C4B5FD;
+  border-color: rgba(167, 139, 250, 0.45);
+  background: rgba(139, 92, 246, 0.1);
 }
 
 /* ── Case cards: PT vs PL, side-coloured rail ────────────────────────────── */

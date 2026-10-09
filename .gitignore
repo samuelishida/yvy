@@ -38,6 +38,8 @@ downloads/
 eggs/
 .eggs/
 lib/
+!scripts/politica/lib/
+!scripts/politica/lib/*.mjs
 lib64/
 parts/
 sdist/

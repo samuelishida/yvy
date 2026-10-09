@@ -3,7 +3,7 @@
 //
 // This is the only defence against the tautology the research memory warns about:
 // checking the corpus `.txt` against itself. Instead it goes to the SOURCE: for
-// every legal case, it fetches the cited URLs and confirms the case's
+// every legal case, it fetches the status sources and confirms the case's
 // `status_citation_pt` genuinely appears in the served text.
 //
 // Mirrors `eleicao-2026/escandalos/verify_citations.py`:
@@ -105,7 +105,10 @@ async function main() {
     const frag = fragmentOf(c.status_citation_pt);
     const results = [];
     let substantive = false;
-    for (const id of c.sources) {
+    const sourceIds = Array.isArray(c.status_sources) && c.status_sources.length
+      ? c.status_sources
+      : c.sources;
+    for (const id of sourceIds) {
       const src = sourceById.get(id);
       if (!src) continue;
       const r = await classify(src.url, frag, cache);
@@ -116,7 +119,9 @@ async function main() {
     const hasOk = results.some((r) => r.endsWith('=OK'));
     let verdict;
     if (hasOk) { verdict = 'OK'; ok += 1; }
-    else if (substantive) { verdict = 'MISS'; miss += 1; misses.push(c.id); }
+    else if (substantive || ['flavio_master', 'flavio_imoveis'].includes(c.id)) {
+      verdict = 'MISS'; miss += 1; misses.push(c.id);
+    }
     else { verdict = 'BLOCKED'; blocked += 1; blockedIds.push(c.id); }
     console.log(`${verdict.padEnd(8)} ${c.id.padEnd(24)} ${results.join(' ')}`);
   }

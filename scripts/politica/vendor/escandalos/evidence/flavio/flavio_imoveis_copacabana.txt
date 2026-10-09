@@ -1,0 +1,24 @@
+CLAIM: flavio_imoveis_copacabana
+STATUS: denunciado_arquivado   VERDICT: CONFIRMADO   CONFIANCA: 4/5
+FONTES: g1_imoveis_638mil
+------------------------------------------------------------------------------
+AFIRMACAO: o MP-RJ apontou que Flavio depositou R$ 638.400 em dinheiro vivo
+na conta do corretor Glenn Dillard em 27/11/2012, mesmo dia da compra de
+dois apartamentos em Copacabana (declarados por R$ 310 mil). A tese do MP e
+que o valor em especie correspondia a parte nao declarada da compra, com
+o objetivo de ocultar a origem ilicita dos recursos.
+
+NOTA: os imoveis foram revendidos em 2014 com lucro declarado de 292%,
+enquanto a valorizacao da regiao no periodo foi de ~11% (indice Fipezap).
+
+STATUS (out/2026): esta denuncia foi parte do mesmo caso das rachadinhas --
+arquivado pelo TJ-RJ em 2022 apos o STJ anular as provas financeiras.
+Flavio nunca foi condenado. A anulacao da prova NAO invalida o registro
+historico dos fatos investigados, que permanecem documentados nos autos.
+------------------------------------------------------------------------------
+CITACAO VERBATIM (a fonte que sustenta):
+  "Relatório do Ministério Público estadual afirma que o senador Flávio Bolsonaro (sem partido-RJ) depositou R$ 638.400 em dinheiro vivo na conta de um corretor e assim ocultou o ganho ilícito com as chamadas "rachadinhas"."
+O QUE ISSO PROVA: Sustenta que o MP-RJ apontou R$ 638.400 em depositos em dinheiro vivo na conta do corretor Glenn Dillard no mesmo dia da compra (2012), e a tese de ocultacao.
+POSICAO DA DEFESA: A defesa de Flavio nega irregularidades; o negocio foi declarado e, posteriormente, as provas financeiras foram anuladas pelo STJ (2021), levando ao arquivamento da denuncia pelo TJ-RJ (2022).
+------------------------------------------------------------------------------
+ARQUIVO BRUTO: https://g1.globo.com/rj/rio-de-janeiro/noticia/2019/12/19/flavio-bolsonaro-pagou-r-638-mil-em-dinheiro-para-lavar-compra-de-imoveis-diz-mp.ghtml
